@@ -51,6 +51,8 @@ fun NextGenChatMessageItem(
     onRefreshWidget: (String) -> Unit,
     onReply: (ChatMessage) -> Unit,
     onResend: (ChatMessage) -> Unit,
+    onDelete: ((ChatMessage) -> Unit)? = null,
+    audioPlayerManager: com.cellular.rpc.engine.AudioPlayerManager? = null,
     modifier: Modifier = Modifier
 ) {
     val isUser = message.sender == MessageSender.USER
@@ -119,26 +121,38 @@ fun NextGenChatMessageItem(
                     }
                 }
 
+                // Render Attachment if present
+                if (message.attachment != null) {
+                    MessageAttachmentBubble(
+                        attachment = message.attachment,
+                        isUser = isUser,
+                        audioPlayerManager = audioPlayerManager,
+                        modifier = Modifier.padding(bottom = if (message.text.isNotBlank()) 6.dp else 0.dp)
+                    )
+                }
+
                 if (isUser) {
                     // USER BUBBLE (iMessage Style Teal/Cyan Pill)
-                    Surface(
-                        color = CyanPrimaryDark,
-                        shape = RoundedCornerShape(
-                            topStart = 18.dp,
-                            topEnd = 18.dp,
-                            bottomStart = 18.dp,
-                            bottomEnd = 4.dp
-                        ),
-                        modifier = Modifier.combinedClickable(
-                            onClick = { },
-                            onLongClick = { showContextMenu = true }
-                        )
-                    ) {
-                        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)) {
-                            RichMarkdownText(
-                                text = message.text,
-                                textColor = Color.White
+                    if (message.text.isNotBlank()) {
+                        Surface(
+                            color = CyanPrimaryDark,
+                            shape = RoundedCornerShape(
+                                topStart = 18.dp,
+                                topEnd = 18.dp,
+                                bottomStart = 18.dp,
+                                bottomEnd = 4.dp
+                            ),
+                            modifier = Modifier.combinedClickable(
+                                onClick = { },
+                                onLongClick = { showContextMenu = true }
                             )
+                        ) {
+                            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)) {
+                                RichMarkdownText(
+                                    text = message.text,
+                                    textColor = Color.White
+                                )
+                            }
                         }
                     }
                 } else {
@@ -301,7 +315,8 @@ fun NextGenChatMessageItem(
             onResend = onResend,
             onInspectWire = {
                 showWireDetails = true
-            }
+            },
+            onDelete = onDelete
         )
     }
 }

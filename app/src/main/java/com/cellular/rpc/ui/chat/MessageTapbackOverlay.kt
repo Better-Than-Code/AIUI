@@ -42,7 +42,8 @@ fun MessageTapbackOverlay(
     onReact: (String) -> Unit,
     onReply: (ChatMessage) -> Unit,
     onResend: (ChatMessage) -> Unit,
-    onInspectWire: (ChatMessage) -> Unit
+    onInspectWire: (ChatMessage) -> Unit,
+    onDelete: ((ChatMessage) -> Unit)? = null
 ) {
     val clipboardManager = LocalClipboardManager.current
     var isCopied by remember { mutableStateOf(false) }
@@ -193,6 +194,19 @@ fun MessageTapbackOverlay(
                                 onDismiss()
                             }
                         )
+
+                        if (onDelete != null) {
+                            HorizontalDivider(color = DarkNavyBorder.copy(alpha = 0.6f), thickness = 0.5.dp)
+                            ContextActionRow(
+                                icon = Icons.Default.DeleteOutline,
+                                iconTint = Color(0xFFFF5252),
+                                label = "Delete Message",
+                                onClick = {
+                                    onDelete(message)
+                                    onDismiss()
+                                }
+                            )
+                        }
                     }
                 }
             }

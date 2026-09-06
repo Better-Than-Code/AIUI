@@ -99,6 +99,8 @@ fun CellularRpcScreen(viewModel: CellularRpcViewModel) {
     val activeService by viewModel.activeServiceProfile.collectAsStateWithLifecycle()
     val availableServices by viewModel.availableServices.collectAsStateWithLifecycle()
     val isLoopbackSimulation by viewModel.isLoopbackSimulation.collectAsStateWithLifecycle()
+    val isMcpSynced by viewModel.isMcpSynced.collectAsStateWithLifecycle()
+    val mcpCatalogHash by viewModel.mcpCatalogHash.collectAsStateWithLifecycle()
 
     val requiredPermissions = remember {
         val list = mutableListOf(
@@ -432,10 +434,11 @@ fun CellularRpcScreen(viewModel: CellularRpcViewModel) {
                     hasSmsPermissions = hasSmsPermissions,
                     onRequestPermissions = { permissionLauncher.launch(requiredPermissions) },
                     onToggleLoopback = { viewModel.toggleLoopbackSimulation() },
-                    onSendMessage = { viewModel.sendChatMessage(it) },
+                    onSendMessage = { text, atts -> viewModel.sendChatMessage(text, atts) },
                     onVote = { pollId, opt -> viewModel.castVote(pollId, opt) },
                     onConfirmTransfer = { viewModel.confirmTransfer(it) },
-                    onRefreshWidget = { viewModel.queryWidget(it) }
+                    onRefreshWidget = { viewModel.queryWidget(it) },
+                    onDeleteMessage = { viewModel.deleteChatMessage(it) }
                 )
                 1 -> WidgetsAndRpcTab(
                     widgetCache = widgetCache,
@@ -446,7 +449,10 @@ fun CellularRpcScreen(viewModel: CellularRpcViewModel) {
                 )
                 2 -> PacketInspectorTab(
                     packetLogs = packetLogs,
-                    onClearLogs = { viewModel.clearLogs() }
+                    onClearLogs = { viewModel.clearLogs() },
+                    isMcpSynced = isMcpSynced,
+                    mcpCatalogHash = mcpCatalogHash,
+                    onPushMcpGenesis = { viewModel.pushGenesisMcpManifest() }
                 )
                 3 -> E2ETestRunnerTab(
                     testResults = testResults,
@@ -496,13 +502,24 @@ fun CellularChatTab(
     hasSmsPermissions: Boolean = true,
     onRequestPermissions: () -> Unit = {},
     onToggleLoopback: () -> Unit = {},
-    onSendMessage: (String) -> Unit,
+    onSendMessage: (String, List<com.cellular.rpc.engine.MessageAttachment>) -> Unit,
     onVote: (String, Int) -> Unit,
     onConfirmTransfer: (String) -> Unit,
-    onRefreshWidget: (String) -> Unit
+    onRefreshWidget: (String) -> Unit,
+    onDeleteMessage: (String) -> Unit = {}
 ) {
     var inputText by remember { mutableStateOf("") }
     var replyingToMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val pendingAttachments = remember { mutableStateListOf<com.cellular.rpc.engine.MessageAttachment>() }
+    val audioPlayer = remember { com.cellular.rpc.engine.AudioPlayerManager(context) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            audioPlayer.release()
+        }
+    }
+
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
@@ -514,7 +531,7 @@ fun CellularChatTab(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Chat Stream (iMessage/RCS Asymmetric bubbles with Markdown & Widget Cards)
+        // Chat Stream (iMessage/RCS Asymmetric bubbles with Markdown, Attachments & Widget Cards)
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -531,23 +548,30 @@ fun CellularChatTab(
                     onVote = onVote,
                     onConfirmTransfer = onConfirmTransfer,
                     onRefreshWidget = onRefreshWidget,
+                    audioPlayerManager = audioPlayer,
                     onReply = {
                         replyingToMessage = it
                     },
                     onResend = {
-                        onSendMessage(it.widgetData?.toJson() ?: it.text)
+                        onSendMessage(it.widgetData?.toJson() ?: it.text, emptyList())
+                    },
+                    onDelete = {
+                        onDeleteMessage(it.id)
                     }
                 )
             }
         }
 
-        // Next-Gen Compose Bar (Interactive Tool Chips, Expandable Drawer, Quoted Reply)
-        com.cellular.rpc.ui.chat.NextGenChatInputBar(
+        // Full Native Compose Bar with Photo Picker, Documents, Voice Note Recorder & Tools
+        com.cellular.rpc.ui.chat.FullNativeChatInputBar(
             inputText = inputText,
             onInputTextChange = { inputText = it },
+            pendingAttachments = pendingAttachments.toList(),
+            onAddAttachment = { att -> pendingAttachments.add(att) },
+            onRemoveAttachment = { id -> pendingAttachments.removeAll { it.id == id } },
             replyingToText = replyingToMessage?.let { "Replying: \"${it.text.take(45)}\"" },
             onCancelReply = { replyingToMessage = null },
-            onSendMessage = { text ->
+            onSendMessage = { text, atts ->
                 val fullMessage = if (replyingToMessage != null) {
                     val quote = "> ${replyingToMessage?.text?.take(40)}...\n$text"
                     replyingToMessage = null
@@ -555,8 +579,9 @@ fun CellularChatTab(
                 } else {
                     text
                 }
-                onSendMessage(fullMessage)
+                onSendMessage(fullMessage, atts)
                 inputText = ""
+                pendingAttachments.clear()
                 coroutineScope.launch {
                     if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
                 }
@@ -2633,8 +2658,14 @@ fun WidgetCard(
 @Composable
 fun PacketInspectorTab(
     packetLogs: List<PacketLogEntity>,
-    onClearLogs: () -> Unit
+    onClearLogs: () -> Unit,
+    isMcpSynced: Boolean = false,
+    mcpCatalogHash: String = "",
+    onPushMcpGenesis: () -> Unit = {}
 ) {
+    var showMcpManifestDialog by remember { mutableStateOf(false) }
+    val genesisManifestJson = remember { com.cellular.rpc.domain.mcp.CellularMcpRegistry.buildGenesisManifestJson() }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -2667,6 +2698,144 @@ fun PacketInspectorTab(
         }
 
         Spacer(modifier = Modifier.height(10.dp))
+
+        // MCP (Model Context Protocol) Single-Push Genesis Sync Status Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            border = BorderStroke(1.dp, if (isMcpSynced) SignalGreen.copy(alpha = 0.4f) else SignalAmber.copy(alpha = 0.4f))
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.Memory,
+                            contentDescription = null,
+                            tint = if (isMcpSynced) SignalGreen else SignalAmber,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "MCP Genesis Capability Discovery",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Surface(
+                        color = if (isMcpSynced) SignalGreen.copy(alpha = 0.15f) else SignalAmber.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text(
+                            text = if (isMcpSynced) "SYNCED" else "UNSYNCED",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isMcpSynced) SignalGreen else SignalAmber,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Self-describing MCP manifest provides AI agents with all registered native widgets (10) and tools (4) upon first start with zero continuous polling overhead.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Manifest Hash: $mcpCatalogHash (v2.1.0)",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Row {
+                        OutlinedButton(
+                            onClick = { showMcpManifestDialog = true },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Text("View JSON", fontSize = 11.sp)
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Button(
+                            onClick = onPushMcpGenesis,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Icon(Icons.Default.Upload, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Push Genesis", fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        if (showMcpManifestDialog) {
+            AlertDialog(
+                onDismissRequest = { showMcpManifestDialog = false },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Code, contentDescription = null, tint = CyanPrimary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("MCP Genesis Discovery Manifest", style = MaterialTheme.typography.titleMedium)
+                    }
+                },
+                text = {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "Deterministic JSON pushed to the AI Gateway. Stored in AI persistent memory for zero-overhead tool calling.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface,
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 350.dp)
+                        ) {
+                            LazyColumn(modifier = Modifier.padding(8.dp)) {
+                                item {
+                                    Text(
+                                        text = genesisManifestJson,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        onPushMcpGenesis()
+                        showMcpManifestDialog = false
+                    }) {
+                        Text("Push to AI")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showMcpManifestDialog = false }) {
+                        Text("Close")
+                    }
+                }
+            )
+        }
 
         if (packetLogs.isEmpty()) {
             Box(

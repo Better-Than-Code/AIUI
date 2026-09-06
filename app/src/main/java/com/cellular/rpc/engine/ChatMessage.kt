@@ -18,6 +18,7 @@ data class ChatMessage(
     val sender: MessageSender,
     val text: String,
     val widgetData: WidgetData? = null,
+    val attachment: MessageAttachment? = null,
     val is304NotModified: Boolean = false,
     val wirePacket: String? = null,
     val byteSize: Int = 0,

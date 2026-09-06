@@ -89,4 +89,24 @@ object WidgetPreferences {
         val blue = 0x23
         return (alpha shl 24) or (red shl 16) or (green shl 8) or blue
     }
+
+    // MCP (Model Context Protocol) Discovery & Sync State
+    private const val KEY_MCP_SYNCED_HASH = "mcp_synced_hash"
+    private const val KEY_MCP_SYNC_TIMESTAMP = "mcp_sync_timestamp"
+
+    fun getMcpSyncedHash(context: Context): String? =
+        getPrefs(context).getString(KEY_MCP_SYNCED_HASH, null)
+
+    fun setMcpSyncedHash(context: Context, hash: String) {
+        getPrefs(context).edit()
+            .putString(KEY_MCP_SYNCED_HASH, hash)
+            .putLong(KEY_MCP_SYNC_TIMESTAMP, System.currentTimeMillis())
+            .apply()
+    }
+
+    fun getMcpLastSyncTimestamp(context: Context): Long =
+        getPrefs(context).getLong(KEY_MCP_SYNC_TIMESTAMP, 0L)
+
+    fun isMcpSynced(context: Context, currentCatalogHash: String): Boolean =
+        getMcpSyncedHash(context) == currentCatalogHash
 }

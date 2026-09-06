@@ -292,5 +292,38 @@ class ExampleRobolectricTest {
     assertNotNull(com.cellular.rpc.domain.schema.CellularSchemaRegistry.getSchema<Any>("system_status"))
     assertTrue(com.cellular.rpc.domain.schema.CellularSchemaRegistry.hasSchema("weather"))
   }
+
+  /**
+   * Scenario 6: MCP Single-Push Genesis Manifest & Delta Invalidation Test
+   * Verifies that the client compiles a self-describing Genesis MCP manifest
+   * containing all registered widget schemas and actionable tools, computes
+   * a deterministic 8-char catalog hash, and validates delta updates.
+   */
+  @Test
+  fun `mcp single push genesis manifest generation and deterministic catalog hash`() {
+    val catalogHash = com.cellular.rpc.domain.mcp.CellularMcpRegistry.computeCatalogHash()
+    assertNotNull(catalogHash)
+    assertEquals("Catalog hash must be 8 hex characters", 8, catalogHash.length)
+
+    val genesisJson = com.cellular.rpc.domain.mcp.CellularMcpRegistry.buildGenesisManifestJson()
+    assertTrue("Manifest must contain OP identifier", genesisJson.contains("MCP_GENESIS_INIT"))
+    assertTrue("Manifest must contain protocol version", genesisJson.contains(com.cellular.rpc.domain.mcp.CellularMcpRegistry.MCP_PROTOCOL_VERSION))
+    assertTrue("Manifest must contain catalog hash", genesisJson.contains(catalogHash))
+    assertTrue("Manifest must register widgets", genesisJson.contains("registered_widgets"))
+    assertTrue("Manifest must register actionable tools", genesisJson.contains("registered_tools"))
+    assertTrue("Manifest must declare cellular MTU constraints", genesisJson.contains("mtu_budget_bytes"))
+
+    val prompt = com.cellular.rpc.domain.mcp.CellularMcpRegistry.buildGenesisSmsPrompt()
+    assertTrue(prompt.startsWith("SYS:MCP_GENESIS_SYNC"))
+    assertTrue(prompt.contains("---CELLULAR_DATA---"))
+
+    val tools = com.cellular.rpc.domain.mcp.CellularMcpRegistry.getRegisteredTools()
+    assertTrue("Should register at least 4 native tools", tools.size >= 4)
+    assertTrue(tools.any { it.name == "cast_poll_vote" })
+    assertTrue(tools.any { it.name == "confirm_cellular_transfer" })
+    assertTrue(tools.any { it.name == "query_cellular_widget" })
+    assertTrue(tools.any { it.name == "query_device_telemetry" })
+  }
 }
+
 

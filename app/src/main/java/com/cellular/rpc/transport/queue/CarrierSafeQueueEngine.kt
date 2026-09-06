@@ -603,6 +603,19 @@ class CarrierSafeQueueEngine(
                     )
                 )
             }
+        } else if (queryStr.contains("MCP_GENESIS_SYNC") || queryStr.contains("MCP_INIT")) {
+            // Simulated AI Gateway acknowledging Single-Push Genesis Manifest Ingestion
+            val ackText = "AI Assistant: Ingested MCP Genesis Manifest (v=2.1.0). Registered 10 native schemas & 4 actionable tools. Saved to persistent gateway memory."
+            val chatResponse = WidgetData.ChatText(text = ackText)
+            val jsonBytes = chatResponse.toJson().toByteArray(Charsets.UTF_8)
+            val resFrame = Frame(
+                sessionId = reqFrame.sessionId,
+                pktType = Frame.PKT_RPC_RES,
+                seqNo = reqFrame.seqNo + 1,
+                payload = jsonBytes,
+                ackBits = 0L
+            )
+            receiveInbound(resFrame)
         } else {
             // General Conversational Response over SMS
             val chatResponse = WidgetData.ChatText(

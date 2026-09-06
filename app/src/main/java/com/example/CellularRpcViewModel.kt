@@ -36,6 +36,8 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
     private val outboxDao = db.outboxDao()
     private val widgetCacheDao = db.widgetCacheDao()
     private val packetLogDao = db.packetLogDao()
+    private val chatMessageDao = db.chatMessageDao()
+    val chatRepository = com.cellular.rpc.data.repository.ChatRepository(chatMessageDao)
 
     private val queueEngine: CarrierSafeQueueEngine
         get() = CellularRpcForegroundService.activeEngine ?: CellularRpcApp.instance.queueEngine
@@ -71,8 +73,8 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
     private val _isTesting = MutableStateFlow(false)
     val isTesting: StateFlow<Boolean> = _isTesting.asStateFlow()
 
-    private val _chatMessages = MutableStateFlow<List<com.cellular.rpc.engine.ChatMessage>>(emptyList())
-    val chatMessages: StateFlow<List<com.cellular.rpc.engine.ChatMessage>> = _chatMessages.asStateFlow()
+    val chatMessages: StateFlow<List<com.cellular.rpc.engine.ChatMessage>> = chatRepository.messages
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _pallyPhoneNumber = MutableStateFlow(
         com.cellular.rpc.domain.service.CellularServiceManager.getActiveService(application).phoneNumber
@@ -89,6 +91,61 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
         com.cellular.rpc.widget.WidgetPreferences.isLoopbackSimulationEnabled(application)
     )
     val isLoopbackSimulation: StateFlow<Boolean> = _isLoopbackSimulation.asStateFlow()
+
+    // MCP (Model Context Protocol) Discovery & Genesis Sync State
+    private val _mcpCatalogHash = MutableStateFlow(com.cellular.rpc.domain.mcp.CellularMcpRegistry.computeCatalogHash())
+    val mcpCatalogHash: StateFlow<String> = _mcpCatalogHash.asStateFlow()
+
+    private val _isMcpSynced = MutableStateFlow(
+        com.cellular.rpc.widget.WidgetPreferences.isMcpSynced(application, com.cellular.rpc.domain.mcp.CellularMcpRegistry.computeCatalogHash())
+    )
+    val isMcpSynced: StateFlow<Boolean> = _isMcpSynced.asStateFlow()
+
+    private val _mcpLastSyncTimestamp = MutableStateFlow(
+        com.cellular.rpc.widget.WidgetPreferences.getMcpLastSyncTimestamp(application)
+    )
+    val mcpLastSyncTimestamp: StateFlow<Long> = _mcpLastSyncTimestamp.asStateFlow()
+
+    fun refreshMcpState() {
+        val app = getApplication<Application>()
+        val currentHash = com.cellular.rpc.domain.mcp.CellularMcpRegistry.computeCatalogHash()
+        _mcpCatalogHash.value = currentHash
+        _isMcpSynced.value = com.cellular.rpc.widget.WidgetPreferences.isMcpSynced(app, currentHash)
+        _mcpLastSyncTimestamp.value = com.cellular.rpc.widget.WidgetPreferences.getMcpLastSyncTimestamp(app)
+    }
+
+    /**
+     * Executes the Single-Push Genesis Sync: Transmits the full self-discovery MCP
+     * manifest to the persistent AI Agent over Cellular SMS/RPC.
+     */
+    fun pushGenesisMcpManifest() {
+        val app = getApplication<Application>()
+        val hash = com.cellular.rpc.domain.mcp.CellularMcpRegistry.computeCatalogHash()
+        val genesisPrompt = com.cellular.rpc.domain.mcp.CellularMcpRegistry.buildGenesisSmsPrompt()
+        val manifestJson = com.cellular.rpc.domain.mcp.CellularMcpRegistry.buildGenesisManifestJson()
+
+        viewModelScope.launch(Dispatchers.IO) {
+            // Save outbound chat record explaining Genesis MCP Sync
+            val userMsg = com.cellular.rpc.engine.ChatMessage(
+                sender = com.cellular.rpc.engine.MessageSender.USER,
+                text = "⚡ [MCP Genesis Sync] Pushed ${com.cellular.rpc.domain.schema.CellularSchemaRegistry.getAllSchemas().size} native widget schemas and ${com.cellular.rpc.domain.mcp.CellularMcpRegistry.getRegisteredTools().size} executable tools to AI persistent memory (Hash: $hash).",
+                byteSize = genesisPrompt.toByteArray(Charsets.UTF_8).size,
+                pduCount = ((genesisPrompt.toByteArray(Charsets.UTF_8).size + 139) / 140).coerceAtLeast(1)
+            )
+            chatRepository.saveMessage(userMsg)
+
+            // Transmit through queue engine
+            queueEngine.enqueuePayload(
+                sessionId = activeSessionId,
+                pktType = Frame.PKT_RPC_REQ,
+                payload = genesisPrompt.toByteArray(Charsets.UTF_8)
+            )
+
+            // Update persistent sync state
+            com.cellular.rpc.widget.WidgetPreferences.setMcpSyncedHash(app, hash)
+            refreshMcpState()
+        }
+    }
 
     fun refreshServices() {
         val app = getApplication<Application>()
@@ -164,26 +221,31 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
         com.cellular.rpc.domain.service.CellularServiceManager.initialize(application)
         refreshServices()
 
-        // Initialize default welcome conversation and rich widgets
-        val welcomeWeather = WidgetData.Weather(72, "San Francisco", "Sunny", high = 76, low = 58)
-        val initialMessages = listOf(
-            com.cellular.rpc.engine.ChatMessage(
-                sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
-                text = "Cellular RPC Gateway connected over SMS (Port 8901). MTU budget: 133B. Responses render as native interactive cards without exposing raw code.",
-                wirePacket = "~1A2F:02:0000:00000000::39B1#",
-                byteSize = 44,
-                pduCount = 1
-            ),
-            com.cellular.rpc.engine.ChatMessage(
-                sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
-                text = "",
-                widgetData = welcomeWeather,
-                wirePacket = "~1A2F:04:0001:00000000:${welcomeWeather.toJson()}:64F1#",
-                byteSize = welcomeWeather.toJson().length,
-                pduCount = 1
-            )
-        )
-        _chatMessages.value = initialMessages
+        // Initialize default welcome conversation if repository is empty
+        viewModelScope.launch(Dispatchers.IO) {
+            val currentList = chatMessageDao.getAllMessages().first()
+            if (currentList.isEmpty()) {
+                val welcomeWeather = WidgetData.Weather(72, "San Francisco", "Sunny", high = 76, low = 58)
+                val initialMessages = listOf(
+                    com.cellular.rpc.engine.ChatMessage(
+                        sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
+                        text = "Cellular RPC Gateway connected over SMS (Port 8901). MTU budget: 133B. Responses render as native interactive cards without exposing raw code.",
+                        wirePacket = "~1A2F:02:0000:00000000::39B1#",
+                        byteSize = 44,
+                        pduCount = 1
+                    ),
+                    com.cellular.rpc.engine.ChatMessage(
+                        sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
+                        text = "",
+                        widgetData = welcomeWeather,
+                        wirePacket = "~1A2F:04:0001:00000000:${welcomeWeather.toJson()}:64F1#",
+                        byteSize = welcomeWeather.toJson().length,
+                        pduCount = 1
+                    )
+                )
+                chatRepository.saveMessages(initialMessages)
+            }
+        }
 
         // Observe incoming delivered frames from the cellular engine
         viewModelScope.launch {
@@ -319,25 +381,39 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
     /**
      * Dispatches a user chat message over the cellular SMS/MMS RPC engine.
      */
-    fun sendChatMessage(text: String) {
+    fun sendChatMessage(text: String, attachments: List<com.cellular.rpc.engine.MessageAttachment> = emptyList()) {
         val trimmed = text.trim()
-        if (trimmed.isEmpty()) return
+        if (trimmed.isEmpty() && attachments.isEmpty()) return
 
-        val byteCount = trimmed.toByteArray(Charsets.UTF_8).size
+        val mainAttachment = attachments.firstOrNull()
+        val byteCount = trimmed.toByteArray(Charsets.UTF_8).size + if (mainAttachment != null) 30 else 0
         val pduCount = ((byteCount + 139) / 140).coerceAtLeast(1)
 
         val userMessage = com.cellular.rpc.engine.ChatMessage(
             sender = com.cellular.rpc.engine.MessageSender.USER,
             text = trimmed,
+            attachment = mainAttachment,
             byteSize = byteCount,
             pduCount = pduCount
         )
 
-        _chatMessages.value = _chatMessages.value + userMessage
-
         viewModelScope.launch(Dispatchers.IO) {
+            chatRepository.saveMessage(userMessage)
+
+            // Build outbound prompt incorporating attachment references if present
+            val promptBody = buildString {
+                if (mainAttachment != null) {
+                    when (mainAttachment.type) {
+                        com.cellular.rpc.engine.AttachmentType.IMAGE -> append("[Attached Image: ${mainAttachment.fileName}] ")
+                        com.cellular.rpc.engine.AttachmentType.FILE -> append("[Attached File: ${mainAttachment.fileName}] ")
+                        com.cellular.rpc.engine.AttachmentType.VOICE_NOTE -> append("[Attached Voice Note: ${mainAttachment.durationMs / 1000}s] ")
+                    }
+                }
+                append(trimmed)
+            }.trim()
+
             // Determine if user is querying a widget or requesting an action
-            val lower = trimmed.lowercase()
+            val lower = promptBody.lowercase()
             val detectedType = when {
                 lower.contains("weather") -> "weather"
                 lower.contains("news") -> "news_digest"
@@ -386,7 +462,7 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
                     byteSize = 3,
                     pduCount = 1
                 )
-                _chatMessages.value = _chatMessages.value + chatMsg
+                chatRepository.saveMessage(chatMsg)
             } else if (response.payload.isNotEmpty()) {
                 val dual = com.cellular.rpc.engine.DualResponseParser.parse(response.payload)
                 val chatMsg = com.cellular.rpc.engine.ChatMessage(
@@ -397,7 +473,7 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
                     byteSize = response.payload.toByteArray().size,
                     pduCount = ((response.payload.toByteArray().size + 139) / 140).coerceAtLeast(1)
                 )
-                _chatMessages.value = _chatMessages.value + chatMsg
+                chatRepository.saveMessage(chatMsg)
             }
         }
     }
@@ -421,7 +497,7 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
                     byteSize = 3, // only 3 bytes on the wire!
                     pduCount = 1
                 )
-                _chatMessages.value = _chatMessages.value + chatMsg
+                chatRepository.saveMessage(chatMsg)
             } else {
                 val contentToParse = if (cellularRes.payload.isNotEmpty()) cellularRes.payload else payloadStr
                 val dual = com.cellular.rpc.engine.DualResponseParser.parse(contentToParse)
@@ -433,43 +509,42 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
                     byteSize = frame.payload.size,
                     pduCount = ((frame.payload.size + 139) / 140).coerceAtLeast(1)
                 )
-                _chatMessages.value = _chatMessages.value + chatMsg
+                chatRepository.saveMessage(chatMsg)
             }
         }
     }
 
     fun castVote(pollId: String, optionIndex: Int) {
-        // Update local poll state in chat messages
-        _chatMessages.value = _chatMessages.value.map { msg ->
-            if (msg.widgetData is WidgetData.CellularPoll && msg.widgetData.id == pollId) {
-                val updatedVotes = msg.widgetData.votes.toMutableList()
+        viewModelScope.launch(Dispatchers.IO) {
+            val current = chatMessages.value
+            val target = current.firstOrNull { it.widgetData is WidgetData.CellularPoll && it.widgetData.id == pollId }
+            if (target != null && target.widgetData is WidgetData.CellularPoll) {
+                val updatedVotes = target.widgetData.votes.toMutableList()
                 if (optionIndex in updatedVotes.indices) {
                     updatedVotes[optionIndex] = updatedVotes[optionIndex] + 1
                 }
-                val updatedPoll = msg.widgetData.copy(
+                val updatedPoll = target.widgetData.copy(
                     votes = updatedVotes,
                     userVoteIndex = optionIndex
                 )
-                msg.copy(widgetData = updatedPoll)
-            } else msg
-        }
+                chatRepository.saveMessage(target.copy(widgetData = updatedPoll))
+            }
 
-        // Transmit compact vote frame over SMS: VOTE:<pollId>:<optionIndex>
-        viewModelScope.launch(Dispatchers.IO) {
+            // Transmit compact vote frame over SMS: VOTE:<pollId>:<optionIndex>
             val votePayload = "VOTE:$pollId:$optionIndex".toByteArray(Charsets.UTF_8)
             queueEngine.enqueuePayload(activeSessionId, Frame.PKT_RPC_REQ, votePayload)
         }
     }
 
     fun confirmTransfer(transferId: String) {
-        _chatMessages.value = _chatMessages.value.map { msg ->
-            if (msg.widgetData is WidgetData.CellularTransfer && msg.widgetData.id == transferId) {
-                val updatedTransfer = msg.widgetData.copy(status = "AUTHORIZATION_SENT_SMS")
-                msg.copy(widgetData = updatedTransfer)
-            } else msg
-        }
-
         viewModelScope.launch(Dispatchers.IO) {
+            val current = chatMessages.value
+            val target = current.firstOrNull { it.widgetData is WidgetData.CellularTransfer && it.widgetData.id == transferId }
+            if (target != null && target.widgetData is WidgetData.CellularTransfer) {
+                val updatedTransfer = target.widgetData.copy(status = "AUTHORIZATION_SENT_SMS")
+                chatRepository.saveMessage(target.copy(widgetData = updatedTransfer))
+            }
+
             val authPayload = "AUTH_TRANSFER:$transferId".toByteArray(Charsets.UTF_8)
             queueEngine.enqueuePayload(activeSessionId, Frame.PKT_RPC_REQ, authPayload)
         }
@@ -497,9 +572,9 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
             byteSize = queryPrompt.length,
             pduCount = 1
         )
-        _chatMessages.value = _chatMessages.value + userMessage
 
         viewModelScope.launch(Dispatchers.IO) {
+            chatRepository.saveMessage(userMessage)
             queueEngine.enqueuePayload(
                 sessionId = activeSessionId,
                 pktType = Frame.PKT_RPC_REQ,
@@ -757,6 +832,18 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
 
             _testResults.value = results
             _isTesting.value = false
+        }
+    }
+
+    fun deleteChatMessage(messageId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            chatRepository.deleteMessage(messageId)
+        }
+    }
+
+    fun clearChatHistory() {
+        viewModelScope.launch(Dispatchers.IO) {
+            chatRepository.clearChat()
         }
     }
 }

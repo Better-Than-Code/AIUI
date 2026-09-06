@@ -324,6 +324,91 @@ class ExampleRobolectricTest {
     assertTrue(tools.any { it.name == "query_cellular_widget" })
     assertTrue(tools.any { it.name == "query_device_telemetry" })
   }
+
+  /**
+   * Scenario 7: Dynamic Feature Wire Parser & AST Interpreter Test
+   * Verifies that incoming cellular [APP:BUILD:<id>] payloads are parsed into
+   * robust AST trees, handle variable interpolation, and execute sandboxed actions.
+   */
+  @Test
+  fun `dynamic feature wire parsing, ast resolution and sandbox state evaluation`() = kotlinx.coroutines.test.runTest {
+    val samplePayload = """
+      [APP:BUILD:solar_calc]{
+        "title": "Solar Estimator",
+        "version": "1.2.0",
+        "description": "Calculates solar PV generation",
+        "icon": "solar",
+        "state": { "kw": 5.0, "hours": 6.0, "result": 30.0 },
+        "ui": {
+          "type": "Column",
+          "spacing": 10,
+          "children": [
+            { "type": "Text", "text": "Daily Power: {result} kWh", "style": "headline", "bold": true },
+            { "type": "Btn", "label": "Calculate", "action": "calculate", "variant": "filled" }
+          ]
+        },
+        "js": "function calculate() { state.result = state.kw * state.hours; bridge.commit(JSON.stringify(state)); }"
+      }
+    """.trimIndent()
+
+    assertTrue(com.cellular.rpc.domain.dynamic.DynamicFeatureWireParser.isAppBuildPayload(samplePayload))
+
+    val parsed = com.cellular.rpc.domain.dynamic.DynamicFeatureWireParser.parsePayload(samplePayload)
+    assertNotNull(parsed)
+    assertEquals("solar_calc", parsed!!.featureId)
+    assertEquals("Solar Estimator", parsed.title)
+    assertEquals("1.2.0", parsed.version)
+
+    // Test AST Parsing
+    val astNode = com.cellular.rpc.domain.dynamic.AstParser.parse(parsed.uiAstJson)
+    assertTrue(astNode is com.cellular.rpc.domain.dynamic.AstNode.Container)
+    val container = astNode as com.cellular.rpc.domain.dynamic.AstNode.Container
+    assertEquals("Column", container.type)
+    assertEquals(2, container.children.size)
+
+    // Test Template String Resolution
+    val textNode = container.children[0] as com.cellular.rpc.domain.dynamic.AstNode.TextNode
+    val resolved = com.cellular.rpc.domain.dynamic.AstParser.resolveTemplate(textNode.text, parsed.currentStateJson)
+    assertEquals("Daily Power: 30 kWh", resolved)
+
+    // Test Sandboxed Execution
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val sandbox = com.cellular.rpc.domain.dynamic.DynamicScriptSandbox.getInstance(context)
+    val result = sandbox.executeAction(
+      featureId = parsed.featureId,
+      actionName = "calculate",
+      currentStateJson = """{"kw": 8.0, "hours": 5.0, "result": 0}""",
+      userScript = parsed.jsLogic
+    )
+
+    assertTrue(result.isSuccess)
+    val finalStateJson = result.getOrThrow()
+    assertTrue(finalStateJson.contains("\"result\":40") || finalStateJson.contains("\"result\": 40") || finalStateJson.contains("40"))
+  }
+
+  @Test
+  fun testCustomAppWidgetProviderConfigurationAndStateResolution() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val testWidgetId = 42
+
+    // Configure the custom widget to bind to our solar estimator feature
+    com.cellular.rpc.widget.CellularCustomAppWidgetProvider.setCustomWidgetConfig(
+      context = context,
+      appWidgetId = testWidgetId,
+      featureId = "solar_estimator",
+      title = "Solar Array Estimator",
+      metricKey = "result"
+    )
+
+    assertEquals("solar_estimator", com.cellular.rpc.widget.CellularCustomAppWidgetProvider.getCustomFeatureId(context, testWidgetId))
+    assertEquals("Solar Array Estimator", com.cellular.rpc.widget.CellularCustomAppWidgetProvider.getCustomTitle(context, testWidgetId))
+    assertEquals("result", com.cellular.rpc.widget.CellularCustomAppWidgetProvider.getCustomMetricKey(context, testWidgetId))
+
+    // Set transparency and verify
+    com.cellular.rpc.widget.WidgetPreferences.setTransparency(context, testWidgetId, 75)
+    assertEquals(75, com.cellular.rpc.widget.WidgetPreferences.getTransparency(context, testWidgetId))
+  }
 }
+
 
 

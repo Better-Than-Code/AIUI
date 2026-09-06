@@ -37,6 +37,7 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
     private val widgetCacheDao = db.widgetCacheDao()
     private val packetLogDao = db.packetLogDao()
     private val chatMessageDao = db.chatMessageDao()
+    private val dynamicFeatureDao = db.dynamicFeatureDao()
     val chatRepository = com.cellular.rpc.data.repository.ChatRepository(chatMessageDao)
 
     private val queueEngine: CarrierSafeQueueEngine
@@ -147,6 +148,33 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    // Dynamic Features (Offline Extension Engine)
+    val dynamicFeatures: StateFlow<List<com.cellular.rpc.data.local.DynamicFeatureEntity>> = dynamicFeatureDao.getAllFeaturesFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _selectedFeature = MutableStateFlow<com.cellular.rpc.data.local.DynamicFeatureEntity?>(null)
+    val selectedFeature: StateFlow<com.cellular.rpc.data.local.DynamicFeatureEntity?> = _selectedFeature.asStateFlow()
+
+    fun selectDynamicFeature(feature: com.cellular.rpc.data.local.DynamicFeatureEntity?) {
+        _selectedFeature.value = feature
+    }
+
+    fun deleteDynamicFeature(featureId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            dynamicFeatureDao.deleteFeature(featureId)
+            if (_selectedFeature.value?.featureId == featureId) {
+                _selectedFeature.value = null
+            }
+        }
+    }
+
+    fun deploySampleFeature(sampleType: String = "solar") {
+        viewModelScope.launch(Dispatchers.IO) {
+            val app = getApplication<Application>()
+            com.cellular.rpc.domain.dynamic.DynamicFeatureManager.seedSampleFeaturesIfEmpty(app)
+        }
+    }
+
     fun refreshServices() {
         val app = getApplication<Application>()
         val active = com.cellular.rpc.domain.service.CellularServiceManager.getActiveService(app)
@@ -219,6 +247,7 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
 
     init {
         com.cellular.rpc.domain.service.CellularServiceManager.initialize(application)
+        com.cellular.rpc.domain.dynamic.DynamicFeatureManager.seedSampleFeaturesIfEmpty(application)
         refreshServices()
 
         // Initialize default welcome conversation if repository is empty

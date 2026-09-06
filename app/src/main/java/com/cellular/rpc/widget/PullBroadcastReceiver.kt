@@ -66,7 +66,11 @@ class PullBroadcastReceiver : BroadcastReceiver() {
         val widgetId = intent.getIntExtra(EXTRA_APP_WIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
 
         CoroutineScope(Dispatchers.IO).launch {
-            triggerPull(context.applicationContext, widgetType, widgetId)
+            if (widgetType == "custom") {
+                CellularCustomAppWidgetProvider.updateAllWidgets(context)
+            } else {
+                triggerPull(context.applicationContext, widgetType, widgetId)
+            }
         }
     }
 

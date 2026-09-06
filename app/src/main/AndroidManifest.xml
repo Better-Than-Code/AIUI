@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <uses-sdk tools:overrideLibrary="androidx.javascriptengine" />
+
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -67,6 +69,18 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/appwidget_news_info" />
+        </receiver>
+
+        <!-- Custom AI Micro-App Home Screen Widget Provider -->
+        <receiver
+            android:name="com.cellular.rpc.widget.CellularCustomAppWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/appwidget_custom_info" />
         </receiver>
 
         <!-- Pull Broadcast Receiver (Manual Widget Refresh & Scheduled Alarm) -->

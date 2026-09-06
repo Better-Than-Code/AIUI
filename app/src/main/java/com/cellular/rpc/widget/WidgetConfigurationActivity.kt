@@ -32,7 +32,8 @@ import com.example.ui.theme.MyApplicationTheme
 class WidgetConfigurationActivity : ComponentActivity() {
 
     companion object {
-        const val EXTRA_CONFIG_TYPE = "extra_config_type" // "weather" or "news"
+        const val EXTRA_CONFIG_TYPE = "extra_config_type" // "weather", "news", or "custom"
+        const val EXTRA_WIDGET_TYPE = "extra_widget_type"
     }
 
     private var appWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID
@@ -49,15 +50,17 @@ class WidgetConfigurationActivity : ComponentActivity() {
             AppWidgetManager.INVALID_APPWIDGET_ID
         )
 
-        val configTypeExtra = intent.getStringExtra(EXTRA_CONFIG_TYPE) ?: "weather"
+        val configTypeExtra = intent.getStringExtra(EXTRA_CONFIG_TYPE)
+            ?: intent.getStringExtra(EXTRA_WIDGET_TYPE)
+            ?: "weather"
 
         setContent {
             MyApplicationTheme {
                 WidgetConfigScreen(
                     appWidgetId = appWidgetId,
                     initialType = configTypeExtra,
-                    onSave = { type, city, zip, unit, topic, transparency, intervalMin ->
-                        saveAndFinish(type, city, zip, unit, topic, transparency, intervalMin)
+                    onSave = { type, city, zip, unit, topic, featureId, title, metricKey, transparency, intervalMin ->
+                        saveAndFinish(type, city, zip, unit, topic, featureId, title, metricKey, transparency, intervalMin)
                     },
                     onCancel = { finish() }
                 )
@@ -71,16 +74,19 @@ class WidgetConfigurationActivity : ComponentActivity() {
         zip: String,
         unit: String,
         topic: String,
+        featureId: String,
+        customTitle: String,
+        metricKey: String,
         transparency: Int,
         intervalMin: Int
     ) {
         val targetId = if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) appWidgetId else 0
 
         // 1. Save per-widget preferences
-        if (type == "weather") {
-            WidgetPreferences.setWeatherConfig(this, targetId, city, zip, unit)
-        } else {
-            WidgetPreferences.setNewsConfig(this, targetId, topic)
+        when (type) {
+            "weather" -> WidgetPreferences.setWeatherConfig(this, targetId, city, zip, unit)
+            "news" -> WidgetPreferences.setNewsConfig(this, targetId, topic)
+            "custom" -> CellularCustomAppWidgetProvider.setCustomWidgetConfig(this, targetId, featureId, customTitle, metricKey)
         }
         WidgetPreferences.setTransparency(this, targetId, transparency)
         WidgetPreferences.setIntervalMinutes(this, targetId, intervalMin)
@@ -89,10 +95,10 @@ class WidgetConfigurationActivity : ComponentActivity() {
         PullBroadcastReceiver.schedulePeriodicPull(this, intervalMin)
 
         // 3. Request immediate AppWidget update
-        if (type == "weather") {
-            CellularWeatherAppWidgetProvider.updateAllWidgets(this)
-        } else {
-            CellularNewsAppWidgetProvider.updateAllWidgets(this)
+        when (type) {
+            "weather" -> CellularWeatherAppWidgetProvider.updateAllWidgets(this)
+            "news" -> CellularNewsAppWidgetProvider.updateAllWidgets(this)
+            "custom" -> CellularCustomAppWidgetProvider.updateAllWidgets(this)
         }
 
         // 4. Return RESULT_OK with appWidgetId
@@ -109,7 +115,7 @@ class WidgetConfigurationActivity : ComponentActivity() {
 fun WidgetConfigScreen(
     appWidgetId: Int,
     initialType: String,
-    onSave: (type: String, city: String, zip: String, unit: String, topic: String, transparency: Int, interval: Int) -> Unit,
+    onSave: (type: String, city: String, zip: String, unit: String, topic: String, featureId: String, title: String, metricKey: String, transparency: Int, interval: Int) -> Unit,
     onCancel: () -> Unit
 ) {
     var selectedType by remember { mutableStateOf(initialType) }
@@ -117,6 +123,9 @@ fun WidgetConfigScreen(
     var zip by remember { mutableStateOf("94102") }
     var unit by remember { mutableStateOf("F") }
     var topic by remember { mutableStateOf("TECH & WORLD") }
+    var customFeatureId by remember { mutableStateOf("solar_estimator") }
+    var customTitle by remember { mutableStateOf("Solar Array Estimator") }
+    var customMetricKey by remember { mutableStateOf("result") }
     var transparencyPercent by remember { mutableStateOf(85f) }
     var selectedInterval by remember { mutableStateOf(60) } // Default 1 hour
 
@@ -147,6 +156,9 @@ fun WidgetConfigScreen(
                                 zip,
                                 unit,
                                 topic,
+                                customFeatureId,
+                                customTitle,
+                                customMetricKey,
                                 transparencyPercent.toInt(),
                                 selectedInterval
                             )
@@ -178,7 +190,11 @@ fun WidgetConfigScreen(
                     .background(MaterialTheme.colorScheme.surfaceVariant)
                     .padding(4.dp)
             ) {
-                listOf("weather" to "Weather Widget", "news" to "News Digest").forEach { (typeKey, label) ->
+                listOf(
+                    "weather" to "Weather",
+                    "news" to "News",
+                    "custom" to "Custom AI"
+                ).forEach { (typeKey, label) ->
                     val isSelected = selectedType == typeKey
                     Surface(
                         modifier = Modifier
@@ -190,7 +206,7 @@ fun WidgetConfigScreen(
                         Text(
                             text = label,
                             modifier = Modifier.padding(vertical = 10.dp),
-                            style = MaterialTheme.typography.labelLarge,
+                            style = MaterialTheme.typography.labelMedium,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                             color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -255,7 +271,7 @@ fun WidgetConfigScreen(
                                         }
                                     }
                                 }
-                            } else {
+                            } else if (selectedType == "news") {
                                 Column {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -267,6 +283,19 @@ fun WidgetConfigScreen(
                                     Spacer(modifier = Modifier.height(6.dp))
                                     Text("Cellular RPC 2026 Engine Live", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1)
                                     Text("Zero-data operating layer syncing via Pally SMS.", style = MaterialTheme.typography.bodySmall, color = Color(0xFFB0BEC5), maxLines = 1)
+                                }
+                            } else {
+                                Column {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(customTitle, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color(0xFF00E5FF))
+                                        Text("AI EXTENSION", style = MaterialTheme.typography.labelSmall, color = Color(0xFF8FA3B8))
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text("⚡ 30 kWh / Day", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
+                                    Text("Linked to dynamic feature [$customFeatureId]", style = MaterialTheme.typography.bodySmall, color = Color(0xFFB0BEC5))
                                 }
                             }
                         }
@@ -344,7 +373,7 @@ fun WidgetConfigScreen(
                         }
                     }
                 }
-            } else {
+            } else if (selectedType == "news") {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                     shape = RoundedCornerShape(16.dp)
@@ -359,6 +388,66 @@ fun WidgetConfigScreen(
                                 selected = topic == t,
                                 onClick = { topic = t },
                                 label = { Text(t) }
+                            )
+                        }
+                    }
+                }
+            } else {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Custom AI Extension Binding", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Text(
+                            "Link this home screen widget to any dynamic micro-app or form received over cellular:",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        OutlinedTextField(
+                            value = customTitle,
+                            onValueChange = { customTitle = it },
+                            label = { Text("Widget Display Title") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+
+                        OutlinedTextField(
+                            value = customFeatureId,
+                            onValueChange = { customFeatureId = it },
+                            label = { Text("Dynamic Feature ID (e.g. solar_estimator)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+
+                        OutlinedTextField(
+                            value = customMetricKey,
+                            onValueChange = { customMetricKey = it },
+                            label = { Text("Primary State Key to Display (e.g. result)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+
+                        Text("Quick Presets:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = customFeatureId == "solar_estimator",
+                                onClick = {
+                                    customFeatureId = "solar_estimator"
+                                    customTitle = "Solar Array Estimator"
+                                    customMetricKey = "result"
+                                },
+                                label = { Text("Solar Estimator", fontSize = 11.sp) }
+                            )
+                            FilterChip(
+                                selected = customFeatureId == "inventory_counter",
+                                onClick = {
+                                    customFeatureId = "inventory_counter"
+                                    customTitle = "Field Inventory Counter"
+                                    customMetricKey = "count"
+                                },
+                                label = { Text("Inventory Count", fontSize = 11.sp) }
                             )
                         }
                     }

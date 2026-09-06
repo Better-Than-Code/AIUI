@@ -101,6 +101,8 @@ fun CellularRpcScreen(viewModel: CellularRpcViewModel) {
     val isLoopbackSimulation by viewModel.isLoopbackSimulation.collectAsStateWithLifecycle()
     val isMcpSynced by viewModel.isMcpSynced.collectAsStateWithLifecycle()
     val mcpCatalogHash by viewModel.mcpCatalogHash.collectAsStateWithLifecycle()
+    val dynamicFeatures by viewModel.dynamicFeatures.collectAsStateWithLifecycle()
+    val selectedFeature by viewModel.selectedFeature.collectAsStateWithLifecycle()
 
     val requiredPermissions = remember {
         val list = mutableListOf(
@@ -395,6 +397,13 @@ fun CellularRpcScreen(viewModel: CellularRpcViewModel) {
                         modifier = Modifier.testTag("nav_widgets")
                     )
                     NavigationBarItem(
+                        selected = selectedTab == 5,
+                        onClick = { selectedTab = 5 },
+                        icon = { Icon(Icons.Default.Extension, contentDescription = "Extensions") },
+                        label = { Text("Apps") },
+                        modifier = Modifier.testTag("nav_dynamic_apps")
+                    )
+                    NavigationBarItem(
                         selected = selectedTab == 2,
                         onClick = { selectedTab = 2 },
                         icon = { Icon(Icons.Default.Dns, contentDescription = "Inspector") },
@@ -462,6 +471,13 @@ fun CellularRpcScreen(viewModel: CellularRpcViewModel) {
                 4 -> OutboxTab(
                     outboxItems = outboxItems,
                     onClearOutbox = { viewModel.clearOutbox() }
+                )
+                5 -> com.cellular.rpc.ui.dynamic.DynamicFeaturesTab(
+                    dynamicFeatures = dynamicFeatures,
+                    selectedFeature = selectedFeature,
+                    onSelectFeature = { viewModel.selectDynamicFeature(it) },
+                    onDeleteFeature = { viewModel.deleteDynamicFeature(it) },
+                    onDeploySample = { viewModel.deploySampleFeature(it) }
                 )
             }
         }

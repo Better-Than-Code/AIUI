@@ -10,9 +10,10 @@ import androidx.room.RoomDatabase
         OutboxEntity::class,
         WidgetCacheEntity::class,
         PacketLogEntity::class,
-        ChatMessageEntity::class
+        ChatMessageEntity::class,
+        DynamicFeatureEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -21,6 +22,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun widgetCacheDao(): WidgetCacheDao
     abstract fun packetLogDao(): PacketLogDao
     abstract fun chatMessageDao(): ChatMessageDao
+    abstract fun dynamicFeatureDao(): DynamicFeatureDao
 
     companion object {
         @Volatile

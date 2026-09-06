@@ -2,4 +2,5 @@
     <string name="app_name">Cellular RPC</string>
     <string name="widget_weather_desc">Pally AI live cellular weather widget with 304 ETag caching.</string>
     <string name="widget_news_desc">Pally AI offline news digest widget updated over cellular SMS.</string>
+    <string name="widget_custom_desc">Custom AI micro-app widget linked dynamically to offline extensions.</string>
 </resources>

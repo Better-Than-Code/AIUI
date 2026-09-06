@@ -173,6 +173,11 @@ object CellularMessageDispatcher {
             else -> message.rawText
         }
 
+        // 2b. Intercept Dynamic Feature Deployment payloads [APP:BUILD:<feature_id>]
+        if (com.cellular.rpc.domain.dynamic.DynamicFeatureManager.handleInboundPayload(context, payloadStr, message.senderAddress)) {
+            Log.i(TAG, "Processed dynamic feature deployment payload over cellular transport.")
+        }
+
         // 3. Parse into standardized CellularResponse
         val response = CellularResponse.fromWire(payloadStr)
         Log.d(TAG, "Parsed response: status=${response.status}, schema=${response.schemaId}, etag=${response.etag}")

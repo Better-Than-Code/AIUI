@@ -52,9 +52,13 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cellular.rpc.data.local.PacketLogEntity
 import com.cellular.rpc.data.local.WidgetCacheEntity
+import com.cellular.rpc.domain.handshake.CellularHandshakeEngine
 import com.cellular.rpc.domain.service.CellularServiceProfile
 import com.cellular.rpc.domain.service.ServiceProtocolMode
 import com.cellular.rpc.engine.*
+import com.cellular.rpc.ui.handshake.AwaitingTransactionsList
+import com.cellular.rpc.ui.handshake.HandshakeSessionCard
+import com.cellular.rpc.ui.handshake.UserInterventionDialog
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 
@@ -101,6 +105,9 @@ fun CellularRpcScreen(viewModel: CellularRpcViewModel) {
     val isLoopbackSimulation by viewModel.isLoopbackSimulation.collectAsStateWithLifecycle()
     val isMcpSynced by viewModel.isMcpSynced.collectAsStateWithLifecycle()
     val mcpCatalogHash by viewModel.mcpCatalogHash.collectAsStateWithLifecycle()
+    val handshakeStatus by viewModel.handshakeStatus.collectAsStateWithLifecycle()
+    val pendingTransactions by viewModel.pendingTransactions.collectAsStateWithLifecycle()
+    val activeIntervention by viewModel.activeIntervention.collectAsStateWithLifecycle()
     val dynamicFeatures by viewModel.dynamicFeatures.collectAsStateWithLifecycle()
     val selectedFeature by viewModel.selectedFeature.collectAsStateWithLifecycle()
 
@@ -461,7 +468,11 @@ fun CellularRpcScreen(viewModel: CellularRpcViewModel) {
                     onClearLogs = { viewModel.clearLogs() },
                     isMcpSynced = isMcpSynced,
                     mcpCatalogHash = mcpCatalogHash,
-                    onPushMcpGenesis = { viewModel.pushGenesisMcpManifest() }
+                    onPushMcpGenesis = { viewModel.pushGenesisMcpManifest() },
+                    handshakeStatus = handshakeStatus,
+                    pendingTransactions = pendingTransactions,
+                    onProbeHandshake = { viewModel.probeHandshake() },
+                    onResolveIntervention = { reqId, action -> viewModel.resolveIntervention(reqId, action) }
                 )
                 3 -> E2ETestRunnerTab(
                     testResults = testResults,
@@ -481,6 +492,16 @@ fun CellularRpcScreen(viewModel: CellularRpcViewModel) {
                 )
             }
         }
+    }
+
+    // High-Priority User Intervention Dialog for Awaiting/Stalled Transactions
+    activeIntervention?.let { interventionTx ->
+        UserInterventionDialog(
+            transaction = interventionTx,
+            onResolve = { action ->
+                viewModel.resolveIntervention(interventionTx.reqId, action)
+            }
+        )
     }
 
     // Settings BottomSheet Dialog
@@ -2677,7 +2698,11 @@ fun PacketInspectorTab(
     onClearLogs: () -> Unit,
     isMcpSynced: Boolean = false,
     mcpCatalogHash: String = "",
-    onPushMcpGenesis: () -> Unit = {}
+    onPushMcpGenesis: () -> Unit = {},
+    handshakeStatus: com.cellular.rpc.domain.handshake.HandshakeStatus = com.cellular.rpc.domain.handshake.HandshakeStatus.UNINITIALIZED,
+    pendingTransactions: List<com.cellular.rpc.domain.handshake.PendingTransaction> = emptyList(),
+    onProbeHandshake: () -> Unit = {},
+    onResolveIntervention: (String, String) -> Unit = { _, _ -> }
 ) {
     var showMcpManifestDialog by remember { mutableStateOf(false) }
     val genesisManifestJson = remember { com.cellular.rpc.domain.mcp.CellularMcpRegistry.buildGenesisManifestJson() }
@@ -2712,6 +2737,24 @@ fun PacketInspectorTab(
                 Icon(Icons.Default.DeleteSweep, contentDescription = "Clear Logs")
             }
         }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Handshake & State Router Card
+        HandshakeSessionCard(
+            handshakeStatus = handshakeStatus,
+            catalogHash = mcpCatalogHash,
+            onProbeHandshake = onProbeHandshake,
+            onPushGenesis = onPushMcpGenesis
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Awaiting AI Responses List
+        AwaitingTransactionsList(
+            pendingTransactions = pendingTransactions,
+            onResolveIntervention = onResolveIntervention
+        )
 
         Spacer(modifier = Modifier.height(10.dp))
 

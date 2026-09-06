@@ -178,9 +178,20 @@ object CellularMessageDispatcher {
             Log.i(TAG, "Processed dynamic feature deployment payload over cellular transport.")
         }
 
+        // 2c. Inspect Handshake signals (READY, PROBE_SCHEMA)
+        if (com.cellular.rpc.domain.handshake.CellularHandshakeEngine.inspectInboundHandshake(context, payloadStr)) {
+            Log.i(TAG, "Processed Handshake signal successfully.")
+        }
+
         // 3. Parse into standardized CellularResponse
         val response = CellularResponse.fromWire(payloadStr)
         Log.d(TAG, "Parsed response: status=${response.status}, schema=${response.schemaId}, etag=${response.etag}")
+
+        // 3b. Correlate with pending request in Handshake Engine
+        val correlatedTx = com.cellular.rpc.domain.handshake.CellularHandshakeEngine.correlateResponse(response)
+        if (correlatedTx != null) {
+            Log.i(TAG, "Matched inbound response to pending transaction [${correlatedTx.reqId}] on channel ${correlatedTx.targetChannel}")
+        }
 
         // 4. Handle 304 Not Modified across relevant providers
         if (response.isNotModified) {

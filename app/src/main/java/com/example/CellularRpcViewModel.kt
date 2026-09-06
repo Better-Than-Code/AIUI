@@ -107,6 +107,63 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
     )
     val mcpLastSyncTimestamp: StateFlow<Long> = _mcpLastSyncTimestamp.asStateFlow()
 
+    // Cellular Handshake & State Router
+    val handshakeStatus: StateFlow<com.cellular.rpc.domain.handshake.HandshakeStatus> =
+        com.cellular.rpc.domain.handshake.CellularHandshakeEngine.handshakeStatus
+
+    val pendingTransactions: StateFlow<List<com.cellular.rpc.domain.handshake.PendingTransaction>> =
+        com.cellular.rpc.domain.handshake.CellularHandshakeEngine.pendingList
+
+    val activeIntervention: StateFlow<com.cellular.rpc.domain.handshake.PendingTransaction?> =
+        com.cellular.rpc.domain.handshake.CellularHandshakeEngine.activeIntervention
+
+    /**
+     * Proactively probes the remote AI Gateway with a lightweight Zero-Bandwidth
+     * handshake string (e.g. HELLO:<schema_hash>) to verify schemas in AI context.
+     */
+    fun probeHandshake() {
+        val app = getApplication<Application>()
+        val probePayload = com.cellular.rpc.domain.handshake.CellularHandshakeEngine.buildProbePayload()
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val userMsg = com.cellular.rpc.engine.ChatMessage(
+                sender = com.cellular.rpc.engine.MessageSender.USER,
+                text = "⚡ [Handshake Probe] Sent '$probePayload' to AI Gateway.",
+                byteSize = probePayload.toByteArray(Charsets.UTF_8).size,
+                pduCount = 1
+            )
+            chatRepository.saveMessage(userMsg)
+
+            // Register in awaiting transactions
+            com.cellular.rpc.domain.handshake.CellularHandshakeEngine.registerPending(
+                reqId = "handshake_probe",
+                channel = com.cellular.rpc.domain.handshake.TargetChannel.SYSTEM,
+                featureId = "handshake",
+                displayPrompt = "Handshake Probe ($probePayload)"
+            )
+
+            queueEngine.enqueuePayload(
+                sessionId = 0,
+                pktType = Frame.PKT_RPC_REQ,
+                payload = probePayload.toByteArray(Charsets.UTF_8)
+            )
+        }
+    }
+
+    /**
+     * Resolves an intervention prompt triggered by an awaiting request timeout or desync.
+     */
+    fun resolveIntervention(reqId: String, action: String) {
+        val app = getApplication<Application>()
+        com.cellular.rpc.domain.handshake.CellularHandshakeEngine.resolveIntervention(reqId, action)
+        if (action.uppercase() == "RETRY") {
+            // Re-transmit Genesis or Probe if applicable
+            if (reqId == "handshake_probe") {
+                probeHandshake()
+            }
+        }
+    }
+
     fun refreshMcpState() {
         val app = getApplication<Application>()
         val currentHash = com.cellular.rpc.domain.mcp.CellularMcpRegistry.computeCatalogHash()

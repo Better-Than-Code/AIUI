@@ -8,6 +8,7 @@ import android.util.Log
 import com.cellular.rpc.data.local.AppDatabase
 import com.cellular.rpc.data.local.WidgetCacheEntity
 import com.cellular.rpc.domain.protocol.Frame
+import com.cellular.rpc.domain.protocol.FrameTokenizer
 import com.cellular.rpc.engine.WidgetData
 import com.cellular.rpc.transport.queue.CarrierSafeQueueEngine
 import com.cellular.rpc.transport.handler.CellularMessageDispatcher
@@ -114,24 +115,42 @@ class PallySmsReceiver : BroadcastReceiver() {
         val userData = sms.userData
         val binaryFrame = userData?.let { Frame.fromBinary(it) }
 
-        // 2. Try ASCII wire parsing from text
-        val frame = binaryFrame ?: Frame.fromAsciiWire(textBody)
-
-        val transportType = if (binaryFrame != null) {
-            CellularTransportType.SMS_DATA_PORT_8901
-        } else {
-            CellularTransportType.SMS_TEXT_WIRE
+        if (binaryFrame != null) {
+            val inboundMessage = InboundCellularMessage(
+                transportType = CellularTransportType.SMS_DATA_PORT_8901,
+                senderAddress = sender,
+                rawText = textBody,
+                rawBytes = userData,
+                frame = binaryFrame
+            )
+            CellularMessageDispatcher.dispatchInbound(context, inboundMessage)
+            return
         }
 
-        val inboundMessage = InboundCellularMessage(
-            transportType = transportType,
-            senderAddress = sender,
-            rawText = textBody,
-            rawBytes = userData,
-            frame = frame
-        )
-
-        // Delegate to centralized standardized dispatcher
-        CellularMessageDispatcher.dispatchInbound(context, inboundMessage)
+        // 2. Tokenize stream for batched/concatenated ASCII frames
+        val tokenizeResult = FrameTokenizer.tokenize(textBody)
+        if (tokenizeResult.frames.isNotEmpty()) {
+            for (frame in tokenizeResult.frames) {
+                val inboundMessage = InboundCellularMessage(
+                    transportType = CellularTransportType.SMS_TEXT_WIRE,
+                    senderAddress = sender,
+                    rawText = textBody,
+                    rawBytes = userData,
+                    frame = frame
+                )
+                CellularMessageDispatcher.dispatchInbound(context, inboundMessage)
+            }
+        } else {
+            // Fallback unencapsulated message
+            val fallbackFrame = Frame.fromAsciiWire(textBody)
+            val inboundMessage = InboundCellularMessage(
+                transportType = CellularTransportType.SMS_TEXT_WIRE,
+                senderAddress = sender,
+                rawText = textBody,
+                rawBytes = userData,
+                frame = fallbackFrame
+            )
+            CellularMessageDispatcher.dispatchInbound(context, inboundMessage)
+        }
     }
 }

@@ -81,10 +81,11 @@
         <!-- Pally Single-Number Inbound Telephony Receiver -->
         <receiver
             android:name="com.cellular.rpc.transport.receiver.PallySmsReceiver"
-            android:exported="true"
-            android:permission="android.permission.BROADCAST_SMS">
+            android:exported="true">
             <intent-filter android:priority="1000">
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+            <intent-filter android:priority="1000">
                 <action android:name="android.intent.action.DATA_SMS_RECEIVED" />
                 <data android:scheme="sms" />
                 <data android:port="8901" />

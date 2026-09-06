@@ -1,11 +1,17 @@
 package com.example
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -46,6 +52,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cellular.rpc.data.local.PacketLogEntity
 import com.cellular.rpc.data.local.WidgetCacheEntity
+import com.cellular.rpc.domain.service.CellularServiceProfile
+import com.cellular.rpc.domain.service.ServiceProtocolMode
 import com.cellular.rpc.engine.*
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
@@ -88,7 +96,41 @@ fun CellularRpcScreen(viewModel: CellularRpcViewModel) {
     val testResults by viewModel.testResults.collectAsStateWithLifecycle()
     val isTesting by viewModel.isTesting.collectAsStateWithLifecycle()
     val pallyPhoneNumber by viewModel.pallyPhoneNumber.collectAsStateWithLifecycle()
+    val activeService by viewModel.activeServiceProfile.collectAsStateWithLifecycle()
+    val availableServices by viewModel.availableServices.collectAsStateWithLifecycle()
     val isLoopbackSimulation by viewModel.isLoopbackSimulation.collectAsStateWithLifecycle()
+
+    val requiredPermissions = remember {
+        val list = mutableListOf(
+            Manifest.permission.SEND_SMS,
+            Manifest.permission.RECEIVE_SMS,
+            Manifest.permission.RECEIVE_WAP_PUSH
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            list.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        list.toTypedArray()
+    }
+
+    var hasSmsPermissions by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        hasSmsPermissions = results[Manifest.permission.SEND_SMS] == true &&
+                            results[Manifest.permission.RECEIVE_SMS] == true
+    }
+
+    LaunchedEffect(Unit) {
+        if (!hasSmsPermissions) {
+            permissionLauncher.launch(requiredPermissions)
+        }
+    }
 
     Scaffold(
         modifier = Modifier
@@ -112,48 +154,56 @@ fun CellularRpcScreen(viewModel: CellularRpcViewModel) {
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { showSettingsSheet = true }
                         ) {
                             Box(
                                 modifier = Modifier
                                     .size(38.dp)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                    .background(Color(activeService.colorHex).copy(alpha = 0.2f)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.CellTower,
-                                    contentDescription = "Pally AI Cellular Gateway",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(24.dp)
+                                    imageVector = when (activeService.id) {
+                                        "preset_twilio_ai" -> Icons.Default.CloudQueue
+                                        "preset_local_gsm" -> Icons.Default.Storage
+                                        else -> Icons.Default.CellTower
+                                    },
+                                    contentDescription = activeService.name,
+                                    tint = Color(activeService.colorHex),
+                                    modifier = Modifier.size(22.dp)
                                 )
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = "Pally AI",
+                                        text = activeService.name,
                                         style = MaterialTheme.typography.titleMedium.copy(
                                             fontWeight = FontWeight.Bold,
                                             letterSpacing = 0.3.sp
-                                        )
+                                        ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Surface(
-                                        color = SignalGreen.copy(alpha = 0.15f),
+                                        color = Color(activeService.colorHex).copy(alpha = 0.15f),
                                         shape = RoundedCornerShape(4.dp)
                                     ) {
                                         Text(
-                                            text = "CELLULAR RPC",
+                                            text = if (activeService.id == "pally_default") "PALLY" else "AI SMS",
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = SignalGreen,
+                                            color = Color(activeService.colorHex),
                                             modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                         )
                                     }
                                 }
                                 Text(
-                                    text = "$pallyPhoneNumber • Port 8901",
+                                    text = "${activeService.phoneNumber} • Tap to configure",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -215,6 +265,92 @@ fun CellularRpcScreen(viewModel: CellularRpcViewModel) {
                                 },
                                 modifier = Modifier.testTag("service_toggle_button")
                             )
+                        }
+                    }
+
+                    // Mode Toggle Pill (Simulation vs Live Carrier SMS)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (isLoopbackSimulation) Color(0xFF332710) else Color(0xFF0F3622),
+                            border = BorderStroke(1.dp, if (isLoopbackSimulation) SignalAmber.copy(alpha = 0.6f) else SignalGreen.copy(alpha = 0.6f)),
+                            modifier = Modifier
+                                .clickable { viewModel.toggleLoopbackSimulation() }
+                                .testTag("mode_toggle_pill")
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isLoopbackSimulation) SignalAmber else SignalGreen)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (isLoopbackSimulation) "⚡ Simulation Mode (Tap for Live SMS)" else "📡 Live SMS Mode (${activeService.phoneNumber})",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isLoopbackSimulation) SignalAmber else SignalGreen
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = if (isDiagnosticsEnabled) "Hide Tabs" else "Dev Tabs",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .clickable { isDiagnosticsEnabled = !isDiagnosticsEnabled }
+                                .padding(4.dp)
+                        )
+                    }
+
+                    // SMS Permission Warning if in live mode but permissions missing
+                    if (!isLoopbackSimulation && !hasSmsPermissions) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.85f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "SMS Permission Needed",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                    Text(
+                                        text = "Grant SMS access to send & receive messages via carrier radio.",
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                                    )
+                                }
+                                Button(
+                                    onClick = { permissionLauncher.launch(requiredPermissions) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(32.dp)
+                                ) {
+                                    Text("Grant", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
                         }
                     }
 
@@ -291,6 +427,10 @@ fun CellularRpcScreen(viewModel: CellularRpcViewModel) {
                 0 -> CellularChatTab(
                     messages = chatMessages,
                     pallyPhone = pallyPhoneNumber,
+                    isLoopbackSimulation = isLoopbackSimulation,
+                    hasSmsPermissions = hasSmsPermissions,
+                    onRequestPermissions = { permissionLauncher.launch(requiredPermissions) },
+                    onToggleLoopback = { viewModel.toggleLoopbackSimulation() },
                     onSendMessage = { viewModel.sendChatMessage(it) },
                     onVote = { pollId, opt -> viewModel.castVote(pollId, opt) },
                     onConfirmTransfer = { viewModel.confirmTransfer(it) },
@@ -324,9 +464,14 @@ fun CellularRpcScreen(viewModel: CellularRpcViewModel) {
     if (showSettingsSheet) {
         PallySettingsBottomSheet(
             currentPhoneNumber = pallyPhoneNumber,
+            activeService = activeService,
+            availableServices = availableServices,
             isLoopback = isLoopbackSimulation,
             isDiagnostics = isDiagnosticsEnabled,
+            onSelectService = { viewModel.selectService(it) },
             onUpdatePhoneNumber = { viewModel.updatePallyPhoneNumber(it) },
+            onSaveCustomService = { viewModel.saveCustomService(it) },
+            onDeleteCustomService = { viewModel.deleteCustomService(it) },
             onToggleLoopback = { viewModel.toggleLoopbackSimulation() },
             onToggleDiagnostics = { isDiagnosticsEnabled = !isDiagnosticsEnabled },
             onOpenWidgetConfig = {
@@ -345,6 +490,10 @@ fun CellularRpcScreen(viewModel: CellularRpcViewModel) {
 fun CellularChatTab(
     messages: List<ChatMessage>,
     pallyPhone: String,
+    isLoopbackSimulation: Boolean = false,
+    hasSmsPermissions: Boolean = true,
+    onRequestPermissions: () -> Unit = {},
+    onToggleLoopback: () -> Unit = {},
     onSendMessage: (String) -> Unit,
     onVote: (String, Int) -> Unit,
     onConfirmTransfer: (String) -> Unit,
@@ -439,7 +588,7 @@ fun CellularChatTab(
                             .testTag("chat_input_field"),
                         placeholder = {
                             Text(
-                                "Message via Cellular SMS...",
+                                if (isLoopbackSimulation) "Simulated prompt (offline)..." else "SMS prompt to $pallyPhone...",
                                 fontSize = 14.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -460,10 +609,14 @@ fun CellularChatTab(
                     FilledIconButton(
                         onClick = {
                             if (canSend) {
-                                onSendMessage(inputText)
-                                inputText = ""
-                                coroutineScope.launch {
-                                    if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
+                                if (!isLoopbackSimulation && !hasSmsPermissions) {
+                                    onRequestPermissions()
+                                } else {
+                                    onSendMessage(inputText)
+                                    inputText = ""
+                                    coroutineScope.launch {
+                                        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
+                                    }
                                 }
                             }
                         },
@@ -491,13 +644,15 @@ fun CellularChatTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "SMS Port: 8901  •  Dest: $pallyPhone",
+                        text = if (isLoopbackSimulation) "⚡ Emulated Gateway (Zero SMS)" else "📡 Real SMS: $pallyPhone",
                         style = MaterialTheme.typography.labelSmall,
                         fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isLoopbackSimulation) SignalAmber else SignalGreen
                     )
                     Text(
                         text = "$byteCount/140B • $pduCount SMS PDU",
@@ -1458,9 +1613,14 @@ fun SystemStatusChatCard(status: WidgetData.SystemStatus) {
 @Composable
 fun PallySettingsBottomSheet(
     currentPhoneNumber: String,
+    activeService: CellularServiceProfile,
+    availableServices: List<CellularServiceProfile>,
     isLoopback: Boolean,
     isDiagnostics: Boolean,
+    onSelectService: (CellularServiceProfile) -> Unit,
     onUpdatePhoneNumber: (String) -> Unit,
+    onSaveCustomService: (CellularServiceProfile) -> Unit,
+    onDeleteCustomService: (String) -> Unit,
     onToggleLoopback: () -> Unit,
     onToggleDiagnostics: () -> Unit,
     onOpenWidgetConfig: () -> Unit,
@@ -1470,198 +1630,466 @@ fun PallySettingsBottomSheet(
     var selectedInterval by remember { mutableStateOf("15 min") }
     val intervals = listOf("Manual Only", "15 min", "30 min", "1 hour", "3 hours")
 
+    var showAddCustomDialog by remember { mutableStateOf(false) }
+    var newServiceName by remember { mutableStateOf("") }
+    var newServicePhone by remember { mutableStateOf("") }
+    var newServiceProtocol by remember { mutableStateOf(ServiceProtocolMode.PALLY_COMPACT) }
+    var newServicePrefix by remember { mutableStateOf("") }
+
+    LaunchedEffect(activeService.phoneNumber) {
+        phoneNumberInput = activeService.phoneNumber
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
     ) {
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
-                .padding(bottom = 36.dp)
+                .padding(bottom = 36.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Pally AI & Widgets",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close Settings")
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Section 1: Dedicated Pally AI Phone Number
-            Text(
-                text = "Dedicated Carrier Phone Number",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = CyanPrimary
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "All cellular RPC packets and background pull requests are routed to this number.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = phoneNumberInput,
-                    onValueChange = { phoneNumberInput = it },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    placeholder = { Text("+18005550199") },
-                    shape = RoundedCornerShape(12.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Button(
-                    onClick = {
-                        onUpdatePhoneNumber(phoneNumberInput.trim())
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary, contentColor = Color.Black)
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Save")
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Section 2: Pull Sync Interval
-            Text(
-                text = "Cellular Pull Interval (WorkManager / Alarms)",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = CyanPrimary
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Controls how often the app queries Pally via SMS for new weather and news updates.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(intervals) { interval ->
-                    FilterChip(
-                        selected = selectedInterval == interval,
-                        onClick = { selectedInterval = interval },
-                        label = { Text(interval, fontSize = 12.sp) }
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Section 3: Android Home Screen Widgets
-            Text(
-                text = "Home Screen Widgets",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = CyanPrimary
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Default.Widgets,
-                            contentDescription = null,
-                            tint = CyanPrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
+                    Column {
                         Text(
-                            text = "Pally Weather & News Widgets",
+                            text = "AI SMS Services & Routing",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Agnostic gateway configuration for Pally & custom AI SMS endpoints",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close Settings")
+                    }
+                }
+            }
+
+            // Section 1: Active Service & Provider Presets
+            item {
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Configured AI SMS Services",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = CyanPrimary
+                        )
+                        TextButton(
+                            onClick = { showAddCustomDialog = true },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Add Custom", fontSize = 12.sp)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Select a preset service or define a custom AI agent number to route cellular messages.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        availableServices.forEach { service ->
+                            val isSelected = service.id == activeService.id
+                            val serviceColor = Color(service.colorHex)
+
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onSelectService(service)
+                                        phoneNumberInput = service.phoneNumber
+                                    },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isSelected) serviceColor.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant
+                                ),
+                                border = if (isSelected) BorderStroke(1.5.dp, serviceColor) else null
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(serviceColor.copy(alpha = 0.2f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = when (service.id) {
+                                                "preset_twilio_ai" -> Icons.Default.CloudQueue
+                                                "preset_local_gsm" -> Icons.Default.Storage
+                                                else -> Icons.Default.CellTower
+                                            },
+                                            contentDescription = service.name,
+                                            tint = serviceColor,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = service.name,
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            if (isSelected) {
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Surface(
+                                                    color = serviceColor,
+                                                    shape = RoundedCornerShape(4.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "ACTIVE",
+                                                        fontSize = 8.sp,
+                                                        fontWeight = FontWeight.ExtraBold,
+                                                        color = Color.Black,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        Text(
+                                            text = "${service.phoneNumber} • ${service.protocolMode.displayName}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        if (service.description.isNotEmpty()) {
+                                            Text(
+                                                text = service.description,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontSize = 11.sp,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+
+                                    if (!service.isBuiltIn) {
+                                        IconButton(
+                                            onClick = { onDeleteCustomService(service.id) },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Delete,
+                                                contentDescription = "Delete service",
+                                                tint = SignalRed,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    } else if (isSelected) {
+                                        Icon(
+                                            Icons.Default.CheckCircle,
+                                            contentDescription = "Selected",
+                                            tint = serviceColor,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Section 2: Direct / Manual Phone Number Entry
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(
+                            text = "Direct Destination Phone Number",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Enter any phone number to immediately route outgoing cellular RPC packets and SMS queries without presets.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = phoneNumberInput,
+                                onValueChange = { phoneNumberInput = it },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                placeholder = { Text("+18005550199") },
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(
+                                onClick = {
+                                    onUpdatePhoneNumber(phoneNumberInput.trim())
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary, contentColor = Color.Black)
+                            ) {
+                                Text("Apply")
+                            }
+                        }
                     }
-                    Spacer(modifier = Modifier.height(6.dp))
+                }
+            }
+
+            // Section 3: Cellular Pull Interval
+            item {
+                Column {
                     Text(
-                        text = "To place on your home screen: exit to the Android launcher, long-press empty space, select Widgets, and choose Pally Weather or Pally News.",
+                        text = "Cellular Pull Interval (WorkManager / Alarms)",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = CyanPrimary
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Controls how often the app queries the active AI SMS service for weather and news updates.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    OutlinedButton(
-                        onClick = onOpenWidgetConfig,
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(intervals) { interval ->
+                            FilterChip(
+                                selected = selectedInterval == interval,
+                                onClick = { selectedInterval = interval },
+                                label = { Text(interval, fontSize = 12.sp) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Section 4: Home Screen Widgets
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Widgets,
+                                contentDescription = null,
+                                tint = CyanPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Cellular Weather & News Widgets",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "To place on your home screen: exit to the Android launcher, long-press empty space, select Widgets, and choose Weather or News.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        OutlinedButton(
+                            onClick = onOpenWidgetConfig,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Configure Widget Opacity & Topics")
+                        }
+                    }
+                }
+            }
+
+            // Section 5: Simulation & Diagnostics
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp)
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Configure Widget Opacity & Topics")
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Loopback Simulation",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Emulates remote SMS gateway responses locally for zero-carrier testing.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = isLoopback,
+                            onCheckedChange = { onToggleLoopback() }
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Show Protocol Diagnostics",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Reveals telemetry bar, Outbox queue, Packet inspector & E2E tests.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = isDiagnostics,
+                            onCheckedChange = { onToggleDiagnostics() }
+                        )
                     }
                 }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Section 4: Loopback & Protocol Diagnostics
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Loopback Simulation",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = "Emulates remote SMS gateway responses locally for zero-carrier testing.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(
-                    checked = isLoopback,
-                    onCheckedChange = { onToggleLoopback() }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Show Protocol Diagnostics",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = "Reveals telemetry bar, Outbox queue, Packet inspector & E2E tests.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(
-                    checked = isDiagnostics,
-                    onCheckedChange = { onToggleDiagnostics() }
-                )
             }
         }
+    }
+
+    if (showAddCustomDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddCustomDialog = false },
+            title = {
+                Text(
+                    text = "Add Custom AI SMS Service",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedTextField(
+                        value = newServiceName,
+                        onValueChange = { newServiceName = it },
+                        label = { Text("Service Name") },
+                        placeholder = { Text("e.g. My Custom LLM Agent") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = newServicePhone,
+                        onValueChange = { newServicePhone = it },
+                        label = { Text("Phone Number") },
+                        placeholder = { Text("+15551234567") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+
+                    Text(
+                        text = "Protocol Framing Mode",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    ServiceProtocolMode.entries.forEach { mode ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { newServiceProtocol = mode }
+                                .padding(vertical = 4.dp)
+                        ) {
+                            RadioButton(
+                                selected = newServiceProtocol == mode,
+                                onClick = { newServiceProtocol = mode }
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Column {
+                                Text(mode.displayName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                                Text(mode.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                            }
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = newServicePrefix,
+                        onValueChange = { newServicePrefix = it },
+                        label = { Text("Prompt Prefix (Optional)") },
+                        placeholder = { Text("e.g. [AI] or [LLM_INSTRUCT]") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newServicePhone.isNotBlank()) {
+                            val custom = CellularServiceProfile.createCustom(
+                                name = newServiceName.ifBlank { "Custom Service (${newServicePhone.takeLast(10)})" },
+                                phoneNumber = newServicePhone.trim(),
+                                protocolMode = newServiceProtocol,
+                                promptPrefix = newServicePrefix.trim()
+                            )
+                            onSaveCustomService(custom)
+                            onSelectService(custom)
+                            showAddCustomDialog = false
+                            newServiceName = ""
+                            newServicePhone = ""
+                            newServicePrefix = ""
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary, contentColor = Color.Black)
+                ) {
+                    Text("Save & Activate")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddCustomDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 

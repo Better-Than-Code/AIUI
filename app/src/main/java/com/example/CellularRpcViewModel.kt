@@ -75,27 +75,69 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
     val chatMessages: StateFlow<List<com.cellular.rpc.engine.ChatMessage>> = _chatMessages.asStateFlow()
 
     private val _pallyPhoneNumber = MutableStateFlow(
-        com.cellular.rpc.widget.WidgetPreferences.getPallyPhoneNumber(application)
+        com.cellular.rpc.domain.service.CellularServiceManager.getActiveService(application).phoneNumber
     )
     val pallyPhoneNumber: StateFlow<String> = _pallyPhoneNumber.asStateFlow()
+
+    val activeServiceProfile: StateFlow<com.cellular.rpc.domain.service.CellularServiceProfile> =
+        com.cellular.rpc.domain.service.CellularServiceManager.activeServiceFlow
+
+    private val _availableServices = MutableStateFlow<List<com.cellular.rpc.domain.service.CellularServiceProfile>>(emptyList())
+    val availableServices: StateFlow<List<com.cellular.rpc.domain.service.CellularServiceProfile>> = _availableServices.asStateFlow()
 
     private val _isLoopbackSimulation = MutableStateFlow(
         com.cellular.rpc.widget.WidgetPreferences.isLoopbackSimulationEnabled(application)
     )
     val isLoopbackSimulation: StateFlow<Boolean> = _isLoopbackSimulation.asStateFlow()
 
+    fun refreshServices() {
+        val app = getApplication<Application>()
+        val active = com.cellular.rpc.domain.service.CellularServiceManager.getActiveService(app)
+        _availableServices.value = com.cellular.rpc.domain.service.CellularServiceManager.getAvailableServices(app)
+        _pallyPhoneNumber.value = active.phoneNumber
+        queueEngine.destinationAddress = active.phoneNumber
+        queueEngine.loopbackEnabled = _isLoopbackSimulation.value
+    }
+
+    fun selectService(service: com.cellular.rpc.domain.service.CellularServiceProfile) {
+        val app = getApplication<Application>()
+        com.cellular.rpc.domain.service.CellularServiceManager.setActiveService(app, service)
+        refreshServices()
+    }
+
     fun updatePallyPhoneNumber(number: String) {
         val trimmed = number.trim()
         if (trimmed.isNotEmpty()) {
-            com.cellular.rpc.widget.WidgetPreferences.setPallyPhoneNumber(getApplication(), trimmed)
-            _pallyPhoneNumber.value = trimmed
+            val app = getApplication<Application>()
+            com.cellular.rpc.domain.service.CellularServiceManager.setManualPhoneNumber(app, trimmed)
+            // Automatically switch from simulation to live cellular SMS when user enters a real phone number
+            setLoopbackSimulation(false)
+            refreshServices()
         }
+    }
+
+    fun saveCustomService(service: com.cellular.rpc.domain.service.CellularServiceProfile) {
+        val app = getApplication<Application>()
+        com.cellular.rpc.domain.service.CellularServiceManager.saveCustomService(app, service)
+        refreshServices()
+    }
+
+    fun deleteCustomService(serviceId: String) {
+        val app = getApplication<Application>()
+        com.cellular.rpc.domain.service.CellularServiceManager.deleteCustomService(app, serviceId)
+        refreshServices()
     }
 
     fun toggleLoopbackSimulation() {
         val newVal = !_isLoopbackSimulation.value
-        com.cellular.rpc.widget.WidgetPreferences.setLoopbackSimulationEnabled(getApplication(), newVal)
-        _isLoopbackSimulation.value = newVal
+        setLoopbackSimulation(newVal)
+    }
+
+    fun setLoopbackSimulation(enabled: Boolean) {
+        val app = getApplication<Application>()
+        com.cellular.rpc.widget.WidgetPreferences.setLoopbackSimulationEnabled(app, enabled)
+        _isLoopbackSimulation.value = enabled
+        queueEngine.loopbackEnabled = enabled
     }
 
     fun triggerPullSync() {
@@ -113,6 +155,9 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
     private var lastQueriedType: String = "weather"
 
     init {
+        com.cellular.rpc.domain.service.CellularServiceManager.initialize(application)
+        refreshServices()
+
         // Initialize default welcome conversation and rich widgets
         val welcomeWeather = WidgetData.Weather(72, "San Francisco", "Sunny", high = 76, low = 58)
         val initialMessages = listOf(
@@ -300,6 +345,13 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
                 else -> null
             }
 
+            val activeService = com.cellular.rpc.domain.service.CellularServiceManager.getActiveService(getApplication())
+            val promptToSend = if (activeService.promptPrefix.isNotBlank()) {
+                "${activeService.promptPrefix} $trimmed"
+            } else {
+                trimmed
+            }
+
             if (detectedType != null) {
                 lastQueriedType = detectedType
                 val cached = widgetCacheDao.getWidgetByType(detectedType)
@@ -308,19 +360,23 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
                     target = "widget:$detectedType",
                     etag = cached?.contentHash?.takeIf { it.isNotEmpty() && it != "00000000" }
                 )
-                val queryStr = req.toCompactWire()
+                val queryPayload = when (activeService.protocolMode) {
+                    com.cellular.rpc.domain.service.ServiceProtocolMode.PALLY_COMPACT -> req.toCompactWire()
+                    com.cellular.rpc.domain.service.ServiceProtocolMode.JSON_WIRE -> req.toJson()
+                    com.cellular.rpc.domain.service.ServiceProtocolMode.SMS_CONVERSATIONAL -> promptToSend
+                }
 
                 queueEngine.enqueuePayload(
                     sessionId = activeSessionId,
                     pktType = Frame.PKT_RPC_REQ,
-                    payload = queryStr.toByteArray(Charsets.UTF_8)
+                    payload = queryPayload.toByteArray(Charsets.UTF_8)
                 )
             } else {
                 // Conversational request
                 queueEngine.enqueuePayload(
                     sessionId = activeSessionId,
                     pktType = Frame.PKT_RPC_REQ,
-                    payload = trimmed.toByteArray(Charsets.UTF_8)
+                    payload = promptToSend.toByteArray(Charsets.UTF_8)
                 )
             }
         }

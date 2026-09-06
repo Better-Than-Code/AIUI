@@ -40,33 +40,66 @@ class PallySmsReceiver : BroadcastReceiver() {
             return
         }
 
-        val bundle = intent.extras ?: return
-        val pdus = bundle.get("pdus") as? Array<*> ?: return
-        val format = bundle.getString("format")
-        val configuredPallyNumber = normalizePhoneNumber(WidgetPreferences.getPallyPhoneNumber(context))
+        val isRecognizedOrProtocol = { sender: String, text: String ->
+            com.cellular.rpc.domain.service.CellularServiceManager.isSenderRecognized(context, sender) ||
+            text.startsWith("~") || text.contains("[WIDGET:") || text.contains("304") ||
+            text.startsWith("REQ:") || text.startsWith("RES:") || (text.startsWith("{") && text.endsWith("}"))
+        }
 
-        for (pduObj in pdus) {
-            val pduBytes = pduObj as? ByteArray ?: continue
-            val sms = SmsMessage.createFromPdu(pduBytes, format)
-            val sender = normalizePhoneNumber(sms.originatingAddress)
+        // Try standard Android Intents helper which correctly merges multi-part/concatenated SMS
+        val messages = try {
+            android.provider.Telephony.Sms.Intents.getMessagesFromIntent(intent)
+        } catch (e: Exception) {
+            null
+        }
 
-            // Check if sender matches Pally number or if payload contains cellular protocol tags
-            val textBody = sms.messageBody ?: ""
-            val isPallySender = sender.isNotEmpty() && (
-                sender == configuredPallyNumber ||
-                sender.endsWith(configuredPallyNumber.takeLast(10))
-            )
-            val hasProtocolHeader = textBody.startsWith("~") || textBody.contains("[WIDGET:") || textBody.contains("304") || textBody.startsWith("REQ:") || textBody.startsWith("RES:")
+        if (!messages.isNullOrEmpty()) {
+            val sender = normalizePhoneNumber(messages.first().originatingAddress)
+            val combinedText = messages.joinToString("") { it.messageBody ?: "" }
+            val firstSms = messages.first()
 
-            if (isPallySender || hasProtocolHeader) {
-                Log.d(TAG, "Intercepted Pally AI cellular message from $sender: $textBody")
+            if (isRecognizedOrProtocol(sender, combinedText)) {
+                Log.i(TAG, "Intercepted incoming AI SMS from $sender (${combinedText.length} chars): $combinedText")
                 val pendingResult = goAsync()
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
-                        processIncomingPallyMessage(context.applicationContext, sms, textBody, sender)
+                        processIncomingPallyMessage(context.applicationContext, firstSms, combinedText, sender)
                     } finally {
                         pendingResult.finish()
                     }
+                }
+                return
+            }
+        }
+
+        // Fallback PDU parser for data SMS or custom broadcasts
+        val bundle = intent.extras ?: return
+        val pdus = bundle.get("pdus") as? Array<*> ?: return
+        val format = bundle.getString("format")
+
+        val sb = StringBuilder()
+        var fallbackSender = ""
+        var fallbackSms: SmsMessage? = null
+
+        for (pduObj in pdus) {
+            val pduBytes = pduObj as? ByteArray ?: continue
+            val sms = SmsMessage.createFromPdu(pduBytes, format) ?: continue
+            fallbackSms = sms
+            if (fallbackSender.isEmpty()) {
+                fallbackSender = normalizePhoneNumber(sms.originatingAddress)
+            }
+            sb.append(sms.messageBody ?: "")
+        }
+
+        val fullText = sb.toString()
+        if (fallbackSms != null && isRecognizedOrProtocol(fallbackSender, fullText)) {
+            Log.i(TAG, "Intercepted fallback PDU message from $fallbackSender: $fullText")
+            val pendingResult = goAsync()
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    processIncomingPallyMessage(context.applicationContext, fallbackSms, fullText, fallbackSender)
+                } finally {
+                    pendingResult.finish()
                 }
             }
         }

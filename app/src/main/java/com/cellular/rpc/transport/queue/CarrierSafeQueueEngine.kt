@@ -1,8 +1,12 @@
 package com.cellular.rpc.transport.queue
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.telephony.SmsManager
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.cellular.rpc.data.local.AppDatabase
 import com.cellular.rpc.data.local.OutboxDao
 import com.cellular.rpc.data.local.OutboxEntity
@@ -153,7 +157,17 @@ class CarrierSafeQueueEngine(
     private val _inboundDeliveredFlow = kotlinx.coroutines.flow.MutableSharedFlow<Pair<Frame, String>>(extraBufferCapacity = 64)
     val inboundDeliveredFlow: kotlinx.coroutines.flow.SharedFlow<Pair<Frame, String>> = _inboundDeliveredFlow
 
-    var loopbackEnabled: Boolean = true // Emulates remote SMS gateway responses
+    var loopbackEnabled: Boolean = com.cellular.rpc.widget.WidgetPreferences.isLoopbackSimulationEnabled(context)
+
+    fun acknowledgeAnyInFlight() {
+        val frames = windowController.getInFlightFrames()
+        for (f in frames) {
+            windowController.processAck(f.seqNo, 0L)
+            scope.launch {
+                outboxDao.markAcknowledged(f.sessionId, f.seqNo)
+            }
+        }
+    }
 
     @Synchronized
     fun start() {
@@ -351,14 +365,71 @@ class CarrierSafeQueueEngine(
 
         Log.d(TAG, "TX [${Frame.typeName(frame.pktType)}] Seq=${frame.seqNo} Size=${binary.size}B Wire=$asciiWire")
 
-        // In production with SMS permissions:
-        // try {
-        //     val smsManager = SmsManager.getDefault()
-        //     smsManager.sendDataMessage(destinationAddress, null, destinationPort, binary, null, null)
-        // } catch (e: Exception) { Log.e(TAG, "SMS send failed: ${e.message}") }
-
         if (loopbackEnabled) {
             handleGatewaySimulation(frame)
+        } else {
+            transmitOverCellularRadio(frame)
+        }
+    }
+
+    private fun transmitOverCellularRadio(frame: Frame) {
+        val cleanNumber = destinationAddress.replace(Regex("[^0-9+]"), "")
+        if (cleanNumber.isBlank()) {
+            Log.w(TAG, "Cannot transmit SMS: Destination phone number is empty.")
+            return
+        }
+
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
+            Log.e(TAG, "Cannot transmit SMS: SEND_SMS permission is not granted.")
+            return
+        }
+
+        try {
+            // Track destination so incoming reply is automatically identified as AI service response
+            com.cellular.rpc.domain.service.CellularServiceManager.recordLastOutboundDestination(context, cleanNumber)
+
+            val smsManager: SmsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                context.getSystemService(SmsManager::class.java) ?: @Suppress("DEPRECATION") SmsManager.getDefault()
+            } else {
+                @Suppress("DEPRECATION")
+                SmsManager.getDefault()
+            }
+
+            val activeProfile = com.cellular.rpc.domain.service.CellularServiceManager.getActiveService(context)
+            val textToSend = when (activeProfile.protocolMode) {
+                com.cellular.rpc.domain.service.ServiceProtocolMode.PALLY_COMPACT -> {
+                    val rawStr = if (frame.payload.isNotEmpty()) String(frame.payload, Charsets.UTF_8) else ""
+                    if (rawStr.startsWith("REQ:") || rawStr.startsWith("~")) {
+                        frame.toAsciiWire()
+                    } else if (rawStr.isNotBlank()) {
+                        rawStr
+                    } else {
+                        frame.toAsciiWire()
+                    }
+                }
+                com.cellular.rpc.domain.service.ServiceProtocolMode.SMS_CONVERSATIONAL,
+                com.cellular.rpc.domain.service.ServiceProtocolMode.JSON_WIRE -> {
+                    if (frame.payload.isNotEmpty()) String(frame.payload, Charsets.UTF_8) else frame.toAsciiWire()
+                }
+            }
+
+            Log.i(TAG, "Dispatching cellular SMS to $cleanNumber (${textToSend.length} chars): $textToSend")
+
+            val parts = smsManager.divideMessage(textToSend)
+            if (parts.size > 1) {
+                smsManager.sendMultipartTextMessage(cleanNumber, null, parts, null, null)
+            } else {
+                smsManager.sendTextMessage(cleanNumber, null, textToSend, null, null)
+            }
+
+            // Immediately acknowledge outbound frame in sliding window so conversational SMS does not deadlock
+            scope.launch {
+                delay(300)
+                windowController.processAck(frame.seqNo, 0L)
+                outboxDao.markAcknowledged(frame.sessionId, frame.seqNo)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error transmitting SMS: ${e.message}", e)
         }
     }
 
@@ -421,6 +492,8 @@ class CarrierSafeQueueEngine(
             payload = ByteArray(0)
         )
         receiveInbound(ackFrame)
+        windowController.processAck(reqFrame.seqNo, 0L)
+        outboxDao.markAcknowledged(reqFrame.sessionId, reqFrame.seqNo)
 
         // Resolve requested widget or chat payload using CellularRequest or keyword heuristic
         val parsedReq = CellularRequest.fromWire(queryStr)

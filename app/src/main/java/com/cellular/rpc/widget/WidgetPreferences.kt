@@ -64,12 +64,12 @@ object WidgetPreferences {
     fun getIntervalMinutes(context: Context, appWidgetId: Int): Int =
         getPrefs(context).getInt(KEY_INTERVAL_MIN + appWidgetId, 60) // Default 1 hour
 
-    // Global Pally AI Phone Number
+    // Global Service / Pally AI Phone Number (Agnostic AI SMS Gateway)
     fun getPallyPhoneNumber(context: Context): String =
-        getPrefs(context).getString(KEY_PALLY_PHONE, "+18005550199") ?: "+18005550199"
+        com.cellular.rpc.domain.service.CellularServiceManager.getActiveService(context).phoneNumber
 
     fun setPallyPhoneNumber(context: Context, number: String) {
-        getPrefs(context).edit().putString(KEY_PALLY_PHONE, number.trim()).apply()
+        com.cellular.rpc.domain.service.CellularServiceManager.setManualPhoneNumber(context, number.trim())
     }
 
     // Global Loopback / Emulated Response Mode

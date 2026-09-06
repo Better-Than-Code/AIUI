@@ -441,25 +441,8 @@ class CarrierSafeQueueEngine(
         try {
             com.cellular.rpc.domain.service.CellularServiceManager.recordLastOutboundDestination(context, cleanNumber)
 
-            // 1. Attempt RCS / Native Messaging App intent dispatch first (utilizes device RCS settings with automatic SMS fallback)
-            try {
-                val intent = Intent(Intent.ACTION_SENDTO).apply {
-                    data = Uri.parse("smsto:$cleanNumber")
-                    putExtra("sms_body", textToSend)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-                Log.i(TAG, "Dispatched message via native RCS/SMS messaging app intent successfully.")
-                scope.launch {
-                    windowController.markFrameAcknowledged(frame.seqNo)
-                    outboxDao.markAcknowledged(frame.sessionId, frame.seqNo)
-                }
-                return
-            } catch (intentErr: Exception) {
-                Log.d(TAG, "Intent dispatch fallback to background SmsManager: ${intentErr.message}")
-            }
+            // 1. Direct SmsManager transmission (Reliable carrier-safe background delivery)
 
-            // 2. Fallback to SmsManager (Carrier-safe background SMS delivery)
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
                 Log.e(TAG, "Cannot transmit SMS: SEND_SMS permission is not granted.")
                 return

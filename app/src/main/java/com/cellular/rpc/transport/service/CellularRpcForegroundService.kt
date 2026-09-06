@@ -66,9 +66,12 @@ class CellularRpcForegroundService : Service() {
         val channel = NotificationChannel(
             channelId,
             "Cellular RPC Link Active",
-            NotificationManager.IMPORTANCE_LOW
+            NotificationManager.IMPORTANCE_MIN
         ).apply {
             description = "Maintains low-bandwidth SMS RPC transmission and queue state"
+            setSound(null, null)
+            enableVibration(false)
+            setShowBadge(false)
         }
         manager.createNotificationChannel(channel)
 
@@ -77,7 +80,8 @@ class CellularRpcForegroundService : Service() {
             .setContentText("Listening for offline SMS packets and queue state.")
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .build()
     }
 

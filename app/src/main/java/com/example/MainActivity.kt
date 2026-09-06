@@ -115,6 +115,7 @@ fun CellularRpcScreen(viewModel: CellularRpcViewModel) {
         val list = mutableListOf(
             Manifest.permission.SEND_SMS,
             Manifest.permission.RECEIVE_SMS,
+            Manifest.permission.READ_SMS,
             Manifest.permission.RECEIVE_WAP_PUSH
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

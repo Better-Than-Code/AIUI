@@ -211,20 +211,20 @@ object CellularServiceManager {
         val normalizedSender = normalizePhoneNumber(senderAddress)
         if (normalizedSender.isBlank()) return false
 
-        // Check last texted number
+        // 1. Check last texted number
         val lastOutbound = getLastOutboundDestination(context)
         if (lastOutbound.isNotBlank() && isNumberMatch(normalizedSender, lastOutbound)) {
             return true
         }
 
-        // Check active service
+        // 2. Check active service
         val active = getActiveService(context)
         val activeNormalized = normalizePhoneNumber(active.phoneNumber)
         if (isNumberMatch(normalizedSender, activeNormalized)) {
             return true
         }
 
-        // Check all saved services
+        // 3. Check all saved services
         for (service in getAvailableServices(context)) {
             val serviceNormalized = normalizePhoneNumber(service.phoneNumber)
             if (isNumberMatch(normalizedSender, serviceNormalized)) {
@@ -232,25 +232,45 @@ object CellularServiceManager {
             }
         }
 
+        // 4. Check active CarrierSafeQueueEngine destination
+        try {
+            val engine = CarrierSafeQueueEngine.getInstance(context)
+            if (isNumberMatch(normalizedSender, engine.destinationAddress)) {
+                return true
+            }
+        } catch (ignored: Exception) {}
+
         return false
     }
 
-    private fun isNumberMatch(num1: String, num2: String): Boolean {
-        if (num1.isEmpty() || num2.isEmpty()) return false
-        if (num1 == num2) return true
+    fun isNumberMatch(num1: String?, num2: String?): Boolean {
+        if (num1.isNullOrBlank() || num2.isNullOrBlank()) return false
+        val clean1 = num1.trim()
+        val clean2 = num2.trim()
+        if (clean1.equals(clean2, ignoreCase = true)) return true
 
-        val digits1 = num1.filter { it.isDigit() }
-        val digits2 = num2.filter { it.isDigit() }
+        val digits1 = clean1.filter { it.isDigit() }
+        val digits2 = clean2.filter { it.isDigit() }
         if (digits1.isEmpty() || digits2.isEmpty()) return false
 
         if (digits1 == digits2) return true
 
+        // Match last 10 digits (Standard US / International without country prefix)
         if (digits1.length >= 10 && digits2.length >= 10) {
-            return digits1.takeLast(10) == digits2.takeLast(10)
+            if (digits1.takeLast(10) == digits2.takeLast(10)) return true
         }
 
+        // Match last 7 digits (Local exchange + station)
         if (digits1.length >= 7 && digits2.length >= 7) {
-            return digits1.takeLast(7) == digits2.takeLast(7)
+            if (digits1.takeLast(7) == digits2.takeLast(7)) return true
+        }
+
+        // Substring / Shortcode / Toll-free matching (minimum 4 digits)
+        val minLen = minOf(digits1.length, digits2.length)
+        if (minLen >= 4) {
+            if (digits1.endsWith(digits2) || digits2.endsWith(digits1)) {
+                return true
+            }
         }
 
         return false

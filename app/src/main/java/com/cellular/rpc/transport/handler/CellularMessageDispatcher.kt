@@ -3,19 +3,24 @@ package com.cellular.rpc.transport.handler
 import android.content.Context
 import android.util.Log
 import com.cellular.rpc.data.local.AppDatabase
+import com.cellular.rpc.data.local.ChatMessageEntity
+import com.cellular.rpc.data.local.PacketLogEntity
 import com.cellular.rpc.data.local.WidgetCacheEntity
 import com.cellular.rpc.domain.payload.CellularRequest
 import com.cellular.rpc.domain.payload.CellularResponse
 import com.cellular.rpc.domain.payload.CellularStatusCode
 import com.cellular.rpc.domain.protocol.Frame
 import com.cellular.rpc.domain.schema.CellularSchemaRegistry
+import com.cellular.rpc.engine.DualResponseParser
 import com.cellular.rpc.engine.WidgetData
 import com.cellular.rpc.transport.queue.CarrierSafeQueueEngine
+import com.cellular.rpc.widget.CellularCustomAppWidgetProvider
 import com.cellular.rpc.widget.CellularNewsAppWidgetProvider
 import com.cellular.rpc.widget.CellularWeatherAppWidgetProvider
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -51,9 +56,9 @@ typealias SchemaPayloadConsumer = suspend (response: CellularResponse, context: 
  *
  * Provides:
  * 1. Unified inbound decoding (Frame + CellularResponse + Schema detection).
- * 2. Pluggable schema consumers so new widgets and features can be plugged in seamlessly.
- * 3. Standardized reply generation (ACK, 304, data responses, tool computations).
- * 4. Automatic database caching and AppWidget updates.
+ * 2. Real-time background SQLite persistence (Room ChatMessageEntity & PacketLogEntity).
+ * 3. Pluggable schema consumers for instant widget and dynamic feature updates.
+ * 4. Deduplication across BroadcastReceivers and ContentObservers.
  */
 object CellularMessageDispatcher {
 
@@ -61,6 +66,15 @@ object CellularMessageDispatcher {
 
     // Consumers registered for specific schema IDs
     private val schemaConsumers = ConcurrentHashMap<String, CopyOnWriteArrayList<SchemaPayloadConsumer>>()
+
+    // Inbound deduplication cache: Message hash -> TimestampMs
+    private val recentProcessedHashes = Collections.synchronizedMap(
+        object : LinkedHashMap<String, Long>(64, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>?): Boolean {
+                return size > 100
+            }
+        }
+    )
 
     // Global event stream for UI and ViewModel
     private val _inboundEvents = MutableSharedFlow<CellularResponse>(extraBufferCapacity = 64)
@@ -132,6 +146,11 @@ object CellularMessageDispatcher {
                         )
                     )
                 }
+                if (schema == "market_ticker") {
+                    CellularCustomAppWidgetProvider.updateAllWidgets(context)
+                } else if (schema == "transfer") {
+                    CellularCustomAppWidgetProvider.updateAllWidgets(context)
+                }
             }
         }
     }
@@ -173,13 +192,56 @@ object CellularMessageDispatcher {
             else -> message.rawText
         }
 
+        // Deduplication Check (within 4-second window)
+        val dedupeKey = "${message.senderAddress}:${payloadStr.trim()}"
+        val now = System.currentTimeMillis()
+        val lastSeen = recentProcessedHashes[dedupeKey]
+        if (lastSeen != null && (now - lastSeen) < 4000L) {
+            Log.d(TAG, "Skipping duplicate inbound SMS packet received within ${now - lastSeen}ms.")
+            return CellularResponse.fromWire(payloadStr)
+        }
+        recentProcessedHashes[dedupeKey] = now
+
+        val db = AppDatabase.getInstance(context)
+
+        // 2a. Record Inbound Packet in Protocol Log DAO (Protocol Inspector)
+        try {
+            val frame = message.frame
+            val pktLog = PacketLogEntity(
+                direction = "RX",
+                sessionId = frame?.sessionId ?: 1,
+                pktType = frame?.pktType ?: Frame.PKT_RPC_RES,
+                pktTypeName = if (frame != null) Frame.typeName(frame.pktType) else "SMS_TEXT_WIRE",
+                seqNo = frame?.seqNo ?: 0,
+                ackBitsHex = String.format("%08X", frame?.ackBits ?: 0L),
+                payloadString = payloadStr,
+                wireFormat = message.rawText.ifBlank { frame?.toAsciiWire() ?: payloadStr },
+                binaryByteCount = message.rawBytes?.size ?: payloadStr.toByteArray(Charsets.UTF_8).size,
+                crc16Hex = String.format("%04X", frame?.crc16 ?: 0),
+                crcValid = true,
+                timestampMs = now
+            )
+            db.packetLogDao().insert(pktLog)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to log RX packet: ${e.message}")
+        }
+
         // 2b. Intercept Dynamic Feature Deployment payloads [APP:BUILD:<feature_id>]
-        if (com.cellular.rpc.domain.dynamic.DynamicFeatureManager.handleInboundPayload(context, payloadStr, message.senderAddress)) {
+        val isFeatureHandled = com.cellular.rpc.domain.dynamic.DynamicFeatureManager.handleInboundPayload(
+            context,
+            payloadStr,
+            message.senderAddress
+        )
+        if (isFeatureHandled) {
             Log.i(TAG, "Processed dynamic feature deployment payload over cellular transport.")
         }
 
         // 2c. Inspect Handshake signals (READY, PROBE_SCHEMA)
-        if (com.cellular.rpc.domain.handshake.CellularHandshakeEngine.inspectInboundHandshake(context, payloadStr)) {
+        val isHandshakeHandled = com.cellular.rpc.domain.handshake.CellularHandshakeEngine.inspectInboundHandshake(
+            context,
+            payloadStr
+        )
+        if (isHandshakeHandled) {
             Log.i(TAG, "Processed Handshake signal successfully.")
         }
 
@@ -195,23 +257,78 @@ object CellularMessageDispatcher {
 
         // 4. Handle 304 Not Modified across relevant providers
         if (response.isNotModified) {
-            val db = AppDatabase.getInstance(context)
-            if (response.schemaId != "unknown" && response.schemaId.isNotEmpty()) {
-                db.widgetCacheDao().updateStatus(response.schemaId, "304_NOT_MODIFIED", System.currentTimeMillis())
-                if (response.schemaId == "weather") {
-                    CellularWeatherAppWidgetProvider.updateAllWidgets(context)
-                } else if (response.schemaId == "news_digest" || response.schemaId == "news") {
-                    CellularNewsAppWidgetProvider.updateAllWidgets(context)
-                }
-            } else {
-                db.widgetCacheDao().updateStatus("weather", "304_NOT_MODIFIED", System.currentTimeMillis())
-                db.widgetCacheDao().updateStatus("news_digest", "304_NOT_MODIFIED", System.currentTimeMillis())
+            val schemaTarget = if (response.schemaId != "unknown" && response.schemaId.isNotEmpty()) response.schemaId else "weather"
+            db.widgetCacheDao().updateStatus(schemaTarget, "304_NOT_MODIFIED", now)
+            if (schemaTarget == "weather") {
                 CellularWeatherAppWidgetProvider.updateAllWidgets(context)
+            } else if (schemaTarget == "news_digest" || schemaTarget == "news") {
                 CellularNewsAppWidgetProvider.updateAllWidgets(context)
+            } else {
+                CellularCustomAppWidgetProvider.updateAllWidgets(context)
+            }
+
+            // Persist 304 Cache Render message in Chat
+            val cached = db.widgetCacheDao().getWidgetByType(schemaTarget)
+            val chatMsg = ChatMessageEntity(
+                id = "msg_${now}_${(1000..9999).random()}",
+                sender = "AI_GATEWAY",
+                text = "Resource unmodified (304 Not Modified). Rendered from local cache.",
+                widgetDataJson = cached?.jsonPayload,
+                is304NotModified = true,
+                wirePacket = response.toCompactWire(),
+                byteSize = response.toCompactWire().length,
+                pduCount = 1,
+                deliveryStatus = "DELIVERED",
+                timestampMs = now
+            )
+            db.chatMessageDao().insertMessage(chatMsg)
+        } else if (payloadStr.isNotBlank() && !isHandshakeHandled) {
+            // 5. Parse Dual Response (Conversational Text + Structured Native Widget Data)
+            val dual = DualResponseParser.parse(payloadStr)
+
+            // Cache Widget Data if present
+            if (dual.widgetData != null) {
+                val widgetType = dual.widgetData.type
+                db.widgetCacheDao().insertOrUpdate(
+                    WidgetCacheEntity(
+                        widgetType = widgetType,
+                        contentHash = dual.widgetData.computeContentHash(),
+                        jsonPayload = dual.widgetData.toJson(),
+                        lastStatus = "200_OK",
+                        byteSize = dual.widgetData.toJson().toByteArray(Charsets.UTF_8).size,
+                        lastUpdatedMs = now
+                    )
+                )
+                when (widgetType) {
+                    "weather" -> CellularWeatherAppWidgetProvider.updateAllWidgets(context)
+                    "news_digest" -> CellularNewsAppWidgetProvider.updateAllWidgets(context)
+                    else -> CellularCustomAppWidgetProvider.updateAllWidgets(context)
+                }
+            }
+
+            // Persist Inbound Chat Message directly in Room
+            val displayText = dual.conversationalText.ifEmpty {
+                if (dual.widgetData != null) "" else payloadStr
+            }
+
+            if (displayText.isNotEmpty() || dual.widgetData != null) {
+                val chatMsg = ChatMessageEntity(
+                    id = "msg_${now}_${(1000..9999).random()}",
+                    sender = "AI_GATEWAY",
+                    text = displayText,
+                    widgetDataJson = dual.widgetData?.toJson(),
+                    is304NotModified = false,
+                    wirePacket = message.rawText.ifBlank { response.toCompactWire() },
+                    byteSize = payloadStr.toByteArray(Charsets.UTF_8).size,
+                    pduCount = ((payloadStr.toByteArray(Charsets.UTF_8).size + 139) / 140).coerceAtLeast(1),
+                    deliveryStatus = "DELIVERED",
+                    timestampMs = now
+                )
+                db.chatMessageDao().insertMessage(chatMsg)
             }
         }
 
-        // 5. Invoke registered consumers
+        // 6. Invoke registered consumers
         val consumers = schemaConsumers[response.schemaId]
         consumers?.forEach { consumer ->
             try {
@@ -221,7 +338,7 @@ object CellularMessageDispatcher {
             }
         }
 
-        // 6. Broadcast event to UI
+        // 7. Broadcast event to UI
         _inboundEvents.tryEmit(response)
         return response
     }

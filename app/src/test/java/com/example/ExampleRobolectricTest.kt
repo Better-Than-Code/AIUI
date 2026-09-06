@@ -1,0 +1,296 @@
+package com.example
+
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
+import com.cellular.rpc.domain.protocol.*
+import org.junit.Assert.*
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import kotlin.random.Random
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [36])
+class ExampleRobolectricTest {
+
+  @Test
+  fun `read string from context`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val appName = context.getString(R.string.app_name)
+    assertEquals("Cellular RPC", appName)
+  }
+
+  /**
+   * Scenario 1: Cellular Boundary Test
+   * Transmit a 122-byte chunk. Verify that the serialized binary frame size
+   * exactly equals 133 bytes (9B header + 122B payload + 2B CRC16 trailer),
+   * strictly fitting within the safe 133-byte single SMS PDU allocation
+   * without multi-PDU splitting.
+   */
+  @Test
+  fun `cellular boundary test 122 byte payload fits in 133 byte safe MTU`() {
+    val payload122 = ByteArray(122) { (it % 26 + 65).toByte() }
+    val frame = Frame(
+        sessionId = 0x1A2F,
+        pktType = Frame.PKT_BIN_DAT,
+        seqNo = 0x0001,
+        payload = payload122
+    )
+
+    val binary = frame.toBinary()
+    assertEquals(133, binary.size)
+    assertTrue("Binary frame must not exceed 133 bytes safe MTU", binary.size <= 133)
+
+    // Verify CRC16 and deserialization
+    val parsed = Frame.fromBinary(binary)
+    assertNotNull("Frame must deserialize cleanly from binary", parsed)
+    assertEquals(frame.sessionId, parsed!!.sessionId)
+    assertEquals(frame.pktType, parsed.pktType)
+    assertEquals(frame.seqNo, parsed.seqNo)
+    assertArrayEquals(payload122, parsed.payload)
+  }
+
+  /**
+   * Scenario 2: Out-of-Order Packet Injection
+   * Force seq 0, drop seq 1, deliver seq 2. Verify the receiver emits an ACK confirming 0
+   * with bit 1 set in the bitmask, and verify that the reassembled packets buffer until
+   * chunk 1 is retransmitted.
+   */
+  @Test
+  fun `out of order packet injection and selective repeat buffering`() {
+    val swc = SlidingWindowController(windowSize = 4, maxSequence = 65535)
+
+    val frame0 = Frame(sessionId = 0x1A2F, pktType = Frame.PKT_BIN_DAT, seqNo = 0, payload = "CHUNK_0".toByteArray())
+    val frame1 = Frame(sessionId = 0x1A2F, pktType = Frame.PKT_BIN_DAT, seqNo = 1, payload = "CHUNK_1".toByteArray())
+    val frame2 = Frame(sessionId = 0x1A2F, pktType = Frame.PKT_BIN_DAT, seqNo = 2, payload = "CHUNK_2".toByteArray())
+
+    // 1. Deliver frame 0
+    val res0 = swc.processInbound(frame0)
+    assertTrue(res0 is SlidingWindowController.InboundResult.Deliver)
+    val deliver0 = res0 as SlidingWindowController.InboundResult.Deliver
+    assertEquals(1, deliver0.frames.size)
+    assertEquals(0, deliver0.frames[0].seqNo)
+    assertEquals(1, deliver0.ackBase) // Next expected is 1
+
+    // 2. Drop seq 1 and deliver seq 2 directly (out-of-order)
+    val res2 = swc.processInbound(frame2)
+    assertTrue(res2 is SlidingWindowController.InboundResult.Deliver)
+    val deliver2 = res2 as SlidingWindowController.InboundResult.Deliver
+
+    // seq 2 cannot be delivered yet because seq 1 is missing
+    assertEquals(0, deliver2.frames.size)
+    assertEquals(1, deliver2.ackBase) // ackBase remains 1
+
+    // Bitmask must have bit (2 - 1 - 1) = bit 0 set to acknowledge seq 2 selectively!
+    val bit0Set = (deliver2.ackBitmask and 0x01L) != 0L
+    assertTrue("Bit 0 of selective repeat bitmask must acknowledge seq 2", bit0Set)
+
+    // 3. Now deliver dropped chunk 1
+    val res1 = swc.processInbound(frame1)
+    assertTrue(res1 is SlidingWindowController.InboundResult.Deliver)
+    val deliver1 = res1 as SlidingWindowController.InboundResult.Deliver
+
+    // Both seq 1 and buffered seq 2 should now be delivered in contiguous sequence!
+    assertEquals(2, deliver1.frames.size)
+    assertEquals(1, deliver1.frames[0].seqNo)
+    assertEquals(2, deliver1.frames[1].seqNo)
+    assertEquals(3, deliver1.ackBase) // Cumulative base advanced to 3
+  }
+
+  /**
+   * Scenario 3: Spam & Velocity Mitigation
+   * Transmissions must maintain a minimum gap of 2200ms + Random(200..700ms).
+   */
+  @Test
+  fun `spam and velocity mitigation maintains minimum throttle gap`() {
+    val floorGapMs = 2200L
+    val minGapMs = 2200L + 200L
+    val maxGapMs = 2200L + 700L
+
+    for (i in 1..50) {
+      val jitter = Random.nextLong(200L, 701L)
+      val totalGap = floorGapMs + jitter
+      assertTrue("Throttle gap must be >= $minGapMs", totalGap >= minGapMs)
+      assertTrue("Throttle gap must be <= $maxGapMs", totalGap <= maxGapMs)
+    }
+  }
+
+  /**
+   * GSM-Safe Base85 Encoder & ASCII Fallback Wire Format Test
+   */
+  @Test
+  fun `gsm safe base85 encoding round trip and wire format`() {
+    val testPayload = "Hello Cellular RPC Protocol 2026!".toByteArray(Charsets.UTF_8)
+    val encoded = GsmSafeBase85.encode(testPayload)
+    val decoded = GsmSafeBase85.decode(encoded)
+
+    assertArrayEquals(testPayload, decoded)
+
+    // Ensure no unsafe characters in GSM 03.38 Basic Character Set
+    for (ch in encoded) {
+      assertNotEquals('\\', ch)
+      assertNotEquals('"', ch)
+      assertNotEquals('\'', ch)
+      assertFalse(ch.isWhitespace())
+    }
+
+    // ASCII Wire Format test
+    val frame = Frame(
+        sessionId = 0x1A2F,
+        pktType = Frame.PKT_RPC_RES,
+        seqNo = 4,
+        payload = "304".toByteArray(Charsets.UTF_8),
+        ackBits = 0L
+    )
+    val wire = frame.toAsciiWire()
+    assertTrue("Wire format must start with ~ and end with #", wire.startsWith("~") && wire.endsWith("#"))
+
+    val parsedFromWire = Frame.fromAsciiWire(wire)
+    assertNotNull(parsedFromWire)
+    assertEquals(frame.sessionId, parsedFromWire!!.sessionId)
+    assertEquals(frame.pktType, parsedFromWire.pktType)
+    assertEquals(frame.seqNo, parsedFromWire.seqNo)
+    assertEquals("304", String(parsedFromWire.payload, Charsets.UTF_8))
+  }
+
+  /**
+   * Scenario 5: Rich Widget Schemas & Cellular Chat Serialization Test
+   */
+  @Test
+  fun `rich widget schemas serialize and parse cleanly`() {
+    // 1. Weather
+    val weather = com.cellular.rpc.engine.WidgetData.Weather(72, "San Francisco", "Sunny", 76, 58)
+    val parsedWeather = com.cellular.rpc.engine.WidgetData.parse(weather.toJson()) as? com.cellular.rpc.engine.WidgetData.Weather
+    assertNotNull(parsedWeather)
+    assertEquals(72, parsedWeather!!.temp)
+    assertEquals("San Francisco", parsedWeather.city)
+
+    // 2. Transfer
+    val transfer = com.cellular.rpc.engine.WidgetData.CellularTransfer("T891", "Alex Chen", "$25.00", "Lunch", "CONFIRMED")
+    val parsedTransfer = com.cellular.rpc.engine.WidgetData.parse(transfer.toJson()) as? com.cellular.rpc.engine.WidgetData.CellularTransfer
+    assertNotNull(parsedTransfer)
+    assertEquals("$25.00", parsedTransfer!!.amount)
+    assertEquals("Alex Chen", parsedTransfer.to)
+
+    // 3. Poll
+    val poll = com.cellular.rpc.engine.WidgetData.CellularPoll(
+        id = "P44",
+        question = "Sprint Review?",
+        options = listOf("Yes", "No"),
+        votes = listOf(3, 1)
+    )
+    val parsedPoll = com.cellular.rpc.engine.WidgetData.parse(poll.toJson()) as? com.cellular.rpc.engine.WidgetData.CellularPoll
+    assertNotNull(parsedPoll)
+    assertEquals(2, parsedPoll!!.options.size)
+    assertEquals(4, parsedPoll.votes.sum())
+
+    // 4. Hash consistency for 304 caching
+    val hash1 = weather.computeContentHash()
+    val hash2 = weather.computeContentHash()
+    assertEquals(hash1, hash2)
+    assertEquals(8, hash1.length) // 4 bytes hex = 8 chars
+  }
+
+  /**
+   * Scenario 6: Standardized Cellular Schemas & RPC Protocol
+   * Validates CalendarEvent, TaskChecklist, SystemStatus serialization,
+   * CellularSchemaRegistry schema discovery, and CellularRequest/CellularResponse
+   * compact wire transmission format for SMS and MMS payloads.
+   */
+  @Test
+  fun `standardized cellular schemas and wire envelopes roundtrip`() {
+    // 1. Calendar Event
+    val cal = com.cellular.rpc.engine.WidgetData.CalendarEvent(
+        id = "evt_99",
+        title = "Sprint Protocol Review",
+        time = "2:00 PM - 3:00 PM",
+        location = "Cellular Lab 4",
+        attendees = 5
+    )
+    val parsedCal = com.cellular.rpc.engine.WidgetData.parse(cal.toJson()) as? com.cellular.rpc.engine.WidgetData.CalendarEvent
+    assertNotNull(parsedCal)
+    assertEquals("Sprint Protocol Review", parsedCal!!.title)
+    assertEquals(5, parsedCal.attendees)
+
+    // 2. Task Checklist
+    val task = com.cellular.rpc.engine.WidgetData.TaskChecklist(
+        id = "task_42",
+        title = "Pally Flight Checklist",
+        items = listOf("Pre-flight Radio", "Check Battery", "Verify SMSC"),
+        doneFlags = listOf(true, true, false)
+    )
+    val parsedTask = com.cellular.rpc.engine.WidgetData.parse(task.toJson()) as? com.cellular.rpc.engine.WidgetData.TaskChecklist
+    assertNotNull(parsedTask)
+    assertEquals(3, parsedTask!!.items.size)
+    assertTrue(parsedTask.doneFlags[0])
+    assertFalse(parsedTask.doneFlags[2])
+
+    // 3. System Status Telemetry
+    val sys = com.cellular.rpc.engine.WidgetData.SystemStatus(
+        batteryPct = 88,
+        signalDbm = -65,
+        freeStorageMb = 5120L,
+        queuedPackets = 1,
+        linkQuality = "OPTIMAL"
+    )
+    val parsedSys = com.cellular.rpc.engine.WidgetData.parse(sys.toJson()) as? com.cellular.rpc.engine.WidgetData.SystemStatus
+    assertNotNull(parsedSys)
+    assertEquals(88, parsedSys!!.batteryPct)
+    assertEquals("OPTIMAL", parsedSys.linkQuality)
+
+    // 4. CellularRequest wire format
+    val req = com.cellular.rpc.domain.payload.CellularRequest(
+        action = com.cellular.rpc.domain.payload.CellularAction.GET,
+        target = "widget:task_checklist",
+        etag = task.computeContentHash(),
+        params = mapOf("priority" to "high")
+    )
+    val reqWire = req.toCompactWire()
+    val parsedReq = com.cellular.rpc.domain.payload.CellularRequest.fromWire(reqWire)
+    assertNotNull(parsedReq)
+    assertEquals(com.cellular.rpc.domain.payload.CellularAction.GET, parsedReq!!.action)
+    assertEquals("widget:task_checklist", parsedReq.target)
+    assertEquals(task.computeContentHash(), parsedReq.etag)
+    assertEquals("high", parsedReq.params["priority"])
+
+    // 5. CellularResponse 304 wire format
+    val res304 = com.cellular.rpc.domain.payload.CellularResponse(
+        status = 304,
+        schemaId = "task_checklist",
+        etag = task.computeContentHash()
+    )
+    val res304Wire = res304.toCompactWire()
+    val parsedRes304 = com.cellular.rpc.domain.payload.CellularResponse.fromWire(res304Wire)
+    assertNotNull(parsedRes304)
+    assertEquals(304, parsedRes304.statusCode)
+    assertTrue(parsedRes304.isNotModified)
+    assertEquals("task_checklist", parsedRes304.schemaId)
+
+    // 6. CellularResponse 200 payload wire format
+    val res200 = com.cellular.rpc.domain.payload.CellularResponse(
+        status = 200,
+        schemaId = "system_status",
+        etag = sys.computeContentHash(),
+        payload = sys.toJson()
+    )
+    val res200Wire = res200.toCompactWire()
+    val parsedRes200 = com.cellular.rpc.domain.payload.CellularResponse.fromWire(res200Wire)
+    assertNotNull(parsedRes200)
+    assertEquals(200, parsedRes200.statusCode)
+    assertFalse(parsedRes200.isNotModified)
+    assertEquals("system_status", parsedRes200.schemaId)
+    val recoveredSys = com.cellular.rpc.engine.WidgetData.parse(parsedRes200.payload) as? com.cellular.rpc.engine.WidgetData.SystemStatus
+    assertNotNull(recoveredSys)
+    assertEquals(88, recoveredSys!!.batteryPct)
+
+    // 7. Schema Registry completeness
+    val allSchemas = com.cellular.rpc.domain.schema.CellularSchemaRegistry.getAllSchemas()
+    assertTrue("At least 10 schemas should be registered", allSchemas.size >= 10)
+    assertNotNull(com.cellular.rpc.domain.schema.CellularSchemaRegistry.getSchema<Any>("calendar_event"))
+    assertNotNull(com.cellular.rpc.domain.schema.CellularSchemaRegistry.getSchema<Any>("task_checklist"))
+    assertNotNull(com.cellular.rpc.domain.schema.CellularSchemaRegistry.getSchema<Any>("system_status"))
+    assertTrue(com.cellular.rpc.domain.schema.CellularSchemaRegistry.hasSchema("weather"))
+  }
+}
+

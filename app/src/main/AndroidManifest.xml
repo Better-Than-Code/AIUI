@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_WAP_PUSH" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
+    <application
+        android:name=".CellularRpcApp"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.MyApplication">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.MyApplication">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Home Screen Widget Configuration Activity -->
+        <activity
+            android:name="com.cellular.rpc.widget.WidgetConfigurationActivity"
+            android:exported="true"
+            android:label="Widget Settings"
+            android:theme="@style/Theme.MyApplication">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
+        <!-- Weather Home Screen Widget Provider -->
+        <receiver
+            android:name="com.cellular.rpc.widget.CellularWeatherAppWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/appwidget_weather_info" />
+        </receiver>
+
+        <!-- News Home Screen Widget Provider -->
+        <receiver
+            android:name="com.cellular.rpc.widget.CellularNewsAppWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/appwidget_news_info" />
+        </receiver>
+
+        <!-- Pull Broadcast Receiver (Manual Widget Refresh & Scheduled Alarm) -->
+        <receiver
+            android:name="com.cellular.rpc.widget.PullBroadcastReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.cellular.rpc.ACTION_WIDGET_MANUAL_REFRESH" />
+                <action android:name="com.cellular.rpc.ACTION_PERIODIC_PULL_TICK" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Pally Single-Number Inbound Telephony Receiver -->
+        <receiver
+            android:name="com.cellular.rpc.transport.receiver.PallySmsReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter android:priority="1000">
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+                <action android:name="android.intent.action.DATA_SMS_RECEIVED" />
+                <data android:scheme="sms" />
+                <data android:port="8901" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Pally MMS WAP Push Receiver -->
+        <receiver
+            android:name="com.cellular.rpc.transport.receiver.PallyWapPushReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_WAP_PUSH">
+            <intent-filter android:priority="1000">
+                <action android:name="android.provider.Telephony.WAP_PUSH_RECEIVED" />
+                <data android:mimeType="application/vnd.wap.mms-message" />
+                <data android:mimeType="application/x-cellular-rpc" />
+            </intent-filter>
+        </receiver>
+
+        <service
+            android:name="com.cellular.rpc.transport.service.CellularRpcForegroundService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
+    </application>
+
+</manifest>

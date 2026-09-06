@@ -1,0 +1,6 @@
+{
+  "name": "Cellular RPC",
+  "description": "Offline-first cellular SMS/MMS RPC protocol engine with sliding-window transport, GSM-Safe Base85 encoding, and dynamic cached widgets.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

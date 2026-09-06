@@ -288,78 +288,21 @@ fun NextGenChatMessageItem(
         }
     }
 
-    // Contextual Bottom Sheet / Menu
+    // iMessage / iOS Tapback Overlay & Floating Action Pill
     if (showContextMenu) {
-        ModalBottomSheet(
-            onDismissRequest = { showContextMenu = false },
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = "Message Options",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = CyanPrimary
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // Action: Copy Text
-                ListItem(
-                    headlineContent = { Text("Copy Text") },
-                    leadingContent = { Icon(Icons.Default.ContentCopy, contentDescription = null, tint = CyanPrimary) },
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable {
-                            clipboardManager.setText(AnnotatedString(message.widgetData?.toJson() ?: message.text))
-                            showContextMenu = false
-                        }
-                )
-
-                // Action: Quote / Reply
-                ListItem(
-                    headlineContent = { Text("Reply / Quote") },
-                    leadingContent = { Icon(Icons.AutoMirrored.Filled.Reply, contentDescription = null, tint = CyanPrimary) },
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable {
-                            onReply(message)
-                            showContextMenu = false
-                        }
-                )
-
-                // Action: Resend / Re-query
-                ListItem(
-                    headlineContent = { Text(if (isUser) "Resend SMS" else "Re-query AI Provider") },
-                    leadingContent = { Icon(Icons.Default.Refresh, contentDescription = null, tint = SignalAmber) },
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable {
-                            onResend(message)
-                            showContextMenu = false
-                        }
-                )
-
-                // Action: Inspect Raw Wire
-                ListItem(
-                    headlineContent = { Text("Inspect Raw Cellular PDU") },
-                    leadingContent = { Icon(Icons.Default.Code, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable {
-                            showWireDetails = true
-                            showContextMenu = false
-                        }
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
+        MessageTapbackOverlay(
+            message = message,
+            isUser = isUser,
+            onDismiss = { showContextMenu = false },
+            onReact = { reaction ->
+                // Visual reaction or reply prefix
+            },
+            onReply = onReply,
+            onResend = onResend,
+            onInspectWire = {
+                showWireDetails = true
             }
-        }
+        )
     }
 }
 

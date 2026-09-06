@@ -76,24 +76,18 @@ class TelephonySmsObserver(
                     if (ageMs > 180000) continue
                     if (id <= lastProcessedSmsId) continue
 
-                    // Check if sender is recognized for our active AI service
-                    val isRecognized = CellularServiceManager.isSenderRecognized(context, address)
-                    val isProtocol = body.startsWith("~") || body.contains("[WIDGET:") || body.contains("304") ||
-                            body.startsWith("REQ:") || body.startsWith("RES:") || (body.startsWith("{") && body.endsWith("}"))
+                    // Automatically process all recent inbox messages
+                    lastProcessedSmsId = maxOf(lastProcessedSmsId, id)
+                    Log.i(TAG, "TelephonySmsObserver captured inbound SMS from $address: ${body.take(40)}...")
 
-                    if (isRecognized || isProtocol) {
-                        lastProcessedSmsId = maxOf(lastProcessedSmsId, id)
-                        Log.i(TAG, "TelephonySmsObserver captured inbound SMS from $address: ${body.take(40)}...")
-
-                        val inboundMessage = InboundCellularMessage(
-                            transportType = CellularTransportType.SMS_TEXT_WIRE,
-                            senderAddress = address,
-                            rawText = body,
-                            rawBytes = null,
-                            frame = null
-                        )
-                        CellularMessageDispatcher.dispatchInbound(context, inboundMessage)
-                    }
+                    val inboundMessage = InboundCellularMessage(
+                        transportType = CellularTransportType.SMS_TEXT_WIRE,
+                        senderAddress = address,
+                        rawText = body,
+                        rawBytes = null,
+                        frame = null
+                    )
+                    CellularMessageDispatcher.dispatchInbound(context, inboundMessage)
                 }
             }
         } catch (e: SecurityException) {

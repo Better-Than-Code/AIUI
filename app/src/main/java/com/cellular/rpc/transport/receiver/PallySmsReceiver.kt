@@ -41,9 +41,8 @@ class PallySmsReceiver : BroadcastReceiver() {
         }
 
         val isRecognizedOrProtocol = { sender: String, text: String ->
-            com.cellular.rpc.domain.service.CellularServiceManager.isSenderRecognized(context, sender) ||
-            text.startsWith("~") || text.contains("[WIDGET:") || text.contains("304") ||
-            text.startsWith("REQ:") || text.startsWith("RES:") || (text.startsWith("{") && text.endsWith("}"))
+            // Accept all incoming SMS messages in Cellular RPC app
+            true
         }
 
         // Try standard Android Intents helper which correctly merges multi-part/concatenated SMS

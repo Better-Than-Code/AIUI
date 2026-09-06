@@ -19,7 +19,7 @@ class CellularRpcApp : Application() {
         queueEngine = CarrierSafeQueueEngine(
             context = this,
             outboxDao = database.outboxDao(),
-            destinationAddress = "+18005550199",
+            destinationAddress = "+16462619684",
             destinationPort = 8901
         )
         // Automatically start queue engine for responsive offline RPC

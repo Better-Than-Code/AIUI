@@ -75,7 +75,7 @@ data class CellularServiceProfile(
         val DEFAULT_AI = CellularServiceProfile(
             id = "ai_default",
             name = "Pally AI",
-            phoneNumber = "+18005550199",
+            phoneNumber = "+16462619684",
             description = "AI SMS Assistant",
             protocolMode = ServiceProtocolMode.SMS_CONVERSATIONAL,
             promptPrefix = "",

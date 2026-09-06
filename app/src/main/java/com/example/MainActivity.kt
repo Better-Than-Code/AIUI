@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import com.cellular.rpc.update.AppUpdateManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -69,8 +70,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MyApplicationTheme {
-                CellularRpcScreen(viewModel)
+            var isDarkTheme by remember { mutableStateOf(true) }
+            MyApplicationTheme(darkTheme = isDarkTheme) {
+                CellularRpcScreen(viewModel, isDarkTheme = isDarkTheme, onToggleTheme = { isDarkTheme = !isDarkTheme })
             }
         }
     }
@@ -78,7 +80,11 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CellularRpcScreen(viewModel: CellularRpcViewModel) {
+fun CellularRpcScreen(
+    viewModel: CellularRpcViewModel,
+    isDarkTheme: Boolean = true,
+    onToggleTheme: () -> Unit = {}
+) {
     // 0 = Chat (Initial Default Tab), 1 = Widgets, 2 = Inspector, 3 = E2E Tests, 4 = Outbox
     var selectedTab by remember { mutableIntStateOf(0) }
     var isDiagnosticsEnabled by remember { mutableStateOf(false) }
@@ -233,6 +239,22 @@ fun CellularRpcScreen(viewModel: CellularRpcViewModel) {
                                 Icon(
                                     Icons.Default.Sync,
                                     contentDescription = "Pull Sync via SMS",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(4.dp))
+
+                            IconButton(
+                                onClick = { onToggleTheme() },
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .testTag("theme_toggle_button")
+                            ) {
+                                Icon(
+                                    imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                    contentDescription = "Toggle Classic White / Modern Dark Theme",
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(20.dp)
                                 )
@@ -508,6 +530,7 @@ fun CellularRpcScreen(viewModel: CellularRpcViewModel) {
     // Settings BottomSheet Dialog
     if (showSettingsSheet) {
         PallySettingsBottomSheet(
+            context = context,
             currentPhoneNumber = pallyPhoneNumber,
             activeService = activeService,
             availableServices = availableServices,
@@ -1583,6 +1606,7 @@ fun SystemStatusChatCard(status: WidgetData.SystemStatus) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PallySettingsBottomSheet(
+    context: android.content.Context,
     currentPhoneNumber: String,
     activeService: CellularServiceProfile,
     availableServices: List<CellularServiceProfile>,
@@ -1676,7 +1700,7 @@ fun PallySettingsBottomSheet(
                             value = phoneNumberInput,
                             onValueChange = { phoneNumberInput = it },
                             label = { Text("AI SMS Phone Number") },
-                            placeholder = { Text("+18005550199") },
+                            placeholder = { Text("+16462619684") },
                             leadingIcon = {
                                 Icon(Icons.Default.Phone, contentDescription = null, tint = CyanPrimary, modifier = Modifier.size(20.dp))
                             },
@@ -1984,6 +2008,82 @@ fun PallySettingsBottomSheet(
                             onCheckedChange = { onToggleDiagnostics() }
                         )
                     }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // App Update Section (GitHub APK)
+                    var isCheckingUpdate by remember { mutableStateOf(false) }
+                    var updateMessage by remember { mutableStateOf<String?>(null) }
+                    val scope = rememberCoroutineScope()
+
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "App Updates & Versioning",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "Current Version: 1.0 (v1)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Button(
+                                onClick = {
+                                    isCheckingUpdate = true
+                                    updateMessage = null
+                                    val localContext = context
+                                    scope.launch {
+                                        try {
+                                            val info = com.cellular.rpc.update.AppUpdateManager.checkForUpdate(localContext)
+                                            if (info != null) {
+                                                updateMessage = "Found version ${info.versionName}! Downloading..."
+                                                com.cellular.rpc.update.AppUpdateManager.downloadAndInstallApk(localContext, info.apkUrl) { progress ->
+                                                    updateMessage = "Downloading update: ${(progress * 100).toInt()}%"
+                                                }
+                                            } else {
+                                                updateMessage = "App is already up to date!"
+                                            }
+                                        } catch (e: Exception) {
+                                            updateMessage = "Update check failed: ${e.localizedMessage}"
+                                        } finally {
+                                            isCheckingUpdate = false
+                                        }
+                                    }
+                                },
+                                enabled = !isCheckingUpdate,
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                if (isCheckingUpdate) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Checking...")
+                                } else {
+                                    Icon(Icons.Default.SystemUpdate, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Check for Update")
+                                }
+                            }
+                        }
+
+                        if (updateMessage != null) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = updateMessage!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -2070,7 +2170,7 @@ fun PallySettingsBottomSheet(
                         value = newPhone,
                         onValueChange = { newPhone = it },
                         label = { Text("Phone Number") },
-                        placeholder = { Text("+18005550199") },
+                        placeholder = { Text("+16462619684") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp)

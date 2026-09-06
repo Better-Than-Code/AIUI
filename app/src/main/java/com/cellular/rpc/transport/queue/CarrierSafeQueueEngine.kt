@@ -2,7 +2,9 @@ package com.cellular.rpc.transport.queue
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.telephony.SmsManager
 import android.util.Log
@@ -38,7 +40,7 @@ import kotlin.random.Random
 class CarrierSafeQueueEngine(
     private val context: Context,
     private val outboxDao: OutboxDao,
-    var destinationAddress: String = "+18005550199",
+    var destinationAddress: String = "+16462619684",
     val destinationPort: Short = 8901
 ) {
     companion object {
@@ -424,18 +426,44 @@ class CarrierSafeQueueEngine(
     private fun transmitOverCellularRadio(frame: Frame) {
         val cleanNumber = destinationAddress.replace(Regex("[^0-9+]"), "")
         if (cleanNumber.isBlank()) {
-            Log.w(TAG, "Cannot transmit SMS: Destination phone number is empty.")
+            Log.w(TAG, "Cannot transmit message: Destination phone number is empty.")
             return
         }
 
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
-            Log.e(TAG, "Cannot transmit SMS: SEND_SMS permission is not granted.")
+        val rawStr = if (frame.payload.isNotEmpty()) String(frame.payload, Charsets.UTF_8) else ""
+        val textToSend = formatPayloadForAiService(rawStr, frame)
+
+        if (textToSend.isBlank()) {
+            Log.w(TAG, "Skipping empty text transmission.")
             return
         }
 
         try {
-            // Track destination so incoming reply is automatically identified as AI service response
             com.cellular.rpc.domain.service.CellularServiceManager.recordLastOutboundDestination(context, cleanNumber)
+
+            // 1. Attempt RCS / Native Messaging App intent dispatch first (utilizes device RCS settings with automatic SMS fallback)
+            try {
+                val intent = Intent(Intent.ACTION_SENDTO).apply {
+                    data = Uri.parse("smsto:$cleanNumber")
+                    putExtra("sms_body", textToSend)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                Log.i(TAG, "Dispatched message via native RCS/SMS messaging app intent successfully.")
+                scope.launch {
+                    windowController.markFrameAcknowledged(frame.seqNo)
+                    outboxDao.markAcknowledged(frame.sessionId, frame.seqNo)
+                }
+                return
+            } catch (intentErr: Exception) {
+                Log.d(TAG, "Intent dispatch fallback to background SmsManager: ${intentErr.message}")
+            }
+
+            // 2. Fallback to SmsManager (Carrier-safe background SMS delivery)
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
+                Log.e(TAG, "Cannot transmit SMS: SEND_SMS permission is not granted.")
+                return
+            }
 
             val smsManager: SmsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 context.getSystemService(SmsManager::class.java) ?: @Suppress("DEPRECATION") SmsManager.getDefault()
@@ -444,15 +472,7 @@ class CarrierSafeQueueEngine(
                 SmsManager.getDefault()
             }
 
-            val rawStr = if (frame.payload.isNotEmpty()) String(frame.payload, Charsets.UTF_8) else ""
-            val textToSend = formatPayloadForAiService(rawStr, frame)
-
-            if (textToSend.isBlank()) {
-                Log.w(TAG, "Skipping empty text transmission.")
-                return
-            }
-
-            Log.i(TAG, "Dispatching cellular SMS to $cleanNumber (${textToSend.length} chars): $textToSend")
+            Log.i(TAG, "Dispatching cellular SMS via SmsManager to $cleanNumber (${textToSend.length} chars): $textToSend")
 
             val parts = smsManager.divideMessage(textToSend)
             if (parts.size > 1) {
@@ -461,13 +481,13 @@ class CarrierSafeQueueEngine(
                 smsManager.sendTextMessage(cleanNumber, null, textToSend, null, null)
             }
 
-            // Immediately acknowledge outbound frame in sliding window so live SMS does not stay in-flight
+            // Immediately acknowledge outbound frame in sliding window
             scope.launch {
                 windowController.markFrameAcknowledged(frame.seqNo)
                 outboxDao.markAcknowledged(frame.sessionId, frame.seqNo)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error transmitting SMS: ${e.message}", e)
+            Log.e(TAG, "Error transmitting message: ${e.message}", e)
         }
     }
 

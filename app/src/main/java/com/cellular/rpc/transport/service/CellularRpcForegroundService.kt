@@ -31,7 +31,7 @@ class CellularRpcForegroundService : Service() {
         queueEngine = CarrierSafeQueueEngine(
             context = applicationContext,
             outboxDao = db.outboxDao(),
-            destinationAddress = "+18005550199",
+            destinationAddress = "+16462619684",
             destinationPort = 8901
         ).also {
             instance = this

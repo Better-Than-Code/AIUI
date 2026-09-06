@@ -105,11 +105,17 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
         refreshServices()
     }
 
-    fun updatePallyPhoneNumber(number: String) {
+    fun renameService(serviceId: String, newName: String) {
+        val app = getApplication<Application>()
+        com.cellular.rpc.domain.service.CellularServiceManager.renameService(app, serviceId, newName)
+        refreshServices()
+    }
+
+    fun updatePallyPhoneNumber(number: String, customName: String? = null) {
         val trimmed = number.trim()
         if (trimmed.isNotEmpty()) {
             val app = getApplication<Application>()
-            com.cellular.rpc.domain.service.CellularServiceManager.setManualPhoneNumber(app, trimmed)
+            com.cellular.rpc.domain.service.CellularServiceManager.setManualPhoneNumber(app, trimmed, customName)
             // Automatically switch from simulation to live cellular SMS when user enters a real phone number
             setLoopbackSimulation(false)
             refreshServices()
@@ -345,6 +351,10 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
                 else -> null
             }
 
+            if (detectedType != null) {
+                lastQueriedType = detectedType
+            }
+
             val activeService = com.cellular.rpc.domain.service.CellularServiceManager.getActiveService(getApplication())
             val promptToSend = if (activeService.promptPrefix.isNotBlank()) {
                 "${activeService.promptPrefix} $trimmed"
@@ -352,33 +362,12 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
                 trimmed
             }
 
-            if (detectedType != null) {
-                lastQueriedType = detectedType
-                val cached = widgetCacheDao.getWidgetByType(detectedType)
-                val req = CellularRequest(
-                    action = CellularAction.GET,
-                    target = "widget:$detectedType",
-                    etag = cached?.contentHash?.takeIf { it.isNotEmpty() && it != "00000000" }
-                )
-                val queryPayload = when (activeService.protocolMode) {
-                    com.cellular.rpc.domain.service.ServiceProtocolMode.PALLY_COMPACT -> req.toCompactWire()
-                    com.cellular.rpc.domain.service.ServiceProtocolMode.JSON_WIRE -> req.toJson()
-                    com.cellular.rpc.domain.service.ServiceProtocolMode.SMS_CONVERSATIONAL -> promptToSend
-                }
-
-                queueEngine.enqueuePayload(
-                    sessionId = activeSessionId,
-                    pktType = Frame.PKT_RPC_REQ,
-                    payload = queryPayload.toByteArray(Charsets.UTF_8)
-                )
-            } else {
-                // Conversational request
-                queueEngine.enqueuePayload(
-                    sessionId = activeSessionId,
-                    pktType = Frame.PKT_RPC_REQ,
-                    payload = promptToSend.toByteArray(Charsets.UTF_8)
-                )
-            }
+            // Always enqueue the user's natural text prompt so AI agent receives human-readable text
+            queueEngine.enqueuePayload(
+                sessionId = activeSessionId,
+                pktType = Frame.PKT_RPC_REQ,
+                payload = promptToSend.toByteArray(Charsets.UTF_8)
+            )
         }
     }
 
@@ -399,35 +388,15 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
                 )
                 _chatMessages.value = _chatMessages.value + chatMsg
             } else if (response.payload.isNotEmpty()) {
-                val parsed = WidgetData.parse(response.payload)
-                val chatMsg = if (parsed != null) {
-                    if (parsed is WidgetData.ChatText) {
-                        com.cellular.rpc.engine.ChatMessage(
-                            sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
-                            text = parsed.text,
-                            wirePacket = response.toCompactWire(),
-                            byteSize = response.payload.toByteArray().size,
-                            pduCount = ((response.payload.toByteArray().size + 139) / 140).coerceAtLeast(1)
-                        )
-                    } else {
-                        com.cellular.rpc.engine.ChatMessage(
-                            sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
-                            text = "",
-                            widgetData = parsed,
-                            wirePacket = response.toCompactWire(),
-                            byteSize = response.payload.toByteArray().size,
-                            pduCount = ((response.payload.toByteArray().size + 139) / 140).coerceAtLeast(1)
-                        )
-                    }
-                } else {
-                    com.cellular.rpc.engine.ChatMessage(
-                        sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
-                        text = response.payload,
-                        wirePacket = response.toCompactWire(),
-                        byteSize = response.payload.toByteArray().size,
-                        pduCount = 1
-                    )
-                }
+                val dual = com.cellular.rpc.engine.DualResponseParser.parse(response.payload)
+                val chatMsg = com.cellular.rpc.engine.ChatMessage(
+                    sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
+                    text = dual.conversationalText,
+                    widgetData = dual.widgetData,
+                    wirePacket = response.toCompactWire(),
+                    byteSize = response.payload.toByteArray().size,
+                    pduCount = ((response.payload.toByteArray().size + 139) / 140).coerceAtLeast(1)
+                )
                 _chatMessages.value = _chatMessages.value + chatMsg
             }
         }
@@ -455,35 +424,15 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
                 _chatMessages.value = _chatMessages.value + chatMsg
             } else {
                 val contentToParse = if (cellularRes.payload.isNotEmpty()) cellularRes.payload else payloadStr
-                val parsed = WidgetData.parse(contentToParse)
-                val chatMsg = if (parsed != null) {
-                    if (parsed is WidgetData.ChatText) {
-                        com.cellular.rpc.engine.ChatMessage(
-                            sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
-                            text = parsed.text,
-                            wirePacket = frame.toAsciiWire(),
-                            byteSize = frame.payload.size,
-                            pduCount = ((frame.payload.size + 139) / 140).coerceAtLeast(1)
-                        )
-                    } else {
-                        com.cellular.rpc.engine.ChatMessage(
-                            sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
-                            text = "",
-                            widgetData = parsed,
-                            wirePacket = frame.toAsciiWire(),
-                            byteSize = frame.payload.size,
-                            pduCount = ((frame.payload.size + 139) / 140).coerceAtLeast(1)
-                        )
-                    }
-                } else {
-                    com.cellular.rpc.engine.ChatMessage(
-                        sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
-                        text = payloadStr,
-                        wirePacket = frame.toAsciiWire(),
-                        byteSize = frame.payload.size,
-                        pduCount = 1
-                    )
-                }
+                val dual = com.cellular.rpc.engine.DualResponseParser.parse(contentToParse)
+                val chatMsg = com.cellular.rpc.engine.ChatMessage(
+                    sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
+                    text = dual.conversationalText,
+                    widgetData = dual.widgetData,
+                    wirePacket = frame.toAsciiWire(),
+                    byteSize = frame.payload.size,
+                    pduCount = ((frame.payload.size + 139) / 140).coerceAtLeast(1)
+                )
                 _chatMessages.value = _chatMessages.value + chatMsg
             }
         }
@@ -528,22 +477,33 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
 
     /**
      * Dispatches an RPC query for a widget type (e.g. "weather", "news_digest", "market_ticker").
-     * Uses standardized CellularRequest with Content-Hash ETag.
      */
     fun queryWidget(type: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val cached = widgetCacheDao.getWidgetByType(type)
-            val cellularReq = CellularRequest(
-                action = CellularAction.GET,
-                target = "widget:$type",
-                etag = cached?.contentHash?.takeIf { it.isNotEmpty() && it != "00000000" }
-            )
-            val queryStr = cellularReq.toCompactWire()
+        lastQueriedType = type
+        val queryPrompt = when (type.lowercase()) {
+            "weather" -> "Please provide the current weather in JSON format: {\"type\":\"weather\",\"city\":\"San Francisco\",\"temp\":72,\"cond\":\"Sunny\"}"
+            "news_digest", "news" -> "Please provide top news headlines in JSON format: {\"type\":\"news_digest\",\"headlines\":[{\"title\":\"Top News\",\"source\":\"Global\",\"summary\":\"Summary of events\"}]}"
+            "market_ticker", "market" -> "Please provide current market prices in JSON format: {\"type\":\"market_ticker\",\"symbols\":[{\"symbol\":\"SPY\",\"price\":510.50,\"changePercent\":0.75}]}"
+            "task_checklist", "tasks" -> "Please provide a task checklist in JSON format: {\"type\":\"task_checklist\",\"title\":\"Tasks\",\"items\":[{\"id\":\"1\",\"text\":\"Review report\",\"completed\":false}]}"
+            "calendar_event", "calendar" -> "Please provide upcoming calendar events in JSON format: {\"type\":\"calendar_event\",\"title\":\"Meeting\",\"time\":\"2:00 PM\",\"location\":\"Office\"}"
+            "system_status", "system" -> "Please provide system status in JSON format: {\"type\":\"system_status\",\"status\":\"ONLINE\",\"latencyMs\":45}"
+            "poll" -> "Please provide a community poll in JSON format: {\"type\":\"poll\",\"question\":\"Preferred option?\",\"options\":[\"Option A\",\"Option B\"]}"
+            else -> "Please provide $type in JSON format: {\"type\":\"$type\"}"
+        }
 
+        val userMessage = com.cellular.rpc.engine.ChatMessage(
+            sender = com.cellular.rpc.engine.MessageSender.USER,
+            text = "Request: $type update",
+            byteSize = queryPrompt.length,
+            pduCount = 1
+        )
+        _chatMessages.value = _chatMessages.value + userMessage
+
+        viewModelScope.launch(Dispatchers.IO) {
             queueEngine.enqueuePayload(
                 sessionId = activeSessionId,
                 pktType = Frame.PKT_RPC_REQ,
-                payload = queryStr.toByteArray(Charsets.UTF_8)
+                payload = queryPrompt.toByteArray(Charsets.UTF_8)
             )
         }
     }

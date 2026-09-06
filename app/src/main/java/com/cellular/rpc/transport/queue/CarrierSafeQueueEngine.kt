@@ -286,22 +286,26 @@ class CarrierSafeQueueEngine(
     }
 
     /**
-     * Retries unacknowledged frames exceeding the 4500ms timeout.
+     * Retries unacknowledged frames exceeding the 4500ms timeout in simulation mode.
      */
     private suspend fun retryLoop() {
         while (_isEngineRunning.value) {
             try {
-                val now = System.currentTimeMillis()
-                val needingRetry = windowController.getFramesRequiringRetry(4500L, now)
-                for (frame in needingRetry) {
-                    Log.w(TAG, "Frame ${frame.seqNo} timed out. Re-transmitting...")
-                    dispatchPhysicalFrame(frame)
-                    applyCarrierGap()
+                // Only run automatic retransmissions in loopback simulation mode.
+                // In live cellular SMS mode, automatic retry loops are disabled to protect against carrier rate-limiting and duplicate SMS billing.
+                if (loopbackEnabled) {
+                    val now = System.currentTimeMillis()
+                    val needingRetry = windowController.getFramesRequiringRetry(4500L, now)
+                    for (frame in needingRetry) {
+                        Log.w(TAG, "Frame ${frame.seqNo} timed out. Re-transmitting simulation...")
+                        dispatchPhysicalFrame(frame)
+                        applyCarrierGap()
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error in retryLoop: ${e.message}", e)
             }
-            delay(1000)
+            delay(1500)
         }
     }
 
@@ -372,6 +376,51 @@ class CarrierSafeQueueEngine(
         }
     }
 
+    private fun formatPayloadForAiService(rawPayload: String, frame: Frame): String {
+        val trimmed = rawPayload.trim()
+        if (trimmed.isEmpty()) return ""
+
+        // Translate internal micro-wire RPC requests into crystal-clear instructions for AI agents
+        if (trimmed.startsWith("REQ:GET widget:") || trimmed.startsWith("REQ:GET /") || trimmed.startsWith("REQ:GET")) {
+            val target = trimmed
+                .removePrefix("REQ:GET widget:")
+                .removePrefix("REQ:GET /")
+                .removePrefix("REQ:GET")
+                .substringBefore("?")
+                .trim()
+            return when (target.lowercase()) {
+                "weather" -> "Please provide the current weather in JSON format: {\"type\":\"weather\",\"city\":\"San Francisco\",\"temp\":72,\"cond\":\"Sunny\"}"
+                "news_digest", "news" -> "Please provide top news headlines in JSON format: {\"type\":\"news_digest\",\"headlines\":[{\"title\":\"Top News\",\"source\":\"Global\",\"summary\":\"Summary of events\"}]}"
+                "market_ticker", "market", "stocks", "crypto" -> "Please provide current market prices in JSON format: {\"type\":\"market_ticker\",\"symbols\":[{\"symbol\":\"SPY\",\"price\":510.50,\"changePercent\":0.75}]}"
+                "task_checklist", "tasks", "todo" -> "Please provide a task checklist in JSON format: {\"type\":\"task_checklist\",\"title\":\"Tasks\",\"items\":[{\"id\":\"1\",\"text\":\"Review report\",\"completed\":false}]}"
+                "calendar_event", "calendar" -> "Please provide upcoming calendar events in JSON format: {\"type\":\"calendar_event\",\"title\":\"Meeting\",\"time\":\"2:00 PM\",\"location\":\"Office\"}"
+                "system_status", "system" -> "Please provide system status in JSON format: {\"type\":\"system_status\",\"status\":\"ONLINE\",\"latencyMs\":45}"
+                "poll" -> "Please provide a community poll in JSON format: {\"type\":\"poll\",\"question\":\"Preferred option?\",\"options\":[\"Option A\",\"Option B\"]}"
+                else -> "Please provide $target data in JSON format: {\"type\":\"$target\"}"
+            }
+        }
+
+        if (trimmed.startsWith("VOTE:")) {
+            val parts = trimmed.split(":")
+            val pollId = parts.getOrNull(1) ?: "poll"
+            val opt = parts.getOrNull(2) ?: "1"
+            return "Vote submitted: Option $opt for poll $pollId"
+        }
+
+        if (trimmed.startsWith("AUTH_TRANSFER:")) {
+            val transferId = trimmed.removePrefix("AUTH_TRANSFER:").trim()
+            return "Transfer authorized for ID: $transferId"
+        }
+
+        // If it starts with micro-wire framing '~' or is pure binary, avoid sending gibberish
+        if (trimmed.startsWith("~") && trimmed.endsWith("#")) {
+            return "Status ping"
+        }
+
+        // Return user's natural prompt / conversational text directly
+        return trimmed
+    }
+
     private fun transmitOverCellularRadio(frame: Frame) {
         val cleanNumber = destinationAddress.replace(Regex("[^0-9+]"), "")
         if (cleanNumber.isBlank()) {
@@ -395,22 +444,12 @@ class CarrierSafeQueueEngine(
                 SmsManager.getDefault()
             }
 
-            val activeProfile = com.cellular.rpc.domain.service.CellularServiceManager.getActiveService(context)
-            val textToSend = when (activeProfile.protocolMode) {
-                com.cellular.rpc.domain.service.ServiceProtocolMode.PALLY_COMPACT -> {
-                    val rawStr = if (frame.payload.isNotEmpty()) String(frame.payload, Charsets.UTF_8) else ""
-                    if (rawStr.startsWith("REQ:") || rawStr.startsWith("~")) {
-                        frame.toAsciiWire()
-                    } else if (rawStr.isNotBlank()) {
-                        rawStr
-                    } else {
-                        frame.toAsciiWire()
-                    }
-                }
-                com.cellular.rpc.domain.service.ServiceProtocolMode.SMS_CONVERSATIONAL,
-                com.cellular.rpc.domain.service.ServiceProtocolMode.JSON_WIRE -> {
-                    if (frame.payload.isNotEmpty()) String(frame.payload, Charsets.UTF_8) else frame.toAsciiWire()
-                }
+            val rawStr = if (frame.payload.isNotEmpty()) String(frame.payload, Charsets.UTF_8) else ""
+            val textToSend = formatPayloadForAiService(rawStr, frame)
+
+            if (textToSend.isBlank()) {
+                Log.w(TAG, "Skipping empty text transmission.")
+                return
             }
 
             Log.i(TAG, "Dispatching cellular SMS to $cleanNumber (${textToSend.length} chars): $textToSend")
@@ -422,10 +461,9 @@ class CarrierSafeQueueEngine(
                 smsManager.sendTextMessage(cleanNumber, null, textToSend, null, null)
             }
 
-            // Immediately acknowledge outbound frame in sliding window so conversational SMS does not deadlock
+            // Immediately acknowledge outbound frame in sliding window so live SMS does not stay in-flight
             scope.launch {
-                delay(300)
-                windowController.processAck(frame.seqNo, 0L)
+                windowController.markFrameAcknowledged(frame.seqNo)
                 outboxDao.markAcknowledged(frame.sessionId, frame.seqNo)
             }
         } catch (e: Exception) {

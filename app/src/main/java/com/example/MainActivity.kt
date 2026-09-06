@@ -427,6 +427,7 @@ fun CellularRpcScreen(viewModel: CellularRpcViewModel) {
                 0 -> CellularChatTab(
                     messages = chatMessages,
                     pallyPhone = pallyPhoneNumber,
+                    assistantName = activeService.name,
                     isLoopbackSimulation = isLoopbackSimulation,
                     hasSmsPermissions = hasSmsPermissions,
                     onRequestPermissions = { permissionLauncher.launch(requiredPermissions) },
@@ -469,8 +470,8 @@ fun CellularRpcScreen(viewModel: CellularRpcViewModel) {
             isLoopback = isLoopbackSimulation,
             isDiagnostics = isDiagnosticsEnabled,
             onSelectService = { viewModel.selectService(it) },
-            onUpdatePhoneNumber = { viewModel.updatePallyPhoneNumber(it) },
-            onSaveCustomService = { viewModel.saveCustomService(it) },
+            onUpdatePhoneNumber = { phone, name -> viewModel.updatePallyPhoneNumber(phone, name) },
+            onRenameService = { id, name -> viewModel.renameService(id, name) },
             onDeleteCustomService = { viewModel.deleteCustomService(it) },
             onToggleLoopback = { viewModel.toggleLoopbackSimulation() },
             onToggleDiagnostics = { isDiagnosticsEnabled = !isDiagnosticsEnabled },
@@ -490,6 +491,7 @@ fun CellularRpcScreen(viewModel: CellularRpcViewModel) {
 fun CellularChatTab(
     messages: List<ChatMessage>,
     pallyPhone: String,
+    assistantName: String = "AI Assistant",
     isLoopbackSimulation: Boolean = false,
     hasSmsPermissions: Boolean = true,
     onRequestPermissions: () -> Unit = {},
@@ -500,6 +502,7 @@ fun CellularChatTab(
     onRefreshWidget: (String) -> Unit
 ) {
     var inputText by remember { mutableStateOf("") }
+    var replyingToMessage by remember { mutableStateOf<ChatMessage?>(null) }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
@@ -510,160 +513,65 @@ fun CellularChatTab(
         }
     }
 
-    val quickPrompts = listOf(
-        "🌤️ SF Weather" to "What is the weather in San Francisco?",
-        "📈 BTC Ticker" to "Get latest BTC price and market ticker",
-        "📰 News Digest" to "Summarize the latest top stories",
-        "💸 Send $25" to "Send $25 to Alex Chen for sprint lunch",
-        "📊 Team Poll" to "Create a quick poll: Sprint Architecture Review @ 3PM?",
-        "🧮 Tip & Split" to "Calculate tip and split on an $85 bill for 2 people",
-        "🔄 304 ETag Pull" to "REQ:widget:weather"
-    )
-
     Column(modifier = Modifier.fillMaxSize()) {
-        // Chat Stream
+        // Chat Stream (iMessage/RCS Asymmetric bubbles with Markdown & Widget Cards)
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp),
+                .padding(horizontal = 12.dp),
             contentPadding = PaddingValues(vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             items(messages, key = { it.id }) { msg ->
-                ChatMessageItem(
+                com.cellular.rpc.ui.chat.NextGenChatMessageItem(
                     message = msg,
+                    assistantName = assistantName,
                     onVote = onVote,
                     onConfirmTransfer = onConfirmTransfer,
-                    onRefreshWidget = onRefreshWidget
-                )
-            }
-        }
-
-        // Quick Suggestion Chips Bar
-        LazyRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface)
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(quickPrompts) { (label, prompt) ->
-                SuggestionChip(
-                    onClick = {
-                        onSendMessage(prompt)
-                        coroutineScope.launch {
-                            if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
-                        }
+                    onRefreshWidget = onRefreshWidget,
+                    onReply = {
+                        replyingToMessage = it
                     },
-                    label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Medium) },
-                    colors = SuggestionChipDefaults.suggestionChipColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    ),
-                    border = SuggestionChipDefaults.suggestionChipBorder(enabled = true, borderColor = DarkNavyBorder)
+                    onResend = {
+                        onSendMessage(it.widgetData?.toJson() ?: it.text)
+                    }
                 )
             }
         }
 
-        // iMessage-Style Input Bar with Live PDU Counter
-        Surface(
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextField(
-                        value = inputText,
-                        onValueChange = { inputText = it },
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("chat_input_field"),
-                        placeholder = {
-                            Text(
-                                if (isLoopbackSimulation) "Simulated prompt (offline)..." else "SMS prompt to $pallyPhone...",
-                                fontSize = 14.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent
-                        ),
-                        shape = RoundedCornerShape(22.dp),
-                        maxLines = 3
-                    )
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    val canSend = inputText.isNotBlank()
-                    FilledIconButton(
-                        onClick = {
-                            if (canSend) {
-                                if (!isLoopbackSimulation && !hasSmsPermissions) {
-                                    onRequestPermissions()
-                                } else {
-                                    onSendMessage(inputText)
-                                    inputText = ""
-                                    coroutineScope.launch {
-                                        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
-                                    }
-                                }
-                            }
-                        },
-                        enabled = canSend,
-                        modifier = Modifier
-                            .size(44.dp)
-                            .testTag("chat_send_button"),
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = if (canSend) CyanPrimary else MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (canSend) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Send SMS"
-                        )
-                    }
+        // Next-Gen Compose Bar (Interactive Tool Chips, Expandable Drawer, Quoted Reply)
+        com.cellular.rpc.ui.chat.NextGenChatInputBar(
+            inputText = inputText,
+            onInputTextChange = { inputText = it },
+            replyingToText = replyingToMessage?.let { "Replying: \"${it.text.take(45)}\"" },
+            onCancelReply = { replyingToMessage = null },
+            onSendMessage = { text ->
+                val fullMessage = if (replyingToMessage != null) {
+                    val quote = "> ${replyingToMessage?.text?.take(40)}...\n$text"
+                    replyingToMessage = null
+                    quote
+                } else {
+                    text
                 }
-
-                // SMS PDU & Byte Counter
-                val byteCount = inputText.toByteArray(Charsets.UTF_8).size
-                val pduCount = if (byteCount == 0) 1 else ((byteCount + 139) / 140)
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (isLoopbackSimulation) "⚡ Emulated Gateway (Zero SMS)" else "📡 Real SMS: $pallyPhone",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (isLoopbackSimulation) SignalAmber else SignalGreen
-                    )
-                    Text(
-                        text = "$byteCount/140B • $pduCount SMS PDU",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = if (byteCount <= 140) SignalGreen else SignalAmber
-                    )
+                onSendMessage(fullMessage)
+                inputText = ""
+                coroutineScope.launch {
+                    if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
                 }
-            }
-        }
+            },
+            onSelectQuickPrompt = { prompt, type ->
+                onRefreshWidget(type)
+                coroutineScope.launch {
+                    if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
+                }
+            },
+            destinationPhone = pallyPhone,
+            isLoopback = isLoopbackSimulation,
+            hasSmsPermissions = hasSmsPermissions,
+            onRequestPermissions = onRequestPermissions
+        )
     }
 }
 
@@ -1618,8 +1526,8 @@ fun PallySettingsBottomSheet(
     isLoopback: Boolean,
     isDiagnostics: Boolean,
     onSelectService: (CellularServiceProfile) -> Unit,
-    onUpdatePhoneNumber: (String) -> Unit,
-    onSaveCustomService: (CellularServiceProfile) -> Unit,
+    onUpdatePhoneNumber: (String, String?) -> Unit,
+    onRenameService: (String, String) -> Unit,
     onDeleteCustomService: (String) -> Unit,
     onToggleLoopback: () -> Unit,
     onToggleDiagnostics: () -> Unit,
@@ -1627,17 +1535,19 @@ fun PallySettingsBottomSheet(
     onDismiss: () -> Unit
 ) {
     var phoneNumberInput by remember { mutableStateOf(currentPhoneNumber) }
+    var nameInput by remember { mutableStateOf(activeService.name) }
+    var renamingProfile by remember { mutableStateOf<CellularServiceProfile?>(null) }
+    var renameText by remember { mutableStateOf("") }
+    var showAddDialog by remember { mutableStateOf(false) }
+    var newName by remember { mutableStateOf("") }
+    var newPhone by remember { mutableStateOf("") }
+
     var selectedInterval by remember { mutableStateOf("15 min") }
     val intervals = listOf("Manual Only", "15 min", "30 min", "1 hour", "3 hours")
 
-    var showAddCustomDialog by remember { mutableStateOf(false) }
-    var newServiceName by remember { mutableStateOf("") }
-    var newServicePhone by remember { mutableStateOf("") }
-    var newServiceProtocol by remember { mutableStateOf(ServiceProtocolMode.PALLY_COMPACT) }
-    var newServicePrefix by remember { mutableStateOf("") }
-
-    LaunchedEffect(activeService.phoneNumber) {
+    LaunchedEffect(activeService) {
         phoneNumberInput = activeService.phoneNumber
+        nameInput = activeService.name
     }
 
     ModalBottomSheet(
@@ -1660,12 +1570,12 @@ fun PallySettingsBottomSheet(
                 ) {
                     Column {
                         Text(
-                            text = "AI SMS Services & Routing",
+                            text = "AI SMS Number & Settings",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Agnostic gateway configuration for Pally & custom AI SMS endpoints",
+                            text = "Connect any AI SMS provider to power widgets and chat",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1676,190 +1586,217 @@ fun PallySettingsBottomSheet(
                 }
             }
 
-            // Section 1: Active Service & Provider Presets
+            // Section 1: Enter AI Provider SMS Number & Apply
             item {
-                Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Text(
-                            text = "Configured AI SMS Services",
-                            style = MaterialTheme.typography.labelLarge,
+                            text = "AI Provider's SMS Number",
+                            style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = CyanPrimary
                         )
-                        TextButton(
-                            onClick = { showAddCustomDialog = true },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        Text(
+                            text = "Enter your AI provider's phone number. Outgoing messages, schema queries, and interactive widget actions route directly to this cellular number.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        OutlinedTextField(
+                            value = phoneNumberInput,
+                            onValueChange = { phoneNumberInput = it },
+                            label = { Text("AI SMS Phone Number") },
+                            placeholder = { Text("+18005550199") },
+                            leadingIcon = {
+                                Icon(Icons.Default.Phone, contentDescription = null, tint = CyanPrimary, modifier = Modifier.size(20.dp))
+                            },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        OutlinedTextField(
+                            value = nameInput,
+                            onValueChange = { nameInput = it },
+                            label = { Text("Provider Label (Optional)") },
+                            placeholder = { Text("e.g. Pally AI, Claude, Office Assistant") },
+                            leadingIcon = {
+                                Icon(Icons.Default.Label, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                            },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Add Custom", fontSize = 12.sp)
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Select a preset service or define a custom AI agent number to route cellular messages.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        availableServices.forEach { service ->
-                            val isSelected = service.id == activeService.id
-                            val serviceColor = Color(service.colorHex)
-
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        onSelectService(service)
-                                        phoneNumberInput = service.phoneNumber
-                                    },
+                            Button(
+                                onClick = {
+                                    if (phoneNumberInput.isNotBlank()) {
+                                        onUpdatePhoneNumber(phoneNumberInput.trim(), nameInput.trim().ifBlank { null })
+                                    }
+                                },
                                 shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (isSelected) serviceColor.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant
-                                ),
-                                border = if (isSelected) BorderStroke(1.5.dp, serviceColor) else null
+                                colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary, contentColor = Color.Black),
+                                modifier = Modifier.weight(1f)
                             ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(serviceColor.copy(alpha = 0.2f)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = when (service.id) {
-                                                "preset_twilio_ai" -> Icons.Default.CloudQueue
-                                                "preset_local_gsm" -> Icons.Default.Storage
-                                                else -> Icons.Default.CellTower
-                                            },
-                                            contentDescription = service.name,
-                                            tint = serviceColor,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
+                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Apply Number", fontWeight = FontWeight.Bold)
+                            }
 
-                                    Spacer(modifier = Modifier.width(12.dp))
-
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                text = service.name,
-                                                style = MaterialTheme.typography.titleSmall,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            if (isSelected) {
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Surface(
-                                                    color = serviceColor,
-                                                    shape = RoundedCornerShape(4.dp)
-                                                ) {
-                                                    Text(
-                                                        text = "ACTIVE",
-                                                        fontSize = 8.sp,
-                                                        fontWeight = FontWeight.ExtraBold,
-                                                        color = Color.Black,
-                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
-                                        Text(
-                                            text = "${service.phoneNumber} • ${service.protocolMode.displayName}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        if (service.description.isNotEmpty()) {
-                                            Text(
-                                                text = service.description,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                fontSize = 11.sp,
-                                                maxLines = 2,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
-                                    }
-
-                                    if (!service.isBuiltIn) {
-                                        IconButton(
-                                            onClick = { onDeleteCustomService(service.id) },
-                                            modifier = Modifier.size(28.dp)
-                                        ) {
-                                            Icon(
-                                                Icons.Default.Delete,
-                                                contentDescription = "Delete service",
-                                                tint = SignalRed,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        }
-                                    } else if (isSelected) {
-                                        Icon(
-                                            Icons.Default.CheckCircle,
-                                            contentDescription = "Selected",
-                                            tint = serviceColor,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                }
+                            OutlinedButton(
+                                onClick = {
+                                    showAddDialog = true
+                                    newName = ""
+                                    newPhone = ""
+                                },
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("New")
                             }
                         }
                     }
                 }
             }
 
-            // Section 2: Direct / Manual Phone Number Entry
+            // Section 2: Saved AI Numbers List (Select, Rename, Delete)
             item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            text = "Direct Destination Phone Number",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold
+                            text = "Saved AI Numbers (${availableServices.size})",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = CyanPrimary
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Enter any phone number to immediately route outgoing cellular RPC packets and SMS queries without presets.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            OutlinedTextField(
-                                value = phoneNumberInput,
-                                onValueChange = { phoneNumberInput = it },
-                                modifier = Modifier.weight(1f),
-                                singleLine = true,
-                                placeholder = { Text("+18005550199") },
-                                shape = RoundedCornerShape(12.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Button(
-                                onClick = {
-                                    onUpdatePhoneNumber(phoneNumberInput.trim())
+                    }
+                    Text(
+                        text = "Tap any saved number to switch to it. Use the edit icon to rename or the trash icon to delete.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    availableServices.forEach { service ->
+                        val isSelected = service.id == activeService.id ||
+                                service.phoneNumber == activeService.phoneNumber
+
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onSelectService(service)
+                                    phoneNumberInput = service.phoneNumber
+                                    nameInput = service.name
                                 },
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary, contentColor = Color.Black)
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isSelected) CyanPrimary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant
+                            ),
+                            border = if (isSelected) BorderStroke(1.5.dp, CyanPrimary) else null
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Apply")
+                                // Active indicator icon
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isSelected) SignalGreen.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surface),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Default.Phone,
+                                        contentDescription = null,
+                                        tint = if (isSelected) SignalGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(12.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = service.name,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        if (isSelected) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Surface(
+                                                color = SignalGreen,
+                                                shape = RoundedCornerShape(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = "ACTIVE",
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    color = Color.Black,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Text(
+                                        text = service.phoneNumber,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                // Action buttons: Rename and Delete
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(
+                                        onClick = {
+                                            renamingProfile = service
+                                            renameText = service.name
+                                        },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Edit,
+                                            contentDescription = "Rename ${service.name}",
+                                            tint = CyanPrimary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+
+                                    IconButton(
+                                        onClick = { onDeleteCustomService(service.id) },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            contentDescription = "Delete ${service.name}",
+                                            tint = SignalRed,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -1946,14 +1883,14 @@ fun PallySettingsBottomSheet(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Loopback Simulation",
+                                text = "Loopback Simulation Mode",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = "Emulates remote SMS gateway responses locally for zero-carrier testing.",
+                                text = if (isLoopback) "Currently simulating locally (no actual SMS sent)" else "Sending real SMS to carrier network",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (isLoopback) SignalAmber else SignalGreen
                             )
                         }
                         Switch(
@@ -1989,12 +1926,64 @@ fun PallySettingsBottomSheet(
         }
     }
 
-    if (showAddCustomDialog) {
+    // Rename Dialog
+    if (renamingProfile != null) {
         AlertDialog(
-            onDismissRequest = { showAddCustomDialog = false },
+            onDismissRequest = { renamingProfile = null },
             title = {
                 Text(
-                    text = "Add Custom AI SMS Service",
+                    text = "Rename AI Assistant",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Phone: ${renamingProfile?.phoneNumber}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = renameText,
+                        onValueChange = { renameText = it },
+                        label = { Text("Assistant Name") },
+                        placeholder = { Text("e.g. Pally AI, Claude SMS") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val current = renamingProfile
+                        if (current != null && renameText.isNotBlank()) {
+                            onRenameService(current.id, renameText.trim())
+                        }
+                        renamingProfile = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary, contentColor = Color.Black)
+                ) {
+                    Text("Save Name")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { renamingProfile = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Add New Number Dialog
+    if (showAddDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddDialog = false },
+            title = {
+                Text(
+                    text = "Add AI SMS Number",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -2005,56 +1994,20 @@ fun PallySettingsBottomSheet(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     OutlinedTextField(
-                        value = newServiceName,
-                        onValueChange = { newServiceName = it },
-                        label = { Text("Service Name") },
-                        placeholder = { Text("e.g. My Custom LLM Agent") },
+                        value = newName,
+                        onValueChange = { newName = it },
+                        label = { Text("Name / Label") },
+                        placeholder = { Text("e.g. Claude SMS, Work AI") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp)
                     )
 
                     OutlinedTextField(
-                        value = newServicePhone,
-                        onValueChange = { newServicePhone = it },
+                        value = newPhone,
+                        onValueChange = { newPhone = it },
                         label = { Text("Phone Number") },
-                        placeholder = { Text("+15551234567") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp)
-                    )
-
-                    Text(
-                        text = "Protocol Framing Mode",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-
-                    ServiceProtocolMode.entries.forEach { mode ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { newServiceProtocol = mode }
-                                .padding(vertical = 4.dp)
-                        ) {
-                            RadioButton(
-                                selected = newServiceProtocol == mode,
-                                onClick = { newServiceProtocol = mode }
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Column {
-                                Text(mode.displayName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                                Text(mode.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
-                            }
-                        }
-                    }
-
-                    OutlinedTextField(
-                        value = newServicePrefix,
-                        onValueChange = { newServicePrefix = it },
-                        label = { Text("Prompt Prefix (Optional)") },
-                        placeholder = { Text("e.g. [AI] or [LLM_INSTRUCT]") },
+                        placeholder = { Text("+18005550199") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp)
@@ -2064,28 +2017,20 @@ fun PallySettingsBottomSheet(
             confirmButton = {
                 Button(
                     onClick = {
-                        if (newServicePhone.isNotBlank()) {
-                            val custom = CellularServiceProfile.createCustom(
-                                name = newServiceName.ifBlank { "Custom Service (${newServicePhone.takeLast(10)})" },
-                                phoneNumber = newServicePhone.trim(),
-                                protocolMode = newServiceProtocol,
-                                promptPrefix = newServicePrefix.trim()
-                            )
-                            onSaveCustomService(custom)
-                            onSelectService(custom)
-                            showAddCustomDialog = false
-                            newServiceName = ""
-                            newServicePhone = ""
-                            newServicePrefix = ""
+                        if (newPhone.isNotBlank()) {
+                            onUpdatePhoneNumber(newPhone.trim(), newName.trim().ifBlank { null })
+                            showAddDialog = false
+                            newName = ""
+                            newPhone = ""
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary, contentColor = Color.Black)
                 ) {
-                    Text("Save & Activate")
+                    Text("Add & Activate")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showAddCustomDialog = false }) {
+                TextButton(onClick = { showAddDialog = false }) {
                     Text("Cancel")
                 }
             }

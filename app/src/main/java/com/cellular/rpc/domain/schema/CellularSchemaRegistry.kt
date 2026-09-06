@@ -66,10 +66,29 @@ object CellularSchemaRegistry {
     fun hasSchema(schemaId: String): Boolean = registry.containsKey(schemaId)
 
     /**
-     * Parses a raw JSON string by extracting the "type" field and resolving the matching schema.
+     * Parses a raw string by resolving the matching schema.
+     * Supports direct JSON or embedded JSON inside conversational text from any AI SMS service.
      * Returns a pair of (Schema, DomainObject) or null if unparseable or unknown.
      */
-    fun parse(jsonString: String): Pair<CellularSchema<*>, Any>? {
+    fun parse(input: String): Pair<CellularSchema<*>, Any>? {
+        val trimmed = input.trim()
+        if (trimmed.isEmpty()) return null
+
+        // 1. Direct JSON parse
+        parseJsonInternal(trimmed)?.let { return it }
+
+        // 2. Embedded JSON block extraction
+        val startIdx = trimmed.indexOf('{')
+        val endIdx = trimmed.lastIndexOf('}')
+        if (startIdx != -1 && endIdx > startIdx) {
+            val candidate = trimmed.substring(startIdx, endIdx + 1)
+            parseJsonInternal(candidate)?.let { return it }
+        }
+
+        return null
+    }
+
+    private fun parseJsonInternal(jsonString: String): Pair<CellularSchema<*>, Any>? {
         return try {
             val json = JSONObject(jsonString)
             val type = json.optString("type")

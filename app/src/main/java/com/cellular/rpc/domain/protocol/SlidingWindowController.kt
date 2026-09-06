@@ -38,6 +38,14 @@ class SlidingWindowController(
         return seq
     }
 
+    @Synchronized
+    fun markFrameAcknowledged(seqNo: Int) {
+        unacknowledgedFrames.remove(seqNo)
+        if (seqNo == baseSequence) {
+            baseSequence = (baseSequence + 1) % maxSequence
+        }
+    }
+
     /**
      * Process an incoming selective-repeat ACK.
      * @param ackBase The highest cumulative sequence confirmed.
@@ -47,9 +55,15 @@ class SlidingWindowController(
     fun processAck(ackBase: Int, bitmask: Long): List<Frame> {
         val newlyAcked = mutableListOf<Frame>()
 
+        // Clear ackBase directly
+        unacknowledgedFrames.remove(ackBase)?.let { newlyAcked.add(it) }
+
         // 1. Advance the cumulative base window
         while (baseSequence != ackBase && unacknowledgedFrames.containsKey(baseSequence)) {
             unacknowledgedFrames.remove(baseSequence)?.let { newlyAcked.add(it) }
+            baseSequence = (baseSequence + 1) % maxSequence
+        }
+        if (baseSequence == ackBase) {
             baseSequence = (baseSequence + 1) % maxSequence
         }
 

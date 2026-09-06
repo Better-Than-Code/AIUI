@@ -11,28 +11,23 @@ import org.json.JSONArray
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
- * Central manager for pluggable AI SMS service configurations.
+ * Central manager for user-configured AI SMS numbers.
  *
- * Handles switching active AI SMS providers, adding custom services,
- * manually setting destination phone numbers, and validating incoming
- * SMS messages from any configured AI SMS service.
+ * Fully provider-agnostic: allows users to enter any AI provider's SMS number,
+ * apply it immediately, save numbers to a list, rename them, delete them,
+ * and switch between them seamlessly.
  */
 object CellularServiceManager {
     private const val TAG = "CellularServiceManager"
     private const val PREFS_NAME = "cellular_service_prefs"
     private const val KEY_ACTIVE_SERVICE_ID = "active_service_id"
-    private const val KEY_CUSTOM_SERVICES_JSON = "custom_services_json"
+    private const val KEY_SAVED_SERVICES_JSON = "custom_services_json"
     private const val KEY_MANUAL_OVERRIDE_PHONE = "manual_override_phone"
+    private const val KEY_LAST_OUTBOUND_DESTINATION = "key_last_outbound_destination"
 
-    private val builtInPresets = listOf(
-        CellularServiceProfile.DEFAULT_PALLY,
-        CellularServiceProfile.PRESET_TWILIO_AI,
-        CellularServiceProfile.PRESET_LOCAL_LLM
-    )
+    private val savedProfiles = CopyOnWriteArrayList<CellularServiceProfile>()
 
-    private val customProfiles = CopyOnWriteArrayList<CellularServiceProfile>()
-
-    private val _activeService = MutableStateFlow(CellularServiceProfile.DEFAULT_PALLY)
+    private val _activeService = MutableStateFlow(CellularServiceProfile.DEFAULT_AI)
     val activeServiceFlow: StateFlow<CellularServiceProfile> = _activeService.asStateFlow()
 
     @Volatile
@@ -46,24 +41,29 @@ object CellularServiceManager {
         if (isInitialized) return
         val prefs = getPrefs(context)
 
-        // Load custom profiles
-        customProfiles.clear()
-        val customJson = prefs.getString(KEY_CUSTOM_SERVICES_JSON, null)
+        // Load saved profiles from persistent storage
+        savedProfiles.clear()
+        val customJson = prefs.getString(KEY_SAVED_SERVICES_JSON, null)
         if (!customJson.isNullOrBlank()) {
             try {
                 val array = JSONArray(customJson)
                 for (i in 0 until array.length()) {
-                    CellularServiceProfile.fromJson(array.getString(i))?.let { customProfiles.add(it) }
+                    CellularServiceProfile.fromJson(array.getString(i))?.let { savedProfiles.add(it) }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to parse custom services JSON", e)
+                Log.e(TAG, "Failed to parse saved services JSON", e)
             }
         }
 
+        // If no saved profiles exist yet, initialize with the default profile
+        if (savedProfiles.isEmpty()) {
+            savedProfiles.add(CellularServiceProfile.DEFAULT_AI)
+            persistSavedProfiles(context)
+        }
+
         // Determine active profile
-        val activeId = prefs.getString(KEY_ACTIVE_SERVICE_ID, CellularServiceProfile.DEFAULT_PALLY.id)
-        val allProfiles = builtInPresets + customProfiles
-        var selected = allProfiles.find { it.id == activeId } ?: CellularServiceProfile.DEFAULT_PALLY
+        val activeId = prefs.getString(KEY_ACTIVE_SERVICE_ID, CellularServiceProfile.DEFAULT_AI.id)
+        var selected = savedProfiles.find { it.id == activeId } ?: savedProfiles.first()
 
         // Check if there was a manual phone override applied
         val manualPhone = prefs.getString(KEY_MANUAL_OVERRIDE_PHONE, null)
@@ -88,7 +88,7 @@ object CellularServiceManager {
 
     fun getAvailableServices(context: Context): List<CellularServiceProfile> {
         if (!isInitialized) initialize(context)
-        return builtInPresets + customProfiles
+        return savedProfiles.toList()
     }
 
     fun setActiveService(context: Context, profile: CellularServiceProfile) {
@@ -103,71 +103,92 @@ object CellularServiceManager {
             CarrierSafeQueueEngine.getInstance(context).destinationAddress = profile.phoneNumber
         } catch (ignored: Exception) {
         }
-        Log.i(TAG, "Active AI SMS Service set to: ${profile.name} (${profile.phoneNumber})")
+        Log.i(TAG, "Active AI SMS Number set to: ${profile.name} (${profile.phoneNumber})")
     }
 
     /**
-     * Manually sets or overrides the destination phone number.
-     * This creates or updates a custom service profile so any arbitrary number can be used.
+     * Sets or updates the AI destination phone number and applies it immediately.
      */
     fun setManualPhoneNumber(context: Context, phoneNumber: String, customName: String? = null) {
         if (!isInitialized) initialize(context)
         val cleanNumber = phoneNumber.trim()
         if (cleanNumber.isBlank()) return
 
-        val current = _activeService.value
-        val updated = if (current.isBuiltIn && current.phoneNumber != cleanNumber) {
-            // Create a custom profile so built-in preset is preserved
-            val newProfile = CellularServiceProfile.createCustom(
-                name = customName ?: "Manual (${cleanNumber.takeLast(10)})",
-                phoneNumber = cleanNumber,
-                description = "Manually entered AI SMS service phone number",
-                protocolMode = current.protocolMode
-            )
-            saveCustomService(context, newProfile)
-            newProfile
-        } else {
-            val modified = current.copy(
-                name = customName ?: current.name,
-                phoneNumber = cleanNumber
-            )
-            if (!current.isBuiltIn) {
-                saveCustomService(context, modified)
-            }
-            modified
+        // Check if an existing profile already matches this phone number
+        val existingIndex = savedProfiles.indexOfFirst {
+            normalizePhoneNumber(it.phoneNumber) == normalizePhoneNumber(cleanNumber)
         }
 
-        setActiveService(context, updated)
+        val profile = if (existingIndex >= 0) {
+            val existing = savedProfiles[existingIndex]
+            val updated = existing.copy(
+                name = customName?.takeIf { it.isNotBlank() } ?: existing.name,
+                phoneNumber = cleanNumber
+            )
+            savedProfiles[existingIndex] = updated
+            persistSavedProfiles(context)
+            updated
+        } else {
+            // Create a new saved profile
+            val newProfile = CellularServiceProfile.createCustom(
+                name = customName?.takeIf { it.isNotBlank() } ?: "AI (${cleanNumber.takeLast(10)})",
+                phoneNumber = cleanNumber
+            )
+            savedProfiles.add(newProfile)
+            persistSavedProfiles(context)
+            newProfile
+        }
+
+        setActiveService(context, profile)
     }
 
     fun saveCustomService(context: Context, profile: CellularServiceProfile) {
         if (!isInitialized) initialize(context)
-        customProfiles.removeAll { it.id == profile.id }
-        customProfiles.add(profile)
-        persistCustomProfiles(context)
+        savedProfiles.removeAll { it.id == profile.id }
+        savedProfiles.add(profile)
+        persistSavedProfiles(context)
+    }
+
+    fun renameService(context: Context, serviceId: String, newName: String) {
+        if (!isInitialized) initialize(context)
+        val cleanName = newName.trim()
+        if (cleanName.isBlank()) return
+
+        val index = savedProfiles.indexOfFirst { it.id == serviceId }
+        if (index >= 0) {
+            val updated = savedProfiles[index].copy(name = cleanName)
+            savedProfiles[index] = updated
+            persistSavedProfiles(context)
+
+            if (_activeService.value.id == serviceId) {
+                _activeService.value = updated
+            }
+        }
     }
 
     fun deleteCustomService(context: Context, serviceId: String) {
         if (!isInitialized) initialize(context)
-        customProfiles.removeAll { it.id == serviceId }
-        persistCustomProfiles(context)
+        savedProfiles.removeAll { it.id == serviceId }
+
+        if (savedProfiles.isEmpty()) {
+            savedProfiles.add(CellularServiceProfile.DEFAULT_AI)
+        }
+        persistSavedProfiles(context)
 
         if (_activeService.value.id == serviceId) {
-            setActiveService(context, CellularServiceProfile.DEFAULT_PALLY)
+            setActiveService(context, savedProfiles.first())
         }
     }
 
-    private fun persistCustomProfiles(context: Context) {
+    private fun persistSavedProfiles(context: Context) {
         val array = JSONArray()
-        for (p in customProfiles) {
+        for (p in savedProfiles) {
             array.put(p.toJson())
         }
         getPrefs(context).edit()
-            .putString(KEY_CUSTOM_SERVICES_JSON, array.toString())
+            .putString(KEY_SAVED_SERVICES_JSON, array.toString())
             .apply()
     }
-
-    private const val KEY_LAST_OUTBOUND_DESTINATION = "key_last_outbound_destination"
 
     fun recordLastOutboundDestination(context: Context, destination: String) {
         val clean = normalizePhoneNumber(destination)
@@ -180,38 +201,30 @@ object CellularServiceManager {
         return getPrefs(context).getString(KEY_LAST_OUTBOUND_DESTINATION, "") ?: ""
     }
 
-    /**
-     * Normalizes a phone number to digits only (or digits with leading +).
-     */
     fun normalizePhoneNumber(number: String?): String {
         if (number.isNullOrBlank()) return ""
         return number.replace(Regex("[^0-9+]"), "")
     }
 
-    /**
-     * Checks whether an incoming SMS sender matches the active service,
-     * any configured preset, any saved custom service number, or the last texted number.
-     */
     fun isSenderRecognized(context: Context, senderAddress: String?): Boolean {
         if (senderAddress.isNullOrBlank()) return false
         val normalizedSender = normalizePhoneNumber(senderAddress)
         if (normalizedSender.isBlank()) return false
 
-        // Check if sender matches the destination we most recently texted
+        // Check last texted number
         val lastOutbound = getLastOutboundDestination(context)
         if (lastOutbound.isNotBlank() && isNumberMatch(normalizedSender, lastOutbound)) {
             return true
         }
 
+        // Check active service
         val active = getActiveService(context)
         val activeNormalized = normalizePhoneNumber(active.phoneNumber)
-
-        // Check active service
         if (isNumberMatch(normalizedSender, activeNormalized)) {
             return true
         }
 
-        // Check all available services
+        // Check all saved services
         for (service in getAvailableServices(context)) {
             val serviceNormalized = normalizePhoneNumber(service.phoneNumber)
             if (isNumberMatch(normalizedSender, serviceNormalized)) {
@@ -230,15 +243,12 @@ object CellularServiceManager {
         val digits2 = num2.filter { it.isDigit() }
         if (digits1.isEmpty() || digits2.isEmpty()) return false
 
-        // Exact digit match
         if (digits1 == digits2) return true
 
-        // Match on last 10 digits for US/international prefix variance (+1 vs local)
         if (digits1.length >= 10 && digits2.length >= 10) {
             return digits1.takeLast(10) == digits2.takeLast(10)
         }
 
-        // Match on last 7 digits for local dialing
         if (digits1.length >= 7 && digits2.length >= 7) {
             return digits1.takeLast(7) == digits2.takeLast(7)
         }

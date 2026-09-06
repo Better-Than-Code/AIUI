@@ -342,7 +342,25 @@ sealed class WidgetData(val type: String) {
             return digest.take(4).joinToString("") { "%02x".format(it) }
         }
 
-        fun parse(jsonString: String): WidgetData? {
+        fun parse(input: String): WidgetData? {
+            val trimmed = input.trim()
+            if (trimmed.isEmpty()) return null
+
+            // 1. Direct JSON parse
+            parseJsonInternal(trimmed)?.let { return it }
+
+            // 2. Embedded JSON block extraction (e.g. conversational text with ```json ... ``` or embedded {...})
+            val startIdx = trimmed.indexOf('{')
+            val endIdx = trimmed.lastIndexOf('}')
+            if (startIdx != -1 && endIdx > startIdx) {
+                val candidate = trimmed.substring(startIdx, endIdx + 1)
+                parseJsonInternal(candidate)?.let { return it }
+            }
+
+            return null
+        }
+
+        private fun parseJsonInternal(jsonString: String): WidgetData? {
             return try {
                 val obj = JSONObject(jsonString)
                 when (obj.optString("type")) {

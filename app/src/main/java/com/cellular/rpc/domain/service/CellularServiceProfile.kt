@@ -6,13 +6,13 @@ import org.json.JSONObject
  * Protocol framing modes supported across different AI SMS service backends.
  */
 enum class ServiceProtocolMode(val displayName: String, val description: String) {
+    SMS_CONVERSATIONAL(
+        displayName = "Standard AI SMS Prompt",
+        description = "Direct natural language prompts for AI SMS services"
+    ),
     PALLY_COMPACT(
         displayName = "Pally Cellular RPC",
         description = "Compact micro-wire framing (~...# and REQ/RES) with 304 ETag caching"
-    ),
-    SMS_CONVERSATIONAL(
-        displayName = "Standard AI SMS Prompt",
-        description = "Direct natural language prompts for cloud AI SMS services (Twilio, OpenAI, etc.)"
     ),
     JSON_WIRE(
         displayName = "Structured JSON Wire",
@@ -23,16 +23,15 @@ enum class ServiceProtocolMode(val displayName: String, val description: String)
 /**
  * Profile configuration for any AI SMS service backend.
  *
- * Enables the app to be completely provider-agnostic: users can select Pally AI,
- * cloud AI SMS gateways (Twilio, Telnyx, Sinch), self-hosted GSM LLM nodes,
- * or simply manually enter any custom destination phone number.
+ * Agnostic to any AI SMS service: user can enter their provider's phone number,
+ * give it a custom name, rename it, delete it, or switch between numbers.
  */
 data class CellularServiceProfile(
     val id: String,
     val name: String,
     val phoneNumber: String,
     val description: String = "",
-    val protocolMode: ServiceProtocolMode = ServiceProtocolMode.PALLY_COMPACT,
+    val protocolMode: ServiceProtocolMode = ServiceProtocolMode.SMS_CONVERSATIONAL,
     val promptPrefix: String = "",
     val isBuiltIn: Boolean = false,
     val colorHex: Long = 0xFF00E5FF
@@ -60,9 +59,9 @@ data class CellularServiceProfile(
                     phoneNumber = obj.getString("phoneNumber"),
                     description = obj.optString("description", ""),
                     protocolMode = try {
-                        ServiceProtocolMode.valueOf(obj.optString("protocolMode", ServiceProtocolMode.PALLY_COMPACT.name))
+                        ServiceProtocolMode.valueOf(obj.optString("protocolMode", ServiceProtocolMode.SMS_CONVERSATIONAL.name))
                     } catch (e: Exception) {
-                        ServiceProtocolMode.PALLY_COMPACT
+                        ServiceProtocolMode.SMS_CONVERSATIONAL
                     },
                     promptPrefix = obj.optString("promptPrefix", ""),
                     isBuiltIn = obj.optBoolean("isBuiltIn", false),
@@ -73,56 +72,36 @@ data class CellularServiceProfile(
             }
         }
 
-        val DEFAULT_PALLY = CellularServiceProfile(
-            id = "pally_default",
-            name = "Pally AI (Cellular)",
+        val DEFAULT_AI = CellularServiceProfile(
+            id = "ai_default",
+            name = "Pally AI",
             phoneNumber = "+18005550199",
-            description = "Pally conversational AI SMS assistant with native interactive cards and widget sync.",
+            description = "AI SMS Assistant",
             protocolMode = ServiceProtocolMode.SMS_CONVERSATIONAL,
             promptPrefix = "",
-            isBuiltIn = true,
+            isBuiltIn = false,
             colorHex = 0xFF00E5FF
         )
 
-        val PRESET_TWILIO_AI = CellularServiceProfile(
-            id = "preset_twilio_ai",
-            name = "Cloud Webhook AI Gateway",
-            phoneNumber = "+18885550144",
-            description = "Twilio/Telnyx bridge connecting to OpenAI GPT-4, Claude, or custom conversational webhooks.",
-            protocolMode = ServiceProtocolMode.SMS_CONVERSATIONAL,
-            promptPrefix = "",
-            isBuiltIn = true,
-            colorHex = 0xFF3D5AFE
-        )
-
-        val PRESET_LOCAL_LLM = CellularServiceProfile(
-            id = "preset_local_gsm",
-            name = "Self-Hosted GSM LLM Gateway",
-            phoneNumber = "+15550109988",
-            description = "Private GSM modem gateway running open-weight local models (Llama 3 / Mistral / DeepSeek).",
-            protocolMode = ServiceProtocolMode.JSON_WIRE,
-            promptPrefix = "[LLM_INSTRUCT]",
-            isBuiltIn = true,
-            colorHex = 0xFFB388FF
-        )
+        val DEFAULT_PALLY = DEFAULT_AI
 
         fun createCustom(
             name: String,
             phoneNumber: String,
-            description: String = "Custom user-configured AI SMS endpoint",
+            description: String = "AI SMS endpoint",
             protocolMode: ServiceProtocolMode = ServiceProtocolMode.SMS_CONVERSATIONAL,
             promptPrefix: String = ""
         ): CellularServiceProfile {
-            val safeId = "custom_${System.currentTimeMillis()}_${phoneNumber.takeLast(4).filter { it.isDigit() }}"
+            val safeId = "ai_${System.currentTimeMillis()}_${phoneNumber.takeLast(4).filter { it.isDigit() }}"
             return CellularServiceProfile(
                 id = safeId,
-                name = name.ifBlank { "Custom Service ($phoneNumber)" },
+                name = name.ifBlank { "AI (${phoneNumber.takeLast(10)})" },
                 phoneNumber = phoneNumber.trim(),
                 description = description,
                 protocolMode = protocolMode,
                 promptPrefix = promptPrefix,
                 isBuiltIn = false,
-                colorHex = 0xFF00E676
+                colorHex = 0xFF00E5FF
             )
         }
     }

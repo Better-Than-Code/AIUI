@@ -19,7 +19,7 @@ object AppUpdateManager {
     
     // Configure your GitHub raw JSON release check URL here
     // Example format: {"versionCode": 2, "versionName": "1.1", "apkUrl": "https://raw.githubusercontent.com/username/repo/main/apk/app-debug.apk", "releaseNotes": "Bug fixes and improvements"}
-    private const val VERSION_CHECK_URL = "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/version.json"
+    private const val VERSION_CHECK_URL = "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/version.json"
 
     data class UpdateInfo(
         val versionCode: Int,

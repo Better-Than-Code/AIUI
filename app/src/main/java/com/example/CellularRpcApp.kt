@@ -24,6 +24,13 @@ class CellularRpcApp : Application() {
         )
         // Automatically start queue engine for responsive offline RPC
         queueEngine.start()
+
+        // Register ContentObserver for robust real-device SMS inbox syncing
+        try {
+            com.cellular.rpc.transport.receiver.PallySmsObserver.register(this)
+        } catch (e: Exception) {
+            android.util.Log.e("CellularRpcApp", "Failed to register SMS observer: ${e.message}")
+        }
     }
 
     companion object {

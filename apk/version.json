@@ -1,1 +1,1 @@
-{"versionCode": 7, "versionName": "1.6", "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v7.apk", "releaseNotes": "Version 1.6: Configured max priority 2147483647 and BROADCAST_SMS permission for PallySmsReceiver."}
+{"versionCode": 9, "versionName": "1.8", "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v9.apk", "releaseNotes": "Version 1.8: Updated baseline version code to 9 and synchronized remote version check manifest."}

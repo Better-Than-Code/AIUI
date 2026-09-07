@@ -120,6 +120,21 @@ Deliver a resilient, consumer-grade AI assistant application that operates compl
 - **Verification & Build:**
   - Successfully compiled and generated updated debug APK (`app-debug.apk`) via `gradle assembleDebug`.
 
+### Sprint 7: Resilient Multi-Source App Update Mechanism & 5 Recent Releases Catalog (COMPLETED)
+- **Dynamic Version Resolution:**
+  - Replaced hardcoded version text with dynamic inspection via `PackageManager` / `BuildConfig` (`AppUpdateManager.getCurrentVersion()`), displaying the true installed version (e.g. `Current Version: 2.1 (v12)`).
+- **Multi-Source Release Fetching:**
+  - Implemented a multi-tier fallback pipeline in `AppUpdateManager.fetchRecentReleases()`:
+    1. Bundled asset release metadata (`releases.json` / `version.json`).
+    2. GitHub raw JSON (`apk/releases.json` and `apk/version.json`).
+    3. GitHub API repository contents (`/contents/apk/releases`).
+    4. GitHub HTML directory scraping of `apk/releases/` with regex extraction.
+- **Recent 5 Releases Catalog Display:**
+  - Displays the 5 most recent APK releases sorted by build version descending.
+  - Highlights the currently installed version with a `CURRENT` badge and allows one-tap download and installation of any release (including rollback or reinstallation) even if automatic version verification encounters network or branch discrepancies.
+- **Verification & Build:**
+  - Verified with `compile_applet` and executed `gradle assembleDebug` to keep compiled APKs synchronized.
+
 ---
 
 ## 4. The V2 Backlog (Parking Lot)

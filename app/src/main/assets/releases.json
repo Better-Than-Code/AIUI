@@ -1,0 +1,79 @@
+[
+  {
+    "versionCode": 12,
+    "versionName": "2.1",
+    "fileName": "pallyai-v12.apk",
+    "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v12.apk",
+    "releaseNotes": "Release v12 - Pally AI APK update"
+  },
+  {
+    "versionCode": 11,
+    "versionName": "11.0",
+    "fileName": "pallyai-v11.apk",
+    "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v11.apk",
+    "releaseNotes": "Release v11 - Pally AI APK update"
+  },
+  {
+    "versionCode": 10,
+    "versionName": "10.0",
+    "fileName": "pallyai-v10.apk",
+    "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v10.apk",
+    "releaseNotes": "Release v10 - Pally AI APK update"
+  },
+  {
+    "versionCode": 9,
+    "versionName": "9.0",
+    "fileName": "pallyai-v9.apk",
+    "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v9.apk",
+    "releaseNotes": "Release v9 - Pally AI APK update"
+  },
+  {
+    "versionCode": 8,
+    "versionName": "8.0",
+    "fileName": "pallyai-v8.apk",
+    "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v8.apk",
+    "releaseNotes": "Release v8 - Pally AI APK update"
+  },
+  {
+    "versionCode": 7,
+    "versionName": "7.0",
+    "fileName": "pallyai-v7.apk",
+    "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v7.apk",
+    "releaseNotes": "Release v7 - Pally AI APK update"
+  },
+  {
+    "versionCode": 6,
+    "versionName": "6.0",
+    "fileName": "pallyai-v6.apk",
+    "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v6.apk",
+    "releaseNotes": "Release v6 - Pally AI APK update"
+  },
+  {
+    "versionCode": 5,
+    "versionName": "5.0",
+    "fileName": "pallyai-v5.apk",
+    "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v5.apk",
+    "releaseNotes": "Release v5 - Pally AI APK update"
+  },
+  {
+    "versionCode": 4,
+    "versionName": "4.0",
+    "fileName": "pallyai-v4.apk",
+    "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v4.apk",
+    "releaseNotes": "Release v4 - Pally AI APK update"
+  },
+  {
+    "versionCode": 3,
+    "versionName": "3.0",
+    "fileName": "pallyai-v3.apk",
+    "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v3.apk",
+    "releaseNotes": "Release v3 - Pally AI APK update"
+  },
+  {
+    "versionCode": 2,
+    "versionName": "2.0",
+    "fileName": "pallyai-v2.apk",
+    "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v2.apk",
+    "releaseNotes": "Release v2 - Pally AI APK update"
+  }
+]

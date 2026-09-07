@@ -1,0 +1,1 @@
+{"versionCode": 12, "versionName": "2.1", "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v12.apk", "releaseNotes": "Version 2.1: Enforced READ_SMS runtime permission check & auto-prompt dialog, smart lookback window for in-flight replies, and active scan on tab change/permission grant."}

@@ -2028,10 +2028,27 @@ fun PallySettingsBottomSheet(
                     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    // App Update Section (GitHub APK)
+                    // App Update Section (GitHub APK & Releases Catalog)
                     var isCheckingUpdate by remember { mutableStateOf(false) }
                     var updateMessage by remember { mutableStateOf<String?>(null) }
+                    var downloadingFileName by remember { mutableStateOf<String?>(null) }
+                    var downloadProgress by remember { mutableFloatStateOf(0f) }
+                    var releasesList by remember { mutableStateOf<List<com.cellular.rpc.update.AppUpdateManager.ReleaseItem>>(emptyList()) }
+                    var currentVerInfo by remember {
+                        mutableStateOf(com.cellular.rpc.update.AppUpdateManager.getCurrentVersion(context))
+                    }
                     val scope = rememberCoroutineScope()
+
+                    // Auto-load recent releases and active version on initial render
+                    LaunchedEffect(Unit) {
+                        currentVerInfo = com.cellular.rpc.update.AppUpdateManager.getCurrentVersion(context)
+                        try {
+                            val result = com.cellular.rpc.update.AppUpdateManager.fetchRecentReleases(context)
+                            releasesList = result.recentReleases
+                        } catch (e: Exception) {
+                            android.util.Log.d("SettingsScreen", "Initial releases load: ${e.message}")
+                        }
+                    }
 
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Row(
@@ -2046,9 +2063,10 @@ fun PallySettingsBottomSheet(
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Text(
-                                    text = "Current Version: 1.0 (v1)",
+                                    text = "Current Version: ${currentVerInfo.first} (v${currentVerInfo.second})",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = CyanPrimary,
+                                    fontWeight = FontWeight.Medium
                                 )
                             }
                             Button(
@@ -2058,23 +2076,31 @@ fun PallySettingsBottomSheet(
                                     val localContext = context
                                     scope.launch {
                                         try {
-                                            val info = com.cellular.rpc.update.AppUpdateManager.checkForUpdate(localContext)
-                                            if (info != null) {
-                                                updateMessage = "Found version ${info.versionName}! Downloading..."
-                                                com.cellular.rpc.update.AppUpdateManager.downloadAndInstallApk(localContext, info.apkUrl) { progress ->
-                                                    updateMessage = "Downloading update: ${(progress * 100).toInt()}%"
+                                            currentVerInfo = com.cellular.rpc.update.AppUpdateManager.getCurrentVersion(localContext)
+                                            val result = com.cellular.rpc.update.AppUpdateManager.fetchRecentReleases(localContext)
+                                            releasesList = result.recentReleases
+                                            updateMessage = result.message
+
+                                            if (result.latestUpdate != null) {
+                                                val update = result.latestUpdate
+                                                downloadingFileName = update.fileName
+                                                downloadProgress = 0f
+                                                updateMessage = "Downloading update ${update.versionName} (${update.fileName})..."
+                                                com.cellular.rpc.update.AppUpdateManager.downloadAndInstallApk(localContext, update.apkUrl) { progress ->
+                                                    downloadProgress = progress
+                                                    updateMessage = "Downloading ${update.fileName}: ${(progress * 100).toInt()}%"
                                                 }
-                                            } else {
-                                                updateMessage = "App is already up to date!"
+                                                downloadingFileName = null
                                             }
                                         } catch (e: Exception) {
                                             updateMessage = "Update check failed: ${e.localizedMessage}"
+                                            downloadingFileName = null
                                         } finally {
                                             isCheckingUpdate = false
                                         }
                                     }
                                 },
-                                enabled = !isCheckingUpdate,
+                                enabled = !isCheckingUpdate && downloadingFileName == null,
                                 shape = RoundedCornerShape(10.dp)
                             ) {
                                 if (isCheckingUpdate) {
@@ -2097,6 +2123,147 @@ fun PallySettingsBottomSheet(
                                 color = MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.Medium
                             )
+                        }
+
+                        if (downloadingFileName != null) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            LinearProgressIndicator(
+                                progress = { downloadProgress },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp))
+                            )
+                        }
+
+                        // Recent 5 Releases from GitHub releases folder
+                        if (releasesList.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "Available Releases (Latest 5)",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                releasesList.forEach { rel ->
+                                    val isCurrent = rel.isCurrent
+                                    val isNewer = rel.isNewer
+                                    val isDownloadingThis = downloadingFileName == rel.fileName
+
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (isCurrent) {
+                                            CyanPrimary.copy(alpha = 0.12f)
+                                        } else {
+                                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                        },
+                                        border = BorderStroke(
+                                            1.dp,
+                                            if (isCurrent) CyanPrimary.copy(alpha = 0.5f) else Color.Transparent
+                                        ),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(
+                                                        text = rel.fileName,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = if (isCurrent) CyanPrimary else MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                    if (isCurrent) {
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Surface(
+                                                            shape = RoundedCornerShape(4.dp),
+                                                            color = CyanPrimary,
+                                                            contentColor = Color.Black
+                                                        ) {
+                                                            Text(
+                                                                text = "CURRENT",
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                fontSize = 9.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                            )
+                                                        }
+                                                    } else if (isNewer) {
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Surface(
+                                                            shape = RoundedCornerShape(4.dp),
+                                                            color = Color(0xFF4CAF50),
+                                                            contentColor = Color.White
+                                                        ) {
+                                                            Text(
+                                                                text = "NEW",
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                fontSize = 9.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                                Text(
+                                                    text = "Build v${rel.versionCode} • ${rel.versionName}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+
+                                            OutlinedButton(
+                                                onClick = {
+                                                    val localContext = context
+                                                    downloadingFileName = rel.fileName
+                                                    downloadProgress = 0f
+                                                    updateMessage = "Downloading ${rel.fileName}..."
+                                                    scope.launch {
+                                                        try {
+                                                            com.cellular.rpc.update.AppUpdateManager.downloadAndInstallApk(
+                                                                localContext,
+                                                                rel.apkUrl
+                                                            ) { p ->
+                                                                downloadProgress = p
+                                                                updateMessage = "Downloading ${rel.fileName}: ${(p * 100).toInt()}%"
+                                                            }
+                                                        } catch (e: Exception) {
+                                                            updateMessage = "Download failed: ${e.localizedMessage}"
+                                                        } finally {
+                                                            downloadingFileName = null
+                                                        }
+                                                    }
+                                                },
+                                                enabled = downloadingFileName == null && !isCheckingUpdate,
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                                modifier = Modifier.height(32.dp),
+                                                shape = RoundedCornerShape(8.dp)
+                                            ) {
+                                                if (isDownloadingThis) {
+                                                    CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 2.dp)
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Installing", fontSize = 11.sp)
+                                                } else {
+                                                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text(if (isCurrent) "Reinstall" else "Install", fontSize = 11.sp)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

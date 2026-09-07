@@ -454,6 +454,64 @@ class ExampleRobolectricTest {
     assertTrue(com.cellular.rpc.domain.service.CellularServiceManager.isSenderRecognized(context, "+1 (646) 261-9684"))
     assertTrue(com.cellular.rpc.domain.service.CellularServiceManager.isSenderRecognized(context, "+18005550199"))
   }
+
+  @Test
+  fun testCellularAiOrchestratorOutboundAndInboundPipeline() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val orchestrator = com.cellular.rpc.orchestrator.CellularAiOrchestrator.getInstance(context)
+
+    // 1. Test Outbound Mini-App Template Preparation
+    val outbound = orchestrator.prepareOutbound(
+      userPrompt = "Create a fitness rep tracker",
+      threadId = "th_sprint9",
+      schemaType = com.cellular.rpc.orchestrator.OrchestratorSchemaType.DYNAMIC_MINIAPP,
+      templateId = "tpl_habit_tracker"
+    )
+
+    assertTrue("Outbound wire text must contain thread ID", outbound.wireText.contains("[TID:th_sprint9]"))
+    assertTrue("Outbound wire text must contain MINIAPP schema trigger", outbound.wireText.contains("[SCHEMA:MINIAPP]"))
+    assertTrue("Outbound wire text must contain template prompt prefix", outbound.wireText.contains("[TEMPLATE:COUNTER]"))
+    assertTrue("Outbound wire text must contain user prompt", outbound.wireText.contains("Create a fitness rep tracker"))
+    assertTrue("Estimated bytes must be positive", outbound.estimatedBytes > 0)
+
+    // 2. Test Inbound Dynamic Mini-App Installation
+    val habitTemplate = com.cellular.rpc.orchestrator.OrchestratorTemplateCatalog.getById("tpl_habit_tracker")
+    assertNotNull(habitTemplate)
+
+    val inboundResult = orchestrator.processInbound(habitTemplate!!.mockOfflinePayload, "+16462619684")
+    assertNotNull("Installed mini app must not be null", inboundResult.installedMiniApp)
+    assertEquals("Workout Rep Counter", inboundResult.installedMiniApp?.title)
+    assertEquals("habit_counter", inboundResult.installedMiniApp?.featureId)
+
+    // 3. Test Inbound Dual Response (Prose + Weather Widget)
+    val dualPayload = "Here is the local forecast:\n\n{\"type\":\"weather\",\"city\":\"New York\",\"temp\":68,\"cond\":\"Cloudy\"}"
+    val dualResult = orchestrator.processInbound(dualPayload)
+    assertEquals("Here is the local forecast:", dualResult.conversationalProse)
+    assertNotNull(dualResult.widgetData)
+    assertTrue(dualResult.widgetData is com.cellular.rpc.engine.WidgetData.Weather)
+    val weather = dualResult.widgetData as com.cellular.rpc.engine.WidgetData.Weather
+    assertEquals("New York", weather.city)
+    assertEquals(68, weather.temp)
+  }
+
+  @Test
+  fun testOrchestratorTemplateCatalogIntegrity() {
+    val allTemplates = com.cellular.rpc.orchestrator.OrchestratorTemplateCatalog.TEMPLATES
+    assertTrue("Must have registered templates", allTemplates.size >= 5)
+
+    val miniApps = com.cellular.rpc.orchestrator.OrchestratorTemplateCatalog.getByCategory(com.cellular.rpc.orchestrator.TemplateCategory.MINI_APP)
+    val sduiWidgets = com.cellular.rpc.orchestrator.OrchestratorTemplateCatalog.getByCategory(com.cellular.rpc.orchestrator.TemplateCategory.SDUI_WIDGET)
+
+    assertTrue("Must have mini apps in catalog", miniApps.isNotEmpty())
+    assertTrue("Must have SDUI widgets in catalog", sduiWidgets.isNotEmpty())
+
+    allTemplates.forEach { tpl ->
+      assertTrue("Template ID must not be blank", tpl.id.isNotBlank())
+      assertTrue("Template title must not be blank", tpl.title.isNotBlank())
+      assertTrue("Template default prompt must not be blank", tpl.defaultPrompt.isNotBlank())
+      assertTrue("Template mock payload must not be blank", tpl.mockOfflinePayload.isNotBlank())
+    }
+  }
 }
 
 

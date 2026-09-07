@@ -433,6 +433,7 @@ fun CellularRpcScreen(
                     onRequestPermissions = { permissionLauncher.launch(requiredPermissions) },
                     onToggleLoopback = { viewModel.toggleLoopbackSimulation() },
                     onSendMessage = { text, atts -> viewModel.sendChatMessage(text, atts) },
+                    onSelectTemplate = { template -> viewModel.sendTemplateRequest(template) },
                     onVote = { pollId, opt -> viewModel.castVote(pollId, opt) },
                     onConfirmTransfer = { viewModel.confirmTransfer(it) },
                     onRefreshWidget = { viewModel.queryWidget(it) },
@@ -551,6 +552,7 @@ fun CellularChatTab(
     onRequestPermissions: () -> Unit = {},
     onToggleLoopback: () -> Unit = {},
     onSendMessage: (String, List<com.cellular.rpc.engine.MessageAttachment>) -> Unit,
+    onSelectTemplate: (com.cellular.rpc.orchestrator.AiTemplate) -> Unit = {},
     onVote: (String, Int) -> Unit,
     onConfirmTransfer: (String) -> Unit,
     onRefreshWidget: (String) -> Unit,
@@ -640,6 +642,7 @@ fun CellularChatTab(
                     if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
                 }
             },
+            onSelectTemplate = onSelectTemplate,
             destinationPhone = pallyPhone,
             isLoopback = isLoopbackSimulation,
             hasSmsPermissions = hasSmsPermissions,

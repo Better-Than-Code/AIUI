@@ -14,6 +14,10 @@ import com.cellular.rpc.domain.protocol.GsmSafeBase85
 import com.cellular.rpc.domain.protocol.SlidingWindowController
 import com.cellular.rpc.domain.schema.CellularSchemaRegistry
 import com.cellular.rpc.engine.WidgetData
+import com.cellular.rpc.orchestrator.AiTemplate
+import com.cellular.rpc.orchestrator.CellularAiOrchestrator
+import com.cellular.rpc.orchestrator.OrchestratorSchemaType
+import com.cellular.rpc.orchestrator.OrchestratorTemplateCatalog
 import com.cellular.rpc.transport.handler.CellularMessageDispatcher
 import com.cellular.rpc.transport.queue.CarrierSafeQueueEngine
 import com.cellular.rpc.transport.service.CellularRpcForegroundService
@@ -617,6 +621,66 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
             )
         }
     }
+
+    /**
+     * Dispatches a structured Mini-App or SDUI Widget template request to the AI Gateway.
+     */
+    fun sendTemplateRequest(template: AiTemplate, userCustomization: String? = null) {
+        val currentTid = _activeThreadId.value.ifBlank { "th_main" }
+        val promptText = if (!userCustomization.isNullOrBlank()) {
+            userCustomization.trim()
+        } else {
+            template.defaultPrompt
+        }
+
+        val orchestrator = CellularAiOrchestrator.getInstance(getApplication())
+        val schemaType = when (template.category) {
+            com.cellular.rpc.orchestrator.TemplateCategory.MINI_APP -> OrchestratorSchemaType.DYNAMIC_MINIAPP
+            com.cellular.rpc.orchestrator.TemplateCategory.SDUI_WIDGET -> OrchestratorSchemaType.SDUI_BLUEPRINT
+            com.cellular.rpc.orchestrator.TemplateCategory.DATA_TOOL -> OrchestratorSchemaType.TOOL_WIDGET
+        }
+
+        val orchestrated = orchestrator.prepareOutbound(
+            userPrompt = promptText,
+            threadId = currentTid,
+            schemaType = schemaType,
+            templateId = template.id
+        )
+
+        val userMessage = com.cellular.rpc.engine.ChatMessage(
+            threadId = currentTid,
+            sender = com.cellular.rpc.engine.MessageSender.USER,
+            text = "✨ [${template.title}] $promptText",
+            byteSize = orchestrated.estimatedBytes,
+            pduCount = ((orchestrated.estimatedBytes + 139) / 140).coerceAtLeast(1)
+        )
+
+        viewModelScope.launch(Dispatchers.IO) {
+            chatRepository.saveMessage(userMessage)
+            conversationThreadDao.updateLastMessage(currentTid, "✨ [${template.title}] $promptText".take(60), System.currentTimeMillis())
+
+            // If loopback simulation is active, immediately register mock offline payload
+            if (_isLoopbackSimulation.value) {
+                delay(600)
+                CellularMessageDispatcher.dispatchInbound(
+                    context = getApplication(),
+                    message = com.cellular.rpc.transport.handler.InboundCellularMessage(
+                        transportType = com.cellular.rpc.transport.handler.CellularTransportType.LOOPBACK_SIMULATION,
+                        senderAddress = "+16462619684",
+                        rawText = "[TID:$currentTid] Here is your ${template.title}:\n\n${template.mockOfflinePayload}"
+                    )
+                )
+            } else {
+                queueEngine.enqueuePayload(
+                    sessionId = activeSessionId,
+                    pktType = Frame.PKT_RPC_REQ,
+                    payload = orchestrated.wireText.toByteArray(Charsets.UTF_8)
+                )
+            }
+        }
+    }
+
+    val availableTemplates: List<AiTemplate> = OrchestratorTemplateCatalog.TEMPLATES
 
     private fun handleStandardizedInboundResponse(response: CellularResponse) {
         viewModelScope.launch(Dispatchers.IO) {

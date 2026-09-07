@@ -52,6 +52,7 @@ fun FullNativeChatInputBar(
     onCancelReply: () -> Unit,
     onSendMessage: (String, List<MessageAttachment>) -> Unit,
     onSelectQuickPrompt: (String, String) -> Unit,
+    onSelectTemplate: ((com.cellular.rpc.orchestrator.AiTemplate) -> Unit)? = null,
     destinationPhone: String,
     isLoopback: Boolean,
     hasSmsPermissions: Boolean,
@@ -589,6 +590,63 @@ fun FullNativeChatInputBar(
                             ToolGridIcon(Icons.Default.HowToVote, "Poll") {
                                 onSelectQuickPrompt("Please create a poll in JSON format: {\"type\":\"poll\"}", "poll")
                                 showAttachmentDrawer = false
+                            }
+                        }
+
+                        if (onSelectTemplate != null) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            HorizontalDivider(color = DarkNavyBorder.copy(alpha = 0.5f), thickness = 0.5.dp)
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Text(
+                                text = "✨ AI Mini-Apps & SDUI Templates",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = CyanPrimary
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(com.cellular.rpc.orchestrator.OrchestratorTemplateCatalog.TEMPLATES) { template ->
+                                    Surface(
+                                        color = DarkNavySurface,
+                                        shape = RoundedCornerShape(12.dp),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, DarkNavyBorder),
+                                        modifier = Modifier
+                                            .clickable {
+                                                onSelectTemplate.invoke(template)
+                                                showAttachmentDrawer = false
+                                            }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(text = template.iconEmoji, fontSize = 16.sp)
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Column {
+                                                Text(
+                                                    text = template.title,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color.White
+                                                )
+                                                Text(
+                                                    text = when (template.category) {
+                                                        com.cellular.rpc.orchestrator.TemplateCategory.MINI_APP -> "Mini-App"
+                                                        com.cellular.rpc.orchestrator.TemplateCategory.SDUI_WIDGET -> "SDUI Widget"
+                                                        com.cellular.rpc.orchestrator.TemplateCategory.DATA_TOOL -> "Tool Card"
+                                                    },
+                                                    fontSize = 9.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

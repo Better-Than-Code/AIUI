@@ -172,6 +172,22 @@ Deliver a resilient, consumer-grade AI assistant application that operates compl
 - **Verification & Build:**
   - Verified with `compile_applet` and executed `gradle assembleDebug` to keep compiled APK artifacts in sync.
 
+### Sprint 11: Bidirectional AI <-> App Orchestration Layer & Template Catalog (COMPLETED)
+- **Universal Cellular AI Orchestrator (`CellularAiOrchestrator`):**
+  - Acts as the central pipeline bridge between Android client logic and remote cellular AI gateway.
+  - **Outbound Orchestration:** Injects thread session headers (`[TID:<id>]`), schema directives (`[SCHEMA:SDUI]`, `[SCHEMA:MINIAPP]`), and template prompt contracts into outgoing SMS/MMS messages.
+  - **Inbound Dissection:** Dissects multi-part wire frames, parses SDUI blueprints and widget data (`DualResponseParser`), and intercepts/installs dynamic micro-apps (`DynamicFeatureWireParser` & `DynamicFeatureManager`) without code modification.
+- **Template Catalog Registry (`OrchestratorTemplateCatalog`):**
+  - Standardized registry for Mini-Apps (`TemplateCategory.MINI_APP`), SDUI Widgets (`TemplateCategory.SDUI_WIDGET`), and Tools (`TemplateCategory.DATA_TOOL`).
+  - Includes ready-to-use templates: Tip & Bill Splitter, Habit/Workout Rep Counter, Live Metric Dashboard, Interactive Polls, Sprint Task Checklist, and Hardware Device Health Diagnostics.
+  - Pre-packaged with natural language prompt starters and deterministic offline mock payloads.
+- **Chat Bar Integration (`FullNativeChatInputBar` & `MainActivity`):**
+  - Integrated horizontal template drawer displaying rich template chips with emoji icons, titles, and category badges.
+  - Connected `onSelectTemplate` directly to `CellularRpcViewModel.sendTemplateRequest()` for one-tap dispatch over live cellular or loopback simulation.
+- **Verification & Build:**
+  - 100% test pass rate on Robolectric suite (`ExampleRobolectricTest`) covering outbound formatting, inbound parsing, and template integrity.
+  - Recompiled and assembled fresh debug APK via `gradle assembleDebug`.
+
 ---
 
 ## 4. The V2 Backlog (Parking Lot)

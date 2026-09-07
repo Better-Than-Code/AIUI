@@ -536,6 +536,9 @@ sealed class WidgetData(val type: String) {
             var trimmed = input.trim()
             if (trimmed.isEmpty()) return null
 
+            // Decrypt payload if encrypted via CryptoKeyManager
+            trimmed = com.cellular.rpc.crypto.CryptoKeyManager.decryptPayload(trimmed)
+
             // Strip thread tag e.g. [TID:xyz] if present at the start
             val tidRegex = Regex("""^\[TID:([a-zA-Z0-9_]+)\]\s*""")
             val match = tidRegex.find(trimmed)

@@ -543,6 +543,14 @@ sealed class WidgetData(val type: String) {
                 trimmed = trimmed.replace(tidRegex, "").trim()
             }
 
+            // 0. Demux using balanced-brace JSON stream demuxer if multiple objects exist
+            val demuxed = JsonStreamDemuxer.extractJsonObjects(trimmed)
+            if (demuxed.isNotEmpty()) {
+                for (candidate in demuxed) {
+                    parseJsonInternal(candidate)?.let { return it }
+                }
+            }
+
             // 1. Direct JSON parse
             parseJsonInternal(trimmed)?.let { return it }
 

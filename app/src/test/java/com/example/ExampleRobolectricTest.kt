@@ -641,6 +641,20 @@ class ExampleRobolectricTest {
     val uninstalledApp = db.appBlueprintDao().getAppById("app_test_counter")
     assertNull("Uninstalled app should be removed from database", uninstalledApp)
   }
+
+  @Test
+  fun testJsonStreamDemuxer() {
+    val rawStream = """[TID:t1] some prefix {"type":"weather","temp":72,"city":"Seattle"}{"type":"news_digest","id":"1","headline":"Test Headline"} trailing text"""
+    val demuxed = com.cellular.rpc.engine.JsonStreamDemuxer.extractJsonObjects(rawStream)
+    assertEquals(2, demuxed.size)
+    assertTrue(demuxed[0].contains("weather"))
+    assertTrue(demuxed[1].contains("news_digest"))
+
+    val parsedWidget = com.cellular.rpc.engine.WidgetData.parse(rawStream)
+    assertNotNull(parsedWidget)
+    assertTrue(parsedWidget is com.cellular.rpc.engine.WidgetData.Weather)
+    assertEquals(72, (parsedWidget as com.cellular.rpc.engine.WidgetData.Weather).temp)
+  }
 }
 
 

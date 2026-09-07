@@ -2,7 +2,7 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Cellular RPC Telemetry & UI Color Constants (Maintained for full project compatibility)
+// Cellular RPC Telemetry & UI Color Constants
 val CyanPrimary = Color(0xFF00E5FF)
 val CyanPrimaryDark = Color(0xFF00B4D8)
 val SignalGreen = Color(0xFF00F5A0)
@@ -18,36 +18,27 @@ val TextPrimary = Color(0xFFF1F5F9)
 val TextSecondary = Color(0xFF94A3B8)
 val TextTertiary = Color(0xFF64748B)
 
-// Light Palette alternatives
-val LightBackground = Color(0xFFF8FAFC)
-val LightSurface = Color(0xFFFFFFFF)
-val LightSurfaceVariant = Color(0xFFF1F5F9)
-val LightPrimary = Color(0xFF0284C7)
-val LightSecondary = Color(0xFF0D9488)
+// High-Contrast World-Class Light Palette (WCAG AAA compliant, ultra-legible)
+val HighContrastLightBackground = Color(0xFFF1F5F9) // Slate 100
+val HighContrastLightSurface = Color(0xFFFFFFFF) // Pure White
+val HighContrastLightSurfaceVariant = Color(0xFFE2E8F0) // Slate 200
+val HighContrastLightBorder = Color(0xFF64748B) // Slate 500 - crisp visible boundaries
+val HighContrastTextPrimary = Color(0xFF020617) // Slate 950 - deep pitch black for maximum legibility
+val HighContrastTextSecondary = Color(0xFF1E293B) // Slate 800 - dark slate
+val HighContrastPrimary = Color(0xFF0369A1) // Sky 700 - deep rich blue
+val HighContrastPrimaryContainer = Color(0xFFBAE6FD) // Sky 200
 
-// World-Class Design System Color Palettes
-val ClassicWhiteBackground = Color(0xFFF8FAFC) // Slate 50
-val ClassicWhiteSurface = Color(0xFFFFFFFF)
-val ClassicWhiteSurfaceVariant = Color(0xFFF1F5F9) // Slate 100
-val ClassicWhiteBorder = Color(0xFFE2E8F0) // Slate 200
-val ClassicTextPrimary = Color(0xFF0F172A) // Slate 900
-val ClassicTextSecondary = Color(0xFF475569) // Slate 600
-val ClassicPrimary = Color(0xFF0284C7) // Sky 600 - Sophisticated, trustworthy
-val ClassicPrimaryContainer = Color(0xFFE0F2FE) // Sky 100
+// Modern Dark Palette
+val ModernDarkBackground = Color(0xFF070A12)
+val ModernDarkSurface = Color(0xFF111827)
+val ModernDarkSurfaceVariant = Color(0xFF1F2937)
+val ModernDarkBorder = Color(0xFF374151)
+val ModernTextPrimary = Color(0xFFF9FAFB)
+val ModernTextSecondary = Color(0xFF9CA3AF)
+val ModernPrimary = Color(0xFF38BDF8)
+val ModernPrimaryContainer = Color(0xFF0369A1)
 
-val ModernDarkBackground = Color(0xFF070A12) // Deep Obsidian / Navy
-val ModernDarkSurface = Color(0xFF111827) // Gray 900
-val ModernDarkSurfaceVariant = Color(0xFF1F2937) // Gray 800
-val ModernDarkBorder = Color(0xFF374151) // Gray 700
-val ModernTextPrimary = Color(0xFFF9FAFB) // Gray 50
-val ModernTextSecondary = Color(0xFF9CA3AF) // Gray 400
-val ModernPrimary = Color(0xFF38BDF8) // Sky 400 - Luminous & high contrast
-val ModernPrimaryContainer = Color(0xFF0369A1) // Sky 700
-
-// Accent & Status Colors (Harmonized)
-val AccentGreen = Color(0xFF10B981) // Emerald 500
-val AccentAmber = Color(0xFFF59E0B) // Amber 500
-val AccentRed = Color(0xFFEF4444) // Red 500
-
-
-
+// Accent & Status Colors
+val AccentGreen = Color(0xFF059669) // Emerald 600
+val AccentAmber = Color(0xFFD97706) // Amber 600
+val AccentRed = Color(0xFFDC2626) // Red 600

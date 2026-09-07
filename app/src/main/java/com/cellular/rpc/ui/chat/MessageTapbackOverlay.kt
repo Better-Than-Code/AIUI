@@ -17,12 +17,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,7 +29,8 @@ import com.cellular.rpc.engine.ChatMessage
 import com.example.ui.theme.*
 
 /**
- * iMessage/iOS Style Tapback + Floating Glassmorphic Context Menu Overlay
+ * Modern floating horizontal circular action bar & reaction pill popup.
+ * Avoids old vertical menus in favor of a sleek floating toolbar directly above the message.
  */
 @Composable
 fun MessageTapbackOverlay(
@@ -59,153 +57,117 @@ fun MessageTapbackOverlay(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.65f))
+                .background(Color.Black.copy(alpha = 0.55f))
                 .clickable(onClick = onDismiss),
             contentAlignment = Alignment.Center
         ) {
             Column(
                 modifier = Modifier
-                    .widthIn(max = 330.dp)
-                    .padding(16.dp)
+                    .widthIn(max = 340.dp)
+                    .padding(20.dp)
                     .clickable(enabled = false) {}, // Prevent dismiss when tapping inside
                 horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // 1. EMOJI TAPBACK CAPSULE (iOS style floating pill)
+                // 1. FLOATING HORIZONTAL CIRCULAR REACTION & ACTION TOOLBAR (Modern Pill)
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f),
-                    shape = RoundedCornerShape(26.dp),
-                    border = BorderStroke(1.dp, CyanPrimary.copy(alpha = 0.4f)),
-                    shadowElevation = 12.dp,
+                    shape = RoundedCornerShape(32.dp),
+                    border = BorderStroke(1.dp, CyanPrimary.copy(alpha = 0.5f)),
+                    shadowElevation = 16.dp,
                     modifier = Modifier.animateContentSize(
                         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
                     )
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        tapbackReactions.forEach { emoji ->
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.White.copy(alpha = 0.08f))
-                                    .clickable {
-                                        onReact(emoji)
-                                        onDismiss()
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = emoji,
-                                    fontSize = 18.sp
-                                )
+                        // Top Row: Horizontal Emojis (Circular)
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            tapbackReactions.forEach { emoji ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.White.copy(alpha = 0.08f))
+                                        .clickable {
+                                            onReact(emoji)
+                                            onDismiss()
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = emoji,
+                                        fontSize = 18.sp
+                                    )
+                                }
                             }
                         }
-                    }
-                }
 
-                // 2. HIGHLIGHTED PREVIEW BUBBLE
-                Surface(
-                    color = if (isUser) CyanPrimaryDark else MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(18.dp),
-                    border = BorderStroke(1.5.dp, CyanPrimary),
-                    shadowElevation = 16.dp,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Text(
-                            text = if (isUser) "You" else "AI Gateway",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = CyanPrimary,
-                            fontSize = 11.sp
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = message.text.ifBlank { message.widgetData?.toJson() ?: "Rich Widget Payload" },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface,
-                            maxLines = 4
-                        )
-                    }
-                }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), thickness = 0.5.dp)
 
-                // 3. ATTACHED GLASSMORPHIC ACTION MENU
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.96f),
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, DarkNavyBorder),
-                    shadowElevation = 14.dp,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(vertical = 6.dp)
-                    ) {
-                        // Action: Reply / Quote
-                        ContextActionRow(
-                            icon = Icons.AutoMirrored.Filled.Reply,
-                            iconTint = CyanPrimary,
-                            label = "Reply",
-                            onClick = {
+                        // Bottom Row: Horizontal Circular Action Buttons (Reply, Copy, Resend, Wire, Delete)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Reply
+                            CircularActionButton(
+                                icon = Icons.AutoMirrored.Filled.Reply,
+                                tint = CyanPrimary,
+                                label = "Reply"
+                            ) {
                                 onReply(message)
                                 onDismiss()
                             }
-                        )
 
-                        HorizontalDivider(color = DarkNavyBorder.copy(alpha = 0.6f), thickness = 0.5.dp)
-
-                        // Action: Copy
-                        ContextActionRow(
-                            icon = if (isCopied) Icons.Default.Check else Icons.Default.ContentCopy,
-                            iconTint = if (isCopied) SignalGreen else CyanPrimary,
-                            label = if (isCopied) "Copied to Clipboard" else "Copy Text",
-                            onClick = {
+                            // Copy
+                            CircularActionButton(
+                                icon = if (isCopied) Icons.Default.Check else Icons.Default.ContentCopy,
+                                tint = if (isCopied) SignalGreen else CyanPrimary,
+                                label = "Copy"
+                            ) {
                                 clipboardManager.setText(AnnotatedString(message.widgetData?.toJson() ?: message.text))
                                 isCopied = true
                                 onDismiss()
                             }
-                        )
 
-                        HorizontalDivider(color = DarkNavyBorder.copy(alpha = 0.6f), thickness = 0.5.dp)
-
-                        // Action: Resend / Re-query
-                        ContextActionRow(
-                            icon = Icons.Default.Refresh,
-                            iconTint = SignalAmber,
-                            label = if (isUser) "Resend SMS Prompt" else "Re-query AI Assistant",
-                            onClick = {
+                            // Resend / Re-query
+                            CircularActionButton(
+                                icon = Icons.Default.Refresh,
+                                tint = SignalAmber,
+                                label = "Resend"
+                            ) {
                                 onResend(message)
                                 onDismiss()
                             }
-                        )
 
-                        HorizontalDivider(color = DarkNavyBorder.copy(alpha = 0.6f), thickness = 0.5.dp)
-
-                        // Action: Inspect Wire PDU
-                        ContextActionRow(
-                            icon = Icons.Default.Code,
-                            iconTint = MaterialTheme.colorScheme.primary,
-                            label = "Inspect Cellular Wire PDU",
-                            onClick = {
+                            // Inspect Wire PDU
+                            CircularActionButton(
+                                icon = Icons.Default.Code,
+                                tint = MaterialTheme.colorScheme.primary,
+                                label = "Wire"
+                            ) {
                                 onInspectWire(message)
                                 onDismiss()
                             }
-                        )
 
-                        if (onDelete != null) {
-                            HorizontalDivider(color = DarkNavyBorder.copy(alpha = 0.6f), thickness = 0.5.dp)
-                            ContextActionRow(
-                                icon = Icons.Default.DeleteOutline,
-                                iconTint = Color(0xFFFF5252),
-                                label = "Delete Message",
-                                onClick = {
+                            if (onDelete != null) {
+                                // Delete
+                                CircularActionButton(
+                                    icon = Icons.Default.DeleteOutline,
+                                    tint = Color(0xFFFF5252),
+                                    label = "Delete"
+                                ) {
                                     onDelete(message)
                                     onDismiss()
                                 }
-                            )
+                            }
                         }
                     }
                 }
@@ -215,31 +177,39 @@ fun MessageTapbackOverlay(
 }
 
 @Composable
-private fun ContextActionRow(
+private fun CircularActionButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    iconTint: Color,
+    tint: Color,
     label: String,
     onClick: () -> Unit
 ) {
-    Row(
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 6.dp, vertical = 4.dp)
     ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(tint.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = tint,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(3.dp))
         Text(
             text = label,
-            style = MaterialTheme.typography.bodyMedium,
+            fontSize = 10.sp,
             fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = iconTint,
-            modifier = Modifier.size(18.dp)
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }

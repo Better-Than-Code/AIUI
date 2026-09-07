@@ -24,20 +24,20 @@ private val DarkColorScheme = darkColorScheme(
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = ClassicPrimary,
+    primary = HighContrastPrimary,
     onPrimary = Color.White,
-    primaryContainer = ClassicPrimaryContainer,
-    onPrimaryContainer = Color(0xFF1E3A8A),
+    primaryContainer = HighContrastPrimaryContainer,
+    onPrimaryContainer = Color(0xFF0369A1),
     secondary = AccentGreen,
     onSecondary = Color.White,
     tertiary = AccentAmber,
-    background = ClassicWhiteBackground,
-    onBackground = ClassicTextPrimary,
-    surface = ClassicWhiteSurface,
-    onSurface = ClassicTextPrimary,
-    surfaceVariant = ClassicWhiteSurfaceVariant,
-    onSurfaceVariant = ClassicTextSecondary,
-    outline = ClassicWhiteBorder
+    background = HighContrastLightBackground,
+    onBackground = HighContrastTextPrimary,
+    surface = HighContrastLightSurface,
+    onSurface = HighContrastTextPrimary,
+    surfaceVariant = HighContrastLightSurfaceVariant,
+    onSurfaceVariant = HighContrastTextSecondary,
+    outline = HighContrastLightBorder
 )
 
 @Composable
@@ -49,5 +49,3 @@ fun MyApplicationTheme(
     val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
     MaterialTheme(colorScheme = colorScheme, typography = Typography, content = content)
 }
-
-

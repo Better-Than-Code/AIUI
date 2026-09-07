@@ -368,57 +368,55 @@ fun CellularRpcScreen(
             }
         },
         bottomBar = {
-            if (isDiagnosticsEnabled) {
-                NavigationBar(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .windowInsetsPadding(WindowInsets.navigationBars)
-                        .testTag("main_navigation_bar"),
-                    containerColor = MaterialTheme.colorScheme.surface
-                ) {
-                    NavigationBarItem(
-                        selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        icon = { Icon(Icons.Default.ChatBubbleOutline, contentDescription = "Chat Window") },
-                        label = { Text("Chat") },
-                        modifier = Modifier.testTag("nav_chat")
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
-                        icon = { Icon(Icons.Default.Widgets, contentDescription = "Widgets") },
-                        label = { Text("Widgets") },
-                        modifier = Modifier.testTag("nav_widgets")
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 5,
-                        onClick = { selectedTab = 5 },
-                        icon = { Icon(Icons.Default.Extension, contentDescription = "Extensions") },
-                        label = { Text("Apps") },
-                        modifier = Modifier.testTag("nav_dynamic_apps")
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 2,
-                        onClick = { selectedTab = 2 },
-                        icon = { Icon(Icons.Default.Dns, contentDescription = "Inspector") },
-                        label = { Text("Inspector") },
-                        modifier = Modifier.testTag("nav_inspector")
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 3,
-                        onClick = { selectedTab = 3 },
-                        icon = { Icon(Icons.Default.FactCheck, contentDescription = "Tests") },
-                        label = { Text("E2E Tests") },
-                        modifier = Modifier.testTag("nav_tests")
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 4,
-                        onClick = { selectedTab = 4 },
-                        icon = { Icon(Icons.Default.Outbox, contentDescription = "Outbox") },
-                        label = { Text("Outbox") },
-                        modifier = Modifier.testTag("nav_outbox")
-                    )
-                }
+            NavigationBar(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    .testTag("main_navigation_bar"),
+                containerColor = MaterialTheme.colorScheme.surface
+            ) {
+                NavigationBarItem(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    icon = { Icon(Icons.Default.ChatBubbleOutline, contentDescription = "Chat Window") },
+                    label = { Text("Chat") },
+                    modifier = Modifier.testTag("nav_chat")
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    icon = { Icon(Icons.Default.Widgets, contentDescription = "Widgets") },
+                    label = { Text("Widgets") },
+                    modifier = Modifier.testTag("nav_widgets")
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 5,
+                    onClick = { selectedTab = 5 },
+                    icon = { Icon(Icons.Default.Extension, contentDescription = "Extensions") },
+                    label = { Text("Apps") },
+                    modifier = Modifier.testTag("nav_dynamic_apps")
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    icon = { Icon(Icons.Default.Dns, contentDescription = "Inspector") },
+                    label = { Text("Inspector") },
+                    modifier = Modifier.testTag("nav_inspector")
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 3,
+                    onClick = { selectedTab = 3 },
+                    icon = { Icon(Icons.Default.FactCheck, contentDescription = "Tests") },
+                    label = { Text("E2E Tests") },
+                    modifier = Modifier.testTag("nav_tests")
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 4,
+                    onClick = { selectedTab = 4 },
+                    icon = { Icon(Icons.Default.Outbox, contentDescription = "Outbox") },
+                    label = { Text("Outbox") },
+                    modifier = Modifier.testTag("nav_outbox")
+                )
             }
         }
     ) { innerPadding ->

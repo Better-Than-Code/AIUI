@@ -42,8 +42,10 @@ class PallySmsReceiver : BroadcastReceiver() {
         }
 
         val isRecognizedOrProtocol = { sender: String, text: String ->
-            // Accept all incoming SMS messages in Cellular RPC app
-            true
+            // Intercept only messages matching the specific active AI thread/sender OR valid protocol frames (~...#)
+            val isSenderKnown = com.cellular.rpc.domain.service.CellularServiceManager.isSenderRecognized(context, sender)
+            val isProtocolFrame = text.contains("~") && text.contains("#")
+            isSenderKnown || isProtocolFrame
         }
 
         // Try standard Android Intents helper which correctly merges multi-part/concatenated SMS

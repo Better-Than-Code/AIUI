@@ -1,5 +1,12 @@
 [
   {
+    "versionCode": 15,
+    "versionName": "2.4",
+    "fileName": "pallyai-v15.apk",
+    "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v15.apk",
+    "releaseNotes": "Release v15 - Multi-tabbed chat interface with persistent Room storage, bidirectional AI orchestrator, and interactive template catalog"
+  },
+  {
     "versionCode": 14,
     "versionName": "2.3",
     "fileName": "pallyai-v14.apk",

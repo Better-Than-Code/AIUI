@@ -84,6 +84,10 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
     private val _activeThreadId = MutableStateFlow("th_main")
     val activeThreadId: StateFlow<String> = _activeThreadId.asStateFlow()
 
+    // Open Tabs for Tabbed Chat UI
+    private val _openTabThreadIds = MutableStateFlow<List<String>>(listOf("th_main"))
+    val openTabThreadIds: StateFlow<List<String>> = _openTabThreadIds.asStateFlow()
+
     // All conversation threads
     val conversationThreads: StateFlow<List<ConversationThreadEntity>> = conversationThreadDao.getActiveThreadsFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -1044,12 +1048,36 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    // Thread Operations
+    // Thread & Tab Operations
     fun selectThread(threadId: String) {
         _activeThreadId.value = threadId
+        if (!_openTabThreadIds.value.contains(threadId)) {
+            _openTabThreadIds.value = _openTabThreadIds.value + threadId
+        }
         CellularMessageDispatcher.activeThreadId = threadId
         viewModelScope.launch(Dispatchers.IO) {
             conversationThreadDao.markThreadRead(threadId)
+        }
+    }
+
+    fun openTab(threadId: String) {
+        selectThread(threadId)
+    }
+
+    fun closeTab(threadId: String) {
+        val currentTabs = _openTabThreadIds.value
+        val remaining = currentTabs.filter { it != threadId }
+        val updatedTabs = remaining.ifEmpty { listOf("th_main") }
+        _openTabThreadIds.value = updatedTabs
+
+        // If the closed tab was active, switch to the last remaining tab
+        if (_activeThreadId.value == threadId) {
+            val newActive = updatedTabs.last()
+            _activeThreadId.value = newActive
+            CellularMessageDispatcher.activeThreadId = newActive
+            viewModelScope.launch(Dispatchers.IO) {
+                conversationThreadDao.markThreadRead(newActive)
+            }
         }
     }
 
@@ -1087,8 +1115,10 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch(Dispatchers.IO) {
             chatRepository.deleteMessagesForThread(threadId)
             conversationThreadDao.deleteThread(threadId)
+            val updatedTabs = _openTabThreadIds.value.filter { it != threadId }.ifEmpty { listOf("th_main") }
+            _openTabThreadIds.value = updatedTabs
             if (_activeThreadId.value == threadId) {
-                selectThread("th_main")
+                selectThread(updatedTabs.last())
             }
         }
     }

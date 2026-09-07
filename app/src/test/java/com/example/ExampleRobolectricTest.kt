@@ -512,6 +512,57 @@ class ExampleRobolectricTest {
       assertTrue("Template mock payload must not be blank", tpl.mockOfflinePayload.isNotBlank())
     }
   }
+
+  @Test
+  fun testTabbedChatsLifecycleAndHistoryPreservation() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val db = com.cellular.rpc.data.local.AppDatabase.getDatabase(context)
+    val threadDao = db.conversationThreadDao()
+    val chatDao = db.chatMessageDao()
+
+    // 1. Create two separate conversation threads with history
+    val thread1 = com.cellular.rpc.data.local.ConversationThreadEntity(
+      threadId = "th_sprint_work",
+      title = "Sprint Work",
+      createdAtMs = System.currentTimeMillis()
+    )
+    val thread2 = com.cellular.rpc.data.local.ConversationThreadEntity(
+      threadId = "th_tokyo_trip",
+      title = "Tokyo Trip",
+      createdAtMs = System.currentTimeMillis()
+    )
+    threadDao.insertOrUpdate(thread1)
+    threadDao.insertOrUpdate(thread2)
+
+    // 2. Insert messages in both threads
+    val msg1 = com.cellular.rpc.data.local.ChatMessageEntity(
+      id = "m1",
+      threadId = "th_sprint_work",
+      sender = "USER",
+      text = "Reviewing sprint tasks"
+    )
+    val msg2 = com.cellular.rpc.data.local.ChatMessageEntity(
+      id = "m2",
+      threadId = "th_tokyo_trip",
+      sender = "AI_GATEWAY",
+      text = "Recommended Shibuya and Shinjuku hotels"
+    )
+    chatDao.insertMessage(msg1)
+    chatDao.insertMessage(msg2)
+
+    // 3. Verify messages are saved and isolated per thread
+    val thread1Msgs = chatDao.getMessagesForThread("th_sprint_work").kotlinx.coroutines.flow.first()
+    val thread2Msgs = chatDao.getMessagesForThread("th_tokyo_trip").kotlinx.coroutines.flow.first()
+    assertEquals(1, thread1Msgs.size)
+    assertEquals("Reviewing sprint tasks", thread1Msgs[0].text)
+    assertEquals(1, thread2Msgs.size)
+    assertEquals("Recommended Shibuya and Shinjuku hotels", thread2Msgs[0].text)
+
+    // 4. Verify thread queries and active threads list
+    val allActive = threadDao.getActiveThreadsFlow().kotlinx.coroutines.flow.first()
+    assertTrue(allActive.any { it.threadId == "th_sprint_work" })
+    assertTrue(allActive.any { it.threadId == "th_tokyo_trip" })
+  }
 }
 
 

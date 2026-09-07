@@ -96,6 +96,7 @@ fun CellularRpcScreen(
     val context = LocalContext.current
     val chatMessages by viewModel.chatMessages.collectAsStateWithLifecycle()
     val conversationThreads by viewModel.conversationThreads.collectAsStateWithLifecycle()
+    val openTabThreadIds by viewModel.openTabThreadIds.collectAsStateWithLifecycle()
     val activeThreadId by viewModel.activeThreadId.collectAsStateWithLifecycle()
     val activeThread by viewModel.activeThread.collectAsStateWithLifecycle()
     val widgetCache by viewModel.widgetCache.collectAsStateWithLifecycle()
@@ -426,6 +427,13 @@ fun CellularRpcScreen(
             when (selectedTab) {
                 0 -> CellularChatTab(
                     messages = chatMessages,
+                    openTabIds = openTabThreadIds,
+                    allThreads = conversationThreads,
+                    activeThreadId = activeThreadId,
+                    onSelectTab = { viewModel.openTab(it) },
+                    onCloseTab = { viewModel.closeTab(it) },
+                    onNewChatClick = { viewModel.createNewThread() },
+                    onOpenHistoryClick = { showThreadDrawer = true },
                     pallyPhone = pallyPhoneNumber,
                     assistantName = activeService.name,
                     isLoopbackSimulation = isLoopbackSimulation,
@@ -545,6 +553,13 @@ fun CellularRpcScreen(
 @Composable
 fun CellularChatTab(
     messages: List<ChatMessage>,
+    openTabIds: List<String> = listOf("th_main"),
+    allThreads: List<com.cellular.rpc.data.local.ConversationThreadEntity> = emptyList(),
+    activeThreadId: String = "th_main",
+    onSelectTab: (String) -> Unit = {},
+    onCloseTab: (String) -> Unit = {},
+    onNewChatClick: () -> Unit = {},
+    onOpenHistoryClick: () -> Unit = {},
     pallyPhone: String,
     assistantName: String = "AI Assistant",
     isLoopbackSimulation: Boolean = false,
@@ -581,6 +596,17 @@ fun CellularChatTab(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
+        // Tabbed Chat Bar (Active open tabs, New chat '+', History drawer)
+        com.cellular.rpc.ui.chat.ChatTabBar(
+            openTabIds = openTabIds,
+            allThreads = allThreads,
+            activeThreadId = activeThreadId,
+            onSelectTab = onSelectTab,
+            onCloseTab = onCloseTab,
+            onNewChatClick = onNewChatClick,
+            onOpenHistoryClick = onOpenHistoryClick
+        )
+
         // Chat Stream (iMessage/RCS Asymmetric bubbles with Markdown, Attachments & Widget Cards)
         LazyColumn(
             state = listState,

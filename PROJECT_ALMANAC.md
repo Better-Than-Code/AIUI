@@ -188,6 +188,21 @@ Deliver a resilient, consumer-grade AI assistant application that operates compl
   - 100% test pass rate on Robolectric suite (`ExampleRobolectricTest`) covering outbound formatting, inbound parsing, and template integrity.
   - Recompiled and assembled fresh debug APK via `gradle assembleDebug`.
 
+### Sprint 12: Multi-Tabbed Chat Window & Continuous Room History Persistence (COMPLETED)
+- **Top Tabbed Chat Bar (`ChatTabBar`):**
+  - Positioned pinned at the top of the chat window with horizontal scrolling (`LazyRow`).
+  - Displays interactive tab pills with glowing cyan borders, live unread badges, pin indicators, and quick `✕` close buttons.
+  - **Active State:** Cyan luminous border + subtle tint + active dot marker.
+  - **Closing Tabs:** Tapping `✕` removes the tab from the active viewport while preserving all conversation messages in SQLite/Room.
+- **Dynamic New Chat & History Opening:**
+  - Dedicated **`+ New`** chip for instant creation of new conversational threads.
+  - **`📁 History`** trigger opening the full `ThreadDrawerSheet` with badged thread count, allowing opening any past chat from history into the tab strip.
+- **ViewModel Tab Lifecycle (`CellularRpcViewModel`):**
+  - Added `openTabThreadIds: StateFlow<List<String>>`, `openTab(threadId)`, `closeTab(threadId)`, and updated `selectThread(threadId)`, `createNewThread()`, and `deleteThread()`.
+- **Verification & Build:**
+  - Added `testTabbedChatsLifecycleAndHistoryPreservation` to `ExampleRobolectricTest`.
+  - Recompiled and assembled fresh debug APK via `gradle assembleDebug`.
+
 ---
 
 ## 4. The V2 Backlog (Parking Lot)

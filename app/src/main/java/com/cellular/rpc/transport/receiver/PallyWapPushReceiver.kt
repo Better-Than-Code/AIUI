@@ -36,19 +36,29 @@ class PallyWapPushReceiver : BroadcastReceiver() {
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // Try parsing binary Frame directly from WAP Push PDU
+                if (mimeType == "application/vnd.wap.mms-message") {
+                    Log.i(TAG, "MMS WAP Push notification received (${data.size} bytes). Triggering delayed MMS inbox sync.")
+                    // Do NOT decode binary notification PDU as text!
+                    // Wait 2000ms for system telephony service to download MMS parts from MMSC
+                    kotlinx.coroutines.delay(2000)
+                    PallyMmsHelper.checkMmsInboxNow(context.applicationContext)
+                    return@launch
+                }
+
+                // Try parsing proprietary binary Frame directly from WAP Push PDU
                 val frame = Frame.fromBinary(data)
-                val rawText = String(data, Charsets.UTF_8)
-
-                val inboundMessage = InboundCellularMessage(
-                    transportType = CellularTransportType.MMS_WAP_PUSH,
-                    senderAddress = intent.getStringExtra("address") ?: "MMS_GATEWAY",
-                    rawText = rawText,
-                    rawBytes = data,
-                    frame = frame
-                )
-
-                CellularMessageDispatcher.dispatchInbound(context.applicationContext, inboundMessage)
+                if (frame != null) {
+                    val inboundMessage = InboundCellularMessage(
+                        transportType = CellularTransportType.MMS_WAP_PUSH,
+                        senderAddress = intent.getStringExtra("address") ?: "MMS_GATEWAY",
+                        rawText = "",
+                        rawBytes = data,
+                        frame = frame
+                    )
+                    CellularMessageDispatcher.dispatchInbound(context.applicationContext, inboundMessage)
+                } else {
+                    Log.d(TAG, "Ignoring non-RPC WAP push payload of type $mimeType (${data.size} bytes)")
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing WAP Push payload: ${e.message}", e)
             } finally {

@@ -38,6 +38,12 @@ interface ChatMessageDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessages(messages: List<ChatMessageEntity>)
 
+    @Query("SELECT COUNT(*) FROM chat_messages WHERE text = :text AND timestampMs >= :sinceMs")
+    suspend fun countRecentMatchingMessages(text: String, sinceMs: Long): Int
+
+    @Query("SELECT * FROM chat_messages ORDER BY timestampMs ASC")
+    suspend fun getAllMessagesList(): List<ChatMessageEntity>
+
     @Query("DELETE FROM chat_messages WHERE id = :id")
     suspend fun deleteMessageById(id: String)
 

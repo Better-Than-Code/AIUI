@@ -102,6 +102,24 @@ Deliver a resilient, consumer-grade AI assistant application that operates compl
   - 100% test pass rate across protocol math, MCP discovery, wire regex parsing, AST resolution, sandbox state execution, and custom AppWidget provider binding. Debug APK generated and ready for deployment.
   - Successfully verified unit tests and generated up-to-date debug APK (`gradle assembleDebug`).
 
+### Sprint 6: Carrier SMS Multi-Part Reassembly, Dual-Layer Deduplication & Native MMS Ingestion/Dispatch (COMPLETED)
+- **Multi-Part SMS Assembly & Debouncing (`PallySmsObserver`):**
+  - Implemented 1200ms debounce buffer to allow multi-segment carrier concatenated SMS (UDH) to land in the system telephony database before ingestion.
+  - Grouped segments by sender and time window, sorting strictly by `_ID ASC` to prevent jumbled fragments.
+- **Cross-Pipeline Deduplication (`PallySmsTracker` & `CellularMessageDispatcher`):**
+  - Unified memory signature cache across `BroadcastReceiver` and `ContentObserver` paths with 60-second sliding expiration.
+  - Added Room-backed verification (`countRecentMatchingMessages`) to eliminate duplicates from race conditions.
+  - Removed duplicate insertion points in `CellularRpcViewModel` ensuring `CellularMessageDispatcher` is the single source of truth for message persistence.
+  - Added startup cleanup to wipe historical duplicate rows and corrupted `<H3re2h..` binary fragments.
+- **Corrupted / Binary PDU Filtering:**
+  - Added strict heuristics in `PallySmsTracker` and `CellularMessageDispatcher` to reject binary protocol control frames and garbled carrier headers from rendering as raw text in user chat.
+- **Full MMS Pipeline (`PallyMmsHelper` & `PallyWapPushReceiver`):**
+  - Implemented `PallyMmsHelper` ContentObserver observing `content://mms` with automatic part extraction for text and media (images, files, voice notes).
+  - Wired `PallyWapPushReceiver` to trigger `PallyMmsHelper` with a 2000ms delay allowing the Android telephony stack to finish downloading MMS PDU parts.
+  - Added outbound carrier MMS dispatch in `sendChatMessage` via `PallyMmsHelper.dispatchCarrierMms()`.
+- **Verification & Build:**
+  - Successfully compiled and generated updated debug APK (`app-debug.apk`) via `gradle assembleDebug`.
+
 ---
 
 ## 4. The V2 Backlog (Parking Lot)

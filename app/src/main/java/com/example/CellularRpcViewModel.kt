@@ -333,6 +333,30 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
             }
         }
 
+        // Clean up historical duplicate messages and corrupted binary text from previous runs
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val all = chatRepository.messages
+                val db = com.cellular.rpc.data.local.AppDatabase.getInstance(application)
+                val allEntities = db.chatMessageDao().getAllMessagesList()
+                val seenSignatures = HashSet<String>()
+                for (msg in allEntities) {
+                    if (com.cellular.rpc.transport.receiver.PallySmsTracker.isCorruptedOrBinaryText(msg.text) && msg.attachmentUri == null) {
+                        db.chatMessageDao().deleteMessageById(msg.id)
+                        continue
+                    }
+                    val signature = "${msg.sender}:${msg.text.trim()}:${msg.timestampMs / 15_000L}"
+                    if (seenSignatures.contains(signature)) {
+                        db.chatMessageDao().deleteMessageById(msg.id)
+                    } else {
+                        seenSignatures.add(signature)
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("CellularRpcViewModel", "Startup message deduplication error: ${e.message}")
+            }
+        }
+
         // Observe incoming delivered frames from the cellular engine
         viewModelScope.launch {
             queueEngine.inboundDeliveredFlow.collect { (frame, payloadStr) ->
@@ -524,6 +548,25 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
                 trimmed
             }
 
+            // If an attachment is present, dispatch via native carrier MMS
+            if (mainAttachment != null) {
+                try {
+                    val targetNum = queueEngine.destinationAddress.replace(Regex("[^0-9+]"), "").ifBlank {
+                        activeService.phoneNumber.replace(Regex("[^0-9+]"), "")
+                    }
+                    val attUri = android.net.Uri.parse(mainAttachment.uri)
+                    com.cellular.rpc.transport.receiver.PallyMmsHelper.dispatchCarrierMms(
+                        context = getApplication(),
+                        destinationNumber = targetNum,
+                        text = trimmed,
+                        attachmentUri = attUri,
+                        mimeType = mainAttachment.mimeType ?: "image/*"
+                    )
+                } catch (e: Exception) {
+                    android.util.Log.w("CellularRpcViewModel", "Carrier MMS dispatch error: ${e.message}")
+                }
+            }
+
             // Always enqueue the user's natural text prompt so AI agent receives human-readable text
             queueEngine.enqueuePayload(
                 sessionId = activeSessionId,
@@ -536,67 +579,22 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
     private fun handleStandardizedInboundResponse(response: CellularResponse) {
         viewModelScope.launch(Dispatchers.IO) {
             val schemaTarget = if (response.schemaId.isNotEmpty() && response.schemaId != "unknown") response.schemaId else lastQueriedType
-            if (response.isNotModified) {
-                val cached = widgetCacheDao.getWidgetByType(schemaTarget)
-                val widgetData = cached?.let { WidgetData.parse(it.jsonPayload) }
-                val chatMsg = com.cellular.rpc.engine.ChatMessage(
-                    sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
-                    text = "",
-                    widgetData = widgetData,
-                    is304NotModified = true,
-                    wirePacket = response.toCompactWire(),
-                    byteSize = 3,
-                    pduCount = 1
-                )
-                chatRepository.saveMessage(chatMsg)
-            } else if (response.payload.isNotEmpty()) {
-                val dual = com.cellular.rpc.engine.DualResponseParser.parse(response.payload)
-                val chatMsg = com.cellular.rpc.engine.ChatMessage(
-                    sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
-                    text = dual.conversationalText,
-                    widgetData = dual.widgetData,
-                    wirePacket = response.toCompactWire(),
-                    byteSize = response.payload.toByteArray().size,
-                    pduCount = ((response.payload.toByteArray().size + 139) / 140).coerceAtLeast(1)
-                )
-                chatRepository.saveMessage(chatMsg)
+            if (response.schemaId.isNotEmpty()) {
+                lastQueriedType = schemaTarget
             }
+            // Persistence to Room is handled directly and deterministically by CellularMessageDispatcher
+            // to guarantee single-source-of-truth without duplicate inserts.
         }
     }
 
     private fun handleDeliveredChatPacket(frame: Frame, payloadStr: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val cellularRes = CellularResponse.fromWire(payloadStr)
-            val is304 = payloadStr == "304" || cellularRes.isNotModified
             val effectiveTarget = if (cellularRes.schemaId.isNotEmpty() && cellularRes.schemaId != "unknown") cellularRes.schemaId else lastQueriedType
-
-            if (is304) {
-                // 304 NOT MODIFIED: retrieve cached widget data
-                val cached = widgetCacheDao.getWidgetByType(effectiveTarget)
-                val widgetData = cached?.let { WidgetData.parse(it.jsonPayload) }
-                val chatMsg = com.cellular.rpc.engine.ChatMessage(
-                    sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
-                    text = "",
-                    widgetData = widgetData,
-                    is304NotModified = true,
-                    wirePacket = frame.toAsciiWire(),
-                    byteSize = 3, // only 3 bytes on the wire!
-                    pduCount = 1
-                )
-                chatRepository.saveMessage(chatMsg)
-            } else {
-                val contentToParse = if (cellularRes.payload.isNotEmpty()) cellularRes.payload else payloadStr
-                val dual = com.cellular.rpc.engine.DualResponseParser.parse(contentToParse)
-                val chatMsg = com.cellular.rpc.engine.ChatMessage(
-                    sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
-                    text = dual.conversationalText,
-                    widgetData = dual.widgetData,
-                    wirePacket = frame.toAsciiWire(),
-                    byteSize = frame.payload.size,
-                    pduCount = ((frame.payload.size + 139) / 140).coerceAtLeast(1)
-                )
-                chatRepository.saveMessage(chatMsg)
+            if (cellularRes.schemaId.isNotEmpty()) {
+                lastQueriedType = effectiveTarget
             }
+            // Persistence to Room is handled directly and deterministically by CellularMessageDispatcher.
         }
     }
 

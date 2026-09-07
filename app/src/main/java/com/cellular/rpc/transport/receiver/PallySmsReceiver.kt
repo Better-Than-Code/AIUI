@@ -58,8 +58,14 @@ class PallySmsReceiver : BroadcastReceiver() {
             val combinedText = messages.joinToString("") { it.messageBody ?: "" }
             val firstSms = messages.first()
 
+            if (PallySmsTracker.isCorruptedOrBinaryText(combinedText)) {
+                Log.w(TAG, "Rejecting corrupted/binary SMS payload from $sender: $combinedText")
+                return
+            }
+
             if (isRecognizedOrProtocol(sender, combinedText)) {
                 Log.i(TAG, "Intercepted incoming AI SMS from $sender (${combinedText.length} chars): $combinedText")
+                PallySmsTracker.markHandled(sender, combinedText)
                 val pendingResult = goAsync()
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
@@ -92,8 +98,14 @@ class PallySmsReceiver : BroadcastReceiver() {
         }
 
         val fullText = sb.toString()
+        if (PallySmsTracker.isCorruptedOrBinaryText(fullText)) {
+            Log.w(TAG, "Rejecting corrupted fallback PDU text: $fullText")
+            return
+        }
+
         if (fallbackSms != null && isRecognizedOrProtocol(fallbackSender, fullText)) {
             Log.i(TAG, "Intercepted fallback PDU message from $fallbackSender: $fullText")
+            PallySmsTracker.markHandled(fallbackSender, fullText)
             val pendingResult = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
                 try {

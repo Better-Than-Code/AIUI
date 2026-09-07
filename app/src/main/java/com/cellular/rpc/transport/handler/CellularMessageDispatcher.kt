@@ -43,7 +43,8 @@ data class InboundCellularMessage(
     val rawText: String,
     val rawBytes: ByteArray? = null,
     val frame: Frame? = null,
-    val timestampMs: Long = System.currentTimeMillis()
+    val timestampMs: Long = System.currentTimeMillis(),
+    val attachment: com.cellular.rpc.engine.MessageAttachment? = null
 )
 
 /**
@@ -192,17 +193,36 @@ object CellularMessageDispatcher {
             else -> message.rawText
         }
 
-        // Deduplication Check (within 4-second window)
-        val dedupeKey = "${message.senderAddress}:${payloadStr.trim()}"
+        // Filter out corrupted binary text (unless accompanied by a media attachment)
+        if (com.cellular.rpc.transport.receiver.PallySmsTracker.isCorruptedOrBinaryText(payloadStr) && message.attachment == null) {
+            Log.w(TAG, "Rejecting corrupted/binary payload from chat view: $payloadStr")
+            return CellularResponse.fromWire(payloadStr)
+        }
+
+        // Deduplication Check (within 30-second window)
+        val dedupeKey = "${message.senderAddress.filter { it.isDigit() || it == '+' }}:${payloadStr.trim()}"
         val now = System.currentTimeMillis()
         val lastSeen = recentProcessedHashes[dedupeKey]
-        if (lastSeen != null && (now - lastSeen) < 4000L) {
+        if (lastSeen != null && (now - lastSeen) < 30_000L) {
             Log.d(TAG, "Skipping duplicate inbound SMS packet received within ${now - lastSeen}ms.")
             return CellularResponse.fromWire(payloadStr)
         }
         recentProcessedHashes[dedupeKey] = now
 
         val db = AppDatabase.getInstance(context)
+
+        // Deduplication Check: Room Database (60-second window)
+        if (payloadStr.isNotBlank() && message.attachment == null) {
+            try {
+                val existingCount = db.chatMessageDao().countRecentMatchingMessages(payloadStr.trim(), now - 60_000L)
+                if (existingCount > 0) {
+                    Log.d(TAG, "Skipping duplicate inbound message already present in Room database: ${payloadStr.take(30)}")
+                    return CellularResponse.fromWire(payloadStr)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Error checking duplicate count: ${e.message}")
+            }
+        }
 
         // 2a. Record Inbound Packet in Protocol Log DAO (Protocol Inspector)
         try {
@@ -311,7 +331,7 @@ object CellularMessageDispatcher {
                 if (dual.widgetData != null) "" else payloadStr
             }
 
-            if (displayText.isNotEmpty() || dual.widgetData != null) {
+            if (displayText.isNotEmpty() || dual.widgetData != null || message.attachment != null) {
                 val chatMsg = ChatMessageEntity(
                     id = "msg_${now}_${(1000..9999).random()}",
                     sender = "AI_GATEWAY",
@@ -322,7 +342,13 @@ object CellularMessageDispatcher {
                     byteSize = payloadStr.toByteArray(Charsets.UTF_8).size,
                     pduCount = ((payloadStr.toByteArray(Charsets.UTF_8).size + 139) / 140).coerceAtLeast(1),
                     deliveryStatus = "DELIVERED",
-                    timestampMs = now
+                    timestampMs = now,
+                    attachmentId = message.attachment?.id,
+                    attachmentType = message.attachment?.type?.name,
+                    attachmentUri = message.attachment?.uri,
+                    attachmentFileName = message.attachment?.fileName,
+                    attachmentSizeBytes = message.attachment?.fileSizeBytes ?: 0,
+                    attachmentMimeType = message.attachment?.mimeType
                 )
                 db.chatMessageDao().insertMessage(chatMsg)
             }

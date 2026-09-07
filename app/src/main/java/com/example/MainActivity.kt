@@ -69,6 +69,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Register SMS and MMS ContentObservers to monitor incoming messages
+        com.cellular.rpc.transport.receiver.PallySmsObserver.register(applicationContext)
         setContent {
             var isDarkTheme by remember { mutableStateOf(true) }
             MyApplicationTheme(darkTheme = isDarkTheme) {

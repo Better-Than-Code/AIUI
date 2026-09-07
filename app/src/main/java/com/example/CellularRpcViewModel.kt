@@ -38,6 +38,7 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
     private val packetLogDao = db.packetLogDao()
     private val chatMessageDao = db.chatMessageDao()
     private val dynamicFeatureDao = db.dynamicFeatureDao()
+    private val conversationThreadDao = db.conversationThreadDao()
     val chatRepository = com.cellular.rpc.data.repository.ChatRepository(chatMessageDao)
 
     private val queueEngine: CarrierSafeQueueEngine
@@ -74,7 +75,24 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
     private val _isTesting = MutableStateFlow(false)
     val isTesting: StateFlow<Boolean> = _isTesting.asStateFlow()
 
-    val chatMessages: StateFlow<List<com.cellular.rpc.engine.ChatMessage>> = chatRepository.messages
+    // Active Conversation Thread state
+    private val _activeThreadId = MutableStateFlow("th_main")
+    val activeThreadId: StateFlow<String> = _activeThreadId.asStateFlow()
+
+    // All conversation threads
+    val conversationThreads: StateFlow<List<ConversationThreadEntity>> = conversationThreadDao.getActiveThreadsFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Active thread object
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val activeThread: StateFlow<ConversationThreadEntity?> = _activeThreadId
+        .flatMapLatest { threadId -> conversationThreadDao.getThreadFlow(threadId) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    // Chat messages filtered to active thread
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val chatMessages: StateFlow<List<com.cellular.rpc.engine.ChatMessage>> = _activeThreadId
+        .flatMapLatest { threadId -> chatRepository.getMessagesForThread(threadId) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _pallyPhoneNumber = MutableStateFlow(
@@ -307,13 +325,25 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
         com.cellular.rpc.domain.dynamic.DynamicFeatureManager.seedSampleFeaturesIfEmpty(application)
         refreshServices()
 
-        // Initialize default welcome conversation if repository is empty
+        // Initialize default thread and welcome conversation if repository is empty
         viewModelScope.launch(Dispatchers.IO) {
+            conversationThreadDao.insertDefaultThread(
+                ConversationThreadEntity(
+                    threadId = "th_main",
+                    title = "General Chat",
+                    createdAtMs = System.currentTimeMillis(),
+                    lastMessageTimestamp = System.currentTimeMillis(),
+                    lastSnippet = "Cellular RPC Gateway connected over SMS",
+                    isPinned = true
+                )
+            )
+
             val currentList = chatMessageDao.getAllMessages().first()
             if (currentList.isEmpty()) {
                 val welcomeWeather = WidgetData.Weather(72, "San Francisco", "Sunny", high = 76, low = 58)
                 val initialMessages = listOf(
                     com.cellular.rpc.engine.ChatMessage(
+                        threadId = "th_main",
                         sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
                         text = "Cellular RPC Gateway connected over SMS (Port 8901). MTU budget: 133B. Responses render as native interactive cards without exposing raw code.",
                         wirePacket = "~1A2F:02:0000:00000000::39B1#",
@@ -321,6 +351,7 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
                         pduCount = 1
                     ),
                     com.cellular.rpc.engine.ChatMessage(
+                        threadId = "th_main",
                         sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
                         text = "",
                         widgetData = welcomeWeather,
@@ -499,7 +530,9 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
         val byteCount = trimmed.toByteArray(Charsets.UTF_8).size + if (mainAttachment != null) 30 else 0
         val pduCount = ((byteCount + 139) / 140).coerceAtLeast(1)
 
+        val currentTid = _activeThreadId.value.ifBlank { "th_main" }
         val userMessage = com.cellular.rpc.engine.ChatMessage(
+            threadId = currentTid,
             sender = com.cellular.rpc.engine.MessageSender.USER,
             text = trimmed,
             attachment = mainAttachment,
@@ -509,6 +542,7 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
 
         viewModelScope.launch(Dispatchers.IO) {
             chatRepository.saveMessage(userMessage)
+            conversationThreadDao.updateLastMessage(currentTid, trimmed.take(60), System.currentTimeMillis())
 
             // Build outbound prompt incorporating attachment references if present
             val promptBody = buildString {
@@ -542,10 +576,17 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
             }
 
             val activeService = com.cellular.rpc.domain.service.CellularServiceManager.getActiveService(getApplication())
-            val promptToSend = if (activeService.promptPrefix.isNotBlank()) {
+            val basePrompt = if (activeService.promptPrefix.isNotBlank()) {
                 "${activeService.promptPrefix} $trimmed"
             } else {
                 trimmed
+            }
+
+            // Multiplex thread ID over cellular wire format: [TID:<threadId>] <prompt>
+            val promptToSend = if (currentTid != "th_main") {
+                "[TID:$currentTid] $basePrompt"
+            } else {
+                basePrompt
             }
 
             // If an attachment is present, dispatch via native carrier MMS
@@ -639,7 +680,8 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
      */
     fun queryWidget(type: String) {
         lastQueriedType = type
-        val queryPrompt = when (type.lowercase()) {
+        val currentTid = _activeThreadId.value.ifBlank { "th_main" }
+        val rawQueryPrompt = when (type.lowercase()) {
             "weather" -> "Please provide the current weather in JSON format: {\"type\":\"weather\",\"city\":\"San Francisco\",\"temp\":72,\"cond\":\"Sunny\"}"
             "news_digest", "news" -> "Please provide top news headlines in JSON format: {\"type\":\"news_digest\",\"headlines\":[{\"title\":\"Top News\",\"source\":\"Global\",\"summary\":\"Summary of events\"}]}"
             "market_ticker", "market" -> "Please provide current market prices in JSON format: {\"type\":\"market_ticker\",\"symbols\":[{\"symbol\":\"SPY\",\"price\":510.50,\"changePercent\":0.75}]}"
@@ -650,7 +692,10 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
             else -> "Please provide $type in JSON format: {\"type\":\"$type\"}"
         }
 
+        val queryPrompt = if (currentTid != "th_main") "[TID:$currentTid] $rawQueryPrompt" else rawQueryPrompt
+
         val userMessage = com.cellular.rpc.engine.ChatMessage(
+            threadId = currentTid,
             sender = com.cellular.rpc.engine.MessageSender.USER,
             text = "Request: $type update",
             byteSize = queryPrompt.length,
@@ -659,6 +704,7 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
 
         viewModelScope.launch(Dispatchers.IO) {
             chatRepository.saveMessage(userMessage)
+            conversationThreadDao.updateLastMessage(currentTid, "Request: $type update", System.currentTimeMillis())
             queueEngine.enqueuePayload(
                 sessionId = activeSessionId,
                 pktType = Frame.PKT_RPC_REQ,
@@ -927,7 +973,58 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
 
     fun clearChatHistory() {
         viewModelScope.launch(Dispatchers.IO) {
-            chatRepository.clearChat()
+            val currentTid = _activeThreadId.value
+            chatRepository.deleteMessagesForThread(currentTid)
+            conversationThreadDao.updateLastMessage(currentTid, "", System.currentTimeMillis())
+        }
+    }
+
+    // Thread Operations
+    fun selectThread(threadId: String) {
+        _activeThreadId.value = threadId
+        CellularMessageDispatcher.activeThreadId = threadId
+        viewModelScope.launch(Dispatchers.IO) {
+            conversationThreadDao.markThreadRead(threadId)
+        }
+    }
+
+    fun createNewThread(title: String = "New Conversation"): String {
+        val newThreadId = "th_" + java.util.UUID.randomUUID().toString().take(6)
+        val now = System.currentTimeMillis()
+        viewModelScope.launch(Dispatchers.IO) {
+            val newThread = ConversationThreadEntity(
+                threadId = newThreadId,
+                title = title.ifBlank { "Conversation ${newThreadId.takeLast(4)}" },
+                createdAtMs = now,
+                lastMessageTimestamp = now,
+                lastSnippet = "Started conversation"
+            )
+            conversationThreadDao.insertOrUpdate(newThread)
+            selectThread(newThreadId)
+        }
+        return newThreadId
+    }
+
+    fun renameThread(threadId: String, newTitle: String) {
+        if (newTitle.isBlank()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            conversationThreadDao.renameThread(threadId, newTitle.trim())
+        }
+    }
+
+    fun togglePinThread(threadId: String, currentPinned: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            conversationThreadDao.setPinned(threadId, !currentPinned)
+        }
+    }
+
+    fun deleteThread(threadId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            chatRepository.deleteMessagesForThread(threadId)
+            conversationThreadDao.deleteThread(threadId)
+            if (_activeThreadId.value == threadId) {
+                selectThread("th_main")
+            }
         }
     }
 }

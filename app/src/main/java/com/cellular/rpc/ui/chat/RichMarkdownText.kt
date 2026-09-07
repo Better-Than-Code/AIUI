@@ -46,8 +46,15 @@ fun RichMarkdownText(
     val clipboardManager = LocalClipboardManager.current
     var copiedCodeIndex by remember { mutableStateOf<Int?>(null) }
 
+    // Strip internal thread tags [TID:...] if any happen to reach presentation layer
+    val cleanText = remember(text) {
+        text.replace(Regex("\\[(?:TID|THREAD):[^\\]]+\\]\\s*"), "")
+            .replace(Regex("\"(?:threadId|tid)\"\\s*:\\s*\"[^\"]+\"\\s*,?\\s*"), "")
+            .trim()
+    }
+
     // Split text by markdown code blocks (```...```)
-    val parts = remember(text) { splitByCodeBlocks(text) }
+    val parts = remember(cleanText) { splitByCodeBlocks(cleanText) }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         parts.forEachIndexed { index, part ->

@@ -81,6 +81,10 @@ object CellularMessageDispatcher {
     private val _inboundEvents = MutableSharedFlow<CellularResponse>(extraBufferCapacity = 64)
     val inboundEvents: SharedFlow<CellularResponse> = _inboundEvents.asSharedFlow()
 
+    // Currently focused/active thread ID in UI (defaults to "th_main")
+    @Volatile
+    var activeThreadId: String = "th_main"
+
     init {
         // Register default consumers for built-in widgets
         registerConsumer("weather") { response, context ->
@@ -289,8 +293,10 @@ object CellularMessageDispatcher {
 
             // Persist 304 Cache Render message in Chat
             val cached = db.widgetCacheDao().getWidgetByType(schemaTarget)
+            val currentThread = activeThreadId.ifBlank { "th_main" }
             val chatMsg = ChatMessageEntity(
                 id = "msg_${now}_${(1000..9999).random()}",
+                threadId = currentThread,
                 sender = "AI_GATEWAY",
                 text = "Resource unmodified (304 Not Modified). Rendered from local cache.",
                 widgetDataJson = cached?.jsonPayload,
@@ -302,9 +308,25 @@ object CellularMessageDispatcher {
                 timestampMs = now
             )
             db.chatMessageDao().insertMessage(chatMsg)
+            db.conversationThreadDao().updateLastMessage(currentThread, chatMsg.text.take(60), now)
         } else if (payloadStr.isNotBlank() && !isHandshakeHandled) {
             // 5. Parse Dual Response (Conversational Text + Structured Native Widget Data)
             val dual = DualResponseParser.parse(payloadStr)
+            val targetThreadId = dual.threadId?.ifBlank { null } ?: activeThreadId.ifBlank { "th_main" }
+
+            // Ensure the thread exists in the database
+            val existingThread = db.conversationThreadDao().getThreadById(targetThreadId)
+            if (existingThread == null) {
+                db.conversationThreadDao().insertOrUpdate(
+                    com.cellular.rpc.data.local.ConversationThreadEntity(
+                        threadId = targetThreadId,
+                        title = if (targetThreadId == "th_main") "General Chat" else "Conversation ${targetThreadId.takeLast(4)}",
+                        createdAtMs = now,
+                        lastMessageTimestamp = now,
+                        lastSnippet = ""
+                    )
+                )
+            }
 
             // Cache Widget Data if present
             if (dual.widgetData != null) {
@@ -334,6 +356,7 @@ object CellularMessageDispatcher {
             if (displayText.isNotEmpty() || dual.widgetData != null || message.attachment != null) {
                 val chatMsg = ChatMessageEntity(
                     id = "msg_${now}_${(1000..9999).random()}",
+                    threadId = targetThreadId,
                     sender = "AI_GATEWAY",
                     text = displayText,
                     widgetDataJson = dual.widgetData?.toJson(),
@@ -351,6 +374,17 @@ object CellularMessageDispatcher {
                     attachmentMimeType = message.attachment?.mimeType
                 )
                 db.chatMessageDao().insertMessage(chatMsg)
+
+                val snippet = when {
+                    displayText.isNotBlank() -> displayText.take(60)
+                    dual.widgetData != null -> "[Widget: ${dual.widgetData.type}]"
+                    message.attachment != null -> "[Attachment: ${message.attachment.fileName}]"
+                    else -> "New message"
+                }
+                db.conversationThreadDao().updateLastMessage(targetThreadId, snippet, now)
+                if (targetThreadId != activeThreadId) {
+                    db.conversationThreadDao().incrementUnread(targetThreadId)
+                }
             }
         }
 

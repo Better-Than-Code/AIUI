@@ -91,9 +91,13 @@ fun CellularRpcScreen(
     var selectedTab by remember { mutableIntStateOf(0) }
     var isDiagnosticsEnabled by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
+    var showThreadDrawer by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val chatMessages by viewModel.chatMessages.collectAsStateWithLifecycle()
+    val conversationThreads by viewModel.conversationThreads.collectAsStateWithLifecycle()
+    val activeThreadId by viewModel.activeThreadId.collectAsStateWithLifecycle()
+    val activeThread by viewModel.activeThread.collectAsStateWithLifecycle()
     val widgetCache by viewModel.widgetCache.collectAsStateWithLifecycle()
     val packetLogs by viewModel.packetLogs.collectAsStateWithLifecycle()
     val outboxItems by viewModel.outboxItems.collectAsStateWithLifecycle()
@@ -243,8 +247,41 @@ fun CellularRpcScreen(
                             }
                         }
 
-                        // Action Buttons: Pull Sync, Settings & Service Toggle
+                        // Action Buttons: Threads, Pull Sync, Settings & Service Toggle
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { showThreadDrawer = true },
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .testTag("top_thread_drawer_button")
+                            ) {
+                                BadgedBox(
+                                    badge = {
+                                        if (conversationThreads.size > 1) {
+                                            Badge(
+                                                containerColor = CyanPrimary,
+                                                contentColor = Color.Black
+                                            ) {
+                                                Text(
+                                                    text = conversationThreads.size.toString(),
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        Icons.Default.Forum,
+                                        contentDescription = "Conversation Threads",
+                                        tint = CyanPrimary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(4.dp))
+
                             IconButton(
                                 onClick = { viewModel.triggerPullSync() },
                                 modifier = Modifier
@@ -317,38 +354,73 @@ fun CellularRpcScreen(
                         }
                     }
 
-                    // Mode Toggle Pill (Simulation vs Live Carrier SMS)
+                    // Mode Toggle Pill (Simulation vs Live Carrier SMS) & Active Thread Pill
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = if (isLoopbackSimulation) Color(0xFF332710) else Color(0xFF0F3622),
-                            border = BorderStroke(1.dp, if (isLoopbackSimulation) SignalAmber.copy(alpha = 0.6f) else SignalGreen.copy(alpha = 0.6f)),
-                            modifier = Modifier
-                                .clickable { viewModel.toggleLoopbackSimulation() }
-                                .testTag("mode_toggle_pill")
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = if (isLoopbackSimulation) Color(0xFF332710) else Color(0xFF0F3622),
+                                border = BorderStroke(1.dp, if (isLoopbackSimulation) SignalAmber.copy(alpha = 0.6f) else SignalGreen.copy(alpha = 0.6f)),
+                                modifier = Modifier
+                                    .clickable { viewModel.toggleLoopbackSimulation() }
+                                    .testTag("mode_toggle_pill")
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(7.dp)
-                                        .clip(CircleShape)
-                                        .background(if (isLoopbackSimulation) SignalAmber else SignalGreen)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = if (isLoopbackSimulation) "⚡ Simulation Mode (Tap for Live SMS)" else "📡 Live SMS Mode (${activeService.phoneNumber})",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (isLoopbackSimulation) SignalAmber else SignalGreen
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isLoopbackSimulation) SignalAmber else SignalGreen)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (isLoopbackSimulation) "⚡ Simulation" else "📡 Live SMS",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (isLoopbackSimulation) SignalAmber else SignalGreen
+                                    )
+                                }
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = DarkNavyBorder.copy(alpha = 0.6f),
+                                border = BorderStroke(1.dp, CyanPrimary.copy(alpha = 0.4f)),
+                                modifier = Modifier
+                                    .clickable { showThreadDrawer = true }
+                                    .testTag("active_thread_pill")
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Forum,
+                                        contentDescription = "Active Thread",
+                                        tint = CyanPrimary,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                    Text(
+                                        text = activeThread?.title ?: "Main",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = CyanPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                         }
 
@@ -561,6 +633,32 @@ fun CellularRpcScreen(
                 context.startActivity(Intent(context, com.cellular.rpc.widget.WidgetConfigurationActivity::class.java))
             },
             onDismiss = { showSettingsSheet = false }
+        )
+    }
+
+    // Conversation Threads Drawer BottomSheet
+    if (showThreadDrawer) {
+        com.cellular.rpc.ui.chat.ThreadDrawerSheet(
+            threads = conversationThreads,
+            activeThreadId = activeThreadId,
+            onSelectThread = { threadId ->
+                viewModel.selectThread(threadId)
+                showThreadDrawer = false
+            },
+            onCreateThread = { title ->
+                viewModel.createNewThread(title)
+                showThreadDrawer = false
+            },
+            onRenameThread = { threadId, newTitle ->
+                viewModel.renameThread(threadId, newTitle)
+            },
+            onTogglePin = { threadId, pinned ->
+                viewModel.togglePinThread(threadId, pinned)
+            },
+            onDeleteThread = { threadId ->
+                viewModel.deleteThread(threadId)
+            },
+            onDismiss = { showThreadDrawer = false }
         )
     }
 }

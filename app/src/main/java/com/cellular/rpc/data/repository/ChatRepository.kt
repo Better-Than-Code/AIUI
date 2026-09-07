@@ -12,6 +12,11 @@ class ChatRepository(private val chatMessageDao: ChatMessageDao) {
         entities.map { entity -> entity.toDomainModel() }
     }
 
+    fun getMessagesForThread(threadId: String): Flow<List<ChatMessage>> =
+        chatMessageDao.getMessagesForThread(threadId).map { entities ->
+            entities.map { entity -> entity.toDomainModel() }
+        }
+
     suspend fun saveMessage(message: ChatMessage) {
         chatMessageDao.insertMessage(message.toEntity())
     }
@@ -22,6 +27,10 @@ class ChatRepository(private val chatMessageDao: ChatMessageDao) {
 
     suspend fun deleteMessage(id: String) {
         chatMessageDao.deleteMessageById(id)
+    }
+
+    suspend fun deleteMessagesForThread(threadId: String) {
+        chatMessageDao.deleteMessagesForThread(threadId)
     }
 
     suspend fun clearChat() {
@@ -69,6 +78,7 @@ class ChatRepository(private val chatMessageDao: ChatMessageDao) {
 
         return ChatMessage(
             id = id,
+            threadId = threadId,
             sender = parsedSender,
             text = text,
             widgetData = widget,
@@ -85,6 +95,7 @@ class ChatRepository(private val chatMessageDao: ChatMessageDao) {
     private fun ChatMessage.toEntity(): ChatMessageEntity {
         return ChatMessageEntity(
             id = id,
+            threadId = threadId,
             sender = sender.name,
             text = text,
             widgetDataJson = widgetData?.toJson(),

@@ -15,6 +15,7 @@ enum class MessageDeliveryStatus {
 
 data class ChatMessage(
     val id: String = UUID.randomUUID().toString(),
+    val threadId: String = "th_main",
     val sender: MessageSender,
     val text: String,
     val widgetData: WidgetData? = null,

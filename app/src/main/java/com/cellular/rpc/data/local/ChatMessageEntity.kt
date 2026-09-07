@@ -3,10 +3,14 @@ package com.cellular.rpc.data.local
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
 
-@Entity(tableName = "chat_messages")
+@Entity(
+    tableName = "chat_messages",
+    indices = [Index(value = ["threadId"])]
+)
 data class ChatMessageEntity(
     @PrimaryKey
     val id: String,
+    val threadId: String = "th_main",
     val sender: String, // "USER" or "AI_GATEWAY"
     val text: String,
     val widgetDataJson: String? = null,
@@ -32,6 +36,9 @@ interface ChatMessageDao {
     @Query("SELECT * FROM chat_messages ORDER BY timestampMs ASC")
     fun getAllMessages(): Flow<List<ChatMessageEntity>>
 
+    @Query("SELECT * FROM chat_messages WHERE threadId = :threadId ORDER BY timestampMs ASC")
+    fun getMessagesForThread(threadId: String): Flow<List<ChatMessageEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(message: ChatMessageEntity)
 
@@ -46,6 +53,9 @@ interface ChatMessageDao {
 
     @Query("DELETE FROM chat_messages WHERE id = :id")
     suspend fun deleteMessageById(id: String)
+
+    @Query("DELETE FROM chat_messages WHERE threadId = :threadId")
+    suspend fun deleteMessagesForThread(threadId: String)
 
     @Query("DELETE FROM chat_messages")
     suspend fun clearAllMessages()

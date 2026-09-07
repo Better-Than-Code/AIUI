@@ -133,7 +133,8 @@ fun CellularRpcScreen(
     var hasSmsPermissions by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
         )
     }
 
@@ -141,12 +142,24 @@ fun CellularRpcScreen(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
         hasSmsPermissions = results[Manifest.permission.SEND_SMS] == true &&
-                            results[Manifest.permission.RECEIVE_SMS] == true
+                            results[Manifest.permission.RECEIVE_SMS] == true &&
+                            results[Manifest.permission.READ_SMS] == true
+        if (hasSmsPermissions) {
+            com.cellular.rpc.transport.receiver.PallySmsObserver.checkInboxNow(context)
+        }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(hasSmsPermissions) {
         if (!hasSmsPermissions) {
             permissionLauncher.launch(requiredPermissions)
+        } else {
+            com.cellular.rpc.transport.receiver.PallySmsObserver.checkInboxNow(context)
+        }
+    }
+
+    LaunchedEffect(selectedTab) {
+        if (hasSmsPermissions) {
+            com.cellular.rpc.transport.receiver.PallySmsObserver.checkInboxNow(context)
         }
     }
 

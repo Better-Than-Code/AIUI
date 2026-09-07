@@ -1,15 +1,18 @@
 package com.cellular.rpc.transport.receiver
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.database.ContentObserver
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.provider.Telephony
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.cellular.rpc.transport.handler.CellularMessageDispatcher
-import com.cellular.rpc.transport.handler.InboundCellularMessage
 import com.cellular.rpc.transport.handler.CellularTransportType
+import com.cellular.rpc.transport.handler.InboundCellularMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -26,6 +29,7 @@ class PallySmsObserver(
 
     companion object {
         private const val TAG = "PallySmsObserver"
+        @Volatile
         private var lastProcessedId = -1L
         private var observerInstance: PallySmsObserver? = null
 
@@ -41,16 +45,29 @@ class PallySmsObserver(
                 )
                 observerInstance = observer
                 Log.i(TAG, "Successfully registered Telephony.Sms.CONTENT_URI ContentObserver.")
+                // Query immediately if permissions are already granted
+                checkInboxNow(context)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to register SMS ContentObserver: ${e.message}")
             }
         }
-    }
 
-    override fun onChange(selfChange: Boolean, uri: Uri?) {
-        super.onChange(selfChange, uri)
+        /**
+         * Actively scan the SMS inbox for any pending or newly written inbound SMS messages.
+         * Safe to call on app launch, on resume, or immediately after permissions are granted.
+         */
+        fun checkInboxNow(context: Context) {
+            CoroutineScope(Dispatchers.IO).launch {
+                queryInbox(context.applicationContext)
+            }
+        }
 
-        CoroutineScope(Dispatchers.IO).launch {
+        private suspend fun queryInbox(context: Context) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+                Log.w(TAG, "READ_SMS permission not granted; cannot query SMS inbox provider.")
+                return
+            }
+
             try {
                 // Query inbox messages sorted by _id DESC to catch newly inserted incoming texts
                 val cursor = context.contentResolver.query(
@@ -58,11 +75,14 @@ class PallySmsObserver(
                     arrayOf(Telephony.Sms._ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE, Telephony.Sms.TYPE),
                     null,
                     null,
-                    "${Telephony.Sms._ID} DESC LIMIT 5"
+                    "${Telephony.Sms._ID} DESC LIMIT 10"
                 )
 
                 cursor?.use {
                     var maxSeenId = lastProcessedId
+                    val now = System.currentTimeMillis()
+                    val isFirstRun = (lastProcessedId == -1L)
+
                     while (it.moveToNext()) {
                         val idCol = it.getColumnIndex(Telephony.Sms._ID)
                         val addressCol = it.getColumnIndex(Telephony.Sms.ADDRESS)
@@ -74,14 +94,22 @@ class PallySmsObserver(
                             val msgId = it.getLong(idCol)
                             val sender = it.getString(addressCol) ?: ""
                             val body = it.getString(bodyCol) ?: ""
-                            val date = if (dateCol != -1) it.getLong(dateCol) else System.currentTimeMillis()
+                            val date = if (dateCol != -1) it.getLong(dateCol) else now
                             val msgType = if (typeCol != -1) it.getInt(typeCol) else Telephony.Sms.MESSAGE_TYPE_INBOX
 
-                            // If this message ID is newer than what we've processed and it's an inbox (received) message
-                            if (msgId > lastProcessedId && msgType == Telephony.Sms.MESSAGE_TYPE_INBOX && body.isNotEmpty()) {
-                                if (msgId > maxSeenId) {
-                                    maxSeenId = msgId
-                                }
+                            if (msgId > maxSeenId) {
+                                maxSeenId = msgId
+                            }
+
+                            // If this is the initial run on boot, only ingest messages from the last 3 minutes (180,000ms)
+                            // to avoid replaying ancient historical texts while catching any response in flight.
+                            val shouldProcess = if (isFirstRun) {
+                                (now - date) <= 180_000L
+                            } else {
+                                msgId > lastProcessedId
+                            }
+
+                            if (shouldProcess && msgType == Telephony.Sms.MESSAGE_TYPE_INBOX && body.isNotEmpty()) {
                                 Log.i(TAG, "ContentObserver caught incoming SMS ID $msgId from $sender: $body")
 
                                 val inboundMessage = InboundCellularMessage(
@@ -101,6 +129,13 @@ class PallySmsObserver(
             } catch (e: Exception) {
                 Log.e(TAG, "Error querying SMS ContentObserver inbox: ${e.message}")
             }
+        }
+    }
+
+    override fun onChange(selfChange: Boolean, uri: Uri?) {
+        super.onChange(selfChange, uri)
+        CoroutineScope(Dispatchers.IO).launch {
+            queryInbox(context)
         }
     }
 }

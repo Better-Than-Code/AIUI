@@ -83,11 +83,10 @@ fun NextGenChatMessageItem(
                         .background(Brush.linearGradient(listOf(CyanPrimary, DarkNavyBorder))),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.SmartToy,
-                        contentDescription = assistantName,
-                        tint = Color.Black,
-                        modifier = Modifier.size(16.dp)
+                    Text(
+                        text = "✨",
+                        fontSize = 15.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
                 Spacer(modifier = Modifier.width(6.dp))

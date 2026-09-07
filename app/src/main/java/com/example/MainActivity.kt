@@ -204,11 +204,10 @@ fun CellularRpcScreen(
                                     .background(CyanPrimary.copy(alpha = 0.15f)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Forum,
-                                    contentDescription = "Conversation Threads",
-                                    tint = CyanPrimary,
-                                    modifier = Modifier.size(18.dp)
+                                Text(
+                                    text = "✨",
+                                    fontSize = 20.sp,
+                                    textAlign = TextAlign.Center
                                 )
                             }
                             Spacer(modifier = Modifier.width(10.dp))

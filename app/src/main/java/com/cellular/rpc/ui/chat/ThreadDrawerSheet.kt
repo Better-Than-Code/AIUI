@@ -158,13 +158,21 @@ fun ThreadDrawerSheet(
                                         ),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(
-                                        imageVector = if (thread.isPinned) Icons.Default.PushPin else Icons.Default.Forum,
-                                        contentDescription = null,
-                                        tint = if (isSelected) MaterialTheme.colorScheme.onPrimary
-                                        else MaterialTheme.colorScheme.onSecondaryContainer,
-                                        modifier = Modifier.size(20.dp)
-                                    )
+                                    if (thread.isPinned) {
+                                        Icon(
+                                            imageVector = Icons.Default.PushPin,
+                                            contentDescription = "Pinned Thread",
+                                            tint = if (isSelected) MaterialTheme.colorScheme.onPrimary
+                                            else MaterialTheme.colorScheme.onSecondaryContainer,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "✨",
+                                            fontSize = 18.sp,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                        )
+                                    }
                                 }
 
                                 Spacer(modifier = Modifier.width(12.dp))

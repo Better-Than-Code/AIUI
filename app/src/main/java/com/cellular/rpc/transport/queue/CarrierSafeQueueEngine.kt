@@ -125,6 +125,24 @@ class CarrierSafeQueueEngine(
             freeStorageMb = 4280L,
             queuedPackets = 0,
             linkQuality = "EXCELLENT"
+        ),
+        "blueprint" to WidgetData.DynamicBlueprint(
+            id = "bp_device_monitor",
+            title = "Device Health Blueprint",
+            subtitle = "Live Cellular Telemetry",
+            icon = "memory",
+            themeColorHex = "#00E5FF",
+            rootNode = WidgetData.DynamicSduiNode(
+                type = "column",
+                spacing = 10,
+                children = listOf(
+                    WidgetData.DynamicSduiNode(type = "badge", text = "CELLULAR GATEWAY OK", colorHex = "#00E5FF"),
+                    WidgetData.DynamicSduiNode(type = "metric", title = "Radio Latency", value = "28ms", secondaryValue = "±4ms jitter"),
+                    WidgetData.DynamicSduiNode(type = "progress", title = "Buffer Utilization", progress = 0.35f),
+                    WidgetData.DynamicSduiNode(type = "key_value", title = "Active Protocol", value = "Micro-Wire v2.2 (Base85)"),
+                    WidgetData.DynamicSduiNode(type = "button", text = "Run Remote Diagnostics", action = "diag_run")
+                )
+            )
         )
     )
 
@@ -464,10 +482,12 @@ class CarrierSafeQueueEngine(
                 smsManager.sendTextMessage(cleanNumber, null, textToSend, null, null)
             }
 
-            // Immediately acknowledge outbound frame in sliding window
+            // Immediately acknowledge outbound frame in sliding window and clear from Room outbox
             scope.launch {
                 windowController.markFrameAcknowledged(frame.seqNo)
                 outboxDao.markAcknowledged(frame.sessionId, frame.seqNo)
+                outboxDao.clearAcknowledged()
+                _inFlightCount.value = outboxDao.getPendingCount()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error transmitting message: ${e.message}", e)
@@ -556,6 +576,7 @@ class CarrierSafeQueueEngine(
             queryStr.contains("calendar", ignoreCase = true) || queryStr.contains("event", ignoreCase = true) || queryStr.contains("meeting", ignoreCase = true) -> "calendar_event"
             queryStr.contains("task", ignoreCase = true) || queryStr.contains("todo", ignoreCase = true) || queryStr.contains("checklist", ignoreCase = true) -> "task_checklist"
             queryStr.contains("system", ignoreCase = true) || queryStr.contains("telemetry", ignoreCase = true) || queryStr.contains("status", ignoreCase = true) -> "system_status"
+            queryStr.contains("blueprint", ignoreCase = true) || queryStr.contains("sdui", ignoreCase = true) || queryStr.contains("dynamic", ignoreCase = true) || queryStr.contains("schema", ignoreCase = true) -> "blueprint"
             else -> null
         }
 

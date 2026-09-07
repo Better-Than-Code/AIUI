@@ -26,10 +26,20 @@ class PallyWapPushReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action ?: return
-        if (action != "android.provider.Telephony.WAP_PUSH_RECEIVED") return
+        if (action != "android.provider.Telephony.WAP_PUSH_RECEIVED" &&
+            action != "android.provider.Telephony.WAP_PUSH_DELIVER"
+        ) return
 
         val mimeType = intent.type ?: ""
-        Log.d(TAG, "Received WAP Push intent with MIME: $mimeType")
+        Log.d(TAG, "Received WAP Push intent with action: $action, MIME: $mimeType")
+
+        if (isOrderedBroadcast) {
+            try {
+                abortBroadcast()
+            } catch (e: Exception) {
+                Log.d(TAG, "abortBroadcast on WAP Push: ${e.message}")
+            }
+        }
 
         val data = intent.getByteArrayExtra("data") ?: return
         val pendingResult = goAsync()

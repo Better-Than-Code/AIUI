@@ -42,8 +42,9 @@ class PallySmsReceiver : BroadcastReceiver() {
         }
 
         val isRecognizedOrProtocol = { sender: String, text: String ->
-            // Accept all incoming SMS messages for maximum reliability
-            true
+            val isProtocol = text.startsWith("~") || text.contains("~1A2F:") || text.contains("REQ:") || text.contains("RES:") || FrameTokenizer.containsFrames(text)
+            val isRecognizedSender = com.cellular.rpc.domain.service.CellularServiceManager.isSenderRecognized(context, sender)
+            isProtocol || isRecognizedSender
         }
 
         // Try standard Android Intents helper which correctly merges multi-part/concatenated SMS
@@ -66,6 +67,17 @@ class PallySmsReceiver : BroadcastReceiver() {
             if (isRecognizedOrProtocol(sender, combinedText)) {
                 Log.i(TAG, "Intercepted incoming AI SMS from $sender (${combinedText.length} chars): $combinedText")
                 PallySmsTracker.markHandled(sender, combinedText)
+
+                // Prevent raw wire frames and protocol traffic from leaking into the system SMS inbox
+                if (isOrderedBroadcast) {
+                    try {
+                        abortBroadcast()
+                        Log.d(TAG, "Successfully aborted broadcast for handled protocol packet.")
+                    } catch (e: Exception) {
+                        Log.d(TAG, "abortBroadcast error: ${e.message}")
+                    }
+                }
+
                 val pendingResult = goAsync()
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
@@ -106,6 +118,16 @@ class PallySmsReceiver : BroadcastReceiver() {
         if (fallbackSms != null && isRecognizedOrProtocol(fallbackSender, fullText)) {
             Log.i(TAG, "Intercepted fallback PDU message from $fallbackSender: $fullText")
             PallySmsTracker.markHandled(fallbackSender, fullText)
+
+            if (isOrderedBroadcast) {
+                try {
+                    abortBroadcast()
+                    Log.d(TAG, "Successfully aborted broadcast for handled fallback PDU packet.")
+                } catch (e: Exception) {
+                    Log.d(TAG, "abortBroadcast error: ${e.message}")
+                }
+            }
+
             val pendingResult = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
                 try {

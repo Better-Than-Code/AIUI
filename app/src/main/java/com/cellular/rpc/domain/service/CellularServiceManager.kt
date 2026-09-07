@@ -211,20 +211,25 @@ object CellularServiceManager {
         val normalizedSender = normalizePhoneNumber(senderAddress)
         if (normalizedSender.isBlank()) return false
 
-        // 1. Check last texted number
+        // 1. Check known default gateway line (+16462619684)
+        if (isNumberMatch(normalizedSender, "+16462619684") || isNumberMatch(normalizedSender, "6462619684") || isNumberMatch(normalizedSender, "+18005550199")) {
+            return true
+        }
+
+        // 2. Check last texted number
         val lastOutbound = getLastOutboundDestination(context)
         if (lastOutbound.isNotBlank() && isNumberMatch(normalizedSender, lastOutbound)) {
             return true
         }
 
-        // 2. Check active service
+        // 3. Check active service
         val active = getActiveService(context)
         val activeNormalized = normalizePhoneNumber(active.phoneNumber)
         if (isNumberMatch(normalizedSender, activeNormalized)) {
             return true
         }
 
-        // 3. Check all saved services
+        // 4. Check all saved services
         for (service in getAvailableServices(context)) {
             val serviceNormalized = normalizePhoneNumber(service.phoneNumber)
             if (isNumberMatch(normalizedSender, serviceNormalized)) {
@@ -232,7 +237,7 @@ object CellularServiceManager {
             }
         }
 
-        // 4. Check active CarrierSafeQueueEngine destination
+        // 5. Check active CarrierSafeQueueEngine destination
         try {
             val engine = CarrierSafeQueueEngine.getInstance(context)
             if (isNumberMatch(normalizedSender, engine.destinationAddress)) {

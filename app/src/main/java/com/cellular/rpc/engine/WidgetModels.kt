@@ -307,6 +307,160 @@ sealed class WidgetData(val type: String) {
         }
     }
 
+    data class DynamicSduiNode(
+        val type: String, // column, row, card, box, text, button, badge, progress, divider, key_value, chip, metric, list_item, icon
+        val id: String = "",
+        val text: String = "",
+        val title: String = "",
+        val subtitle: String = "",
+        val value: String = "",
+        val secondaryValue: String = "",
+        val colorHex: String? = null,
+        val iconName: String? = null,
+        val action: String? = null,
+        val actionPayload: String? = null,
+        val progress: Float = 0f,
+        val style: String? = null,
+        val isBold: Boolean = false,
+        val padding: Int = 0,
+        val spacing: Int = 8,
+        val children: List<DynamicSduiNode> = emptyList()
+    ) {
+        companion object {
+            fun fromJson(json: JSONObject): DynamicSduiNode {
+                val nodeType = json.optString("type", json.optString("component", "text")).lowercase()
+                val childList = mutableListOf<DynamicSduiNode>()
+                val childrenArr = json.optJSONArray("children") ?: json.optJSONArray("components") ?: json.optJSONArray("elements") ?: json.optJSONArray("items")
+                if (childrenArr != null) {
+                    for (i in 0 until childrenArr.length()) {
+                        val childObj = childrenArr.optJSONObject(i)
+                        if (childObj != null) {
+                            childList.add(fromJson(childObj))
+                        } else {
+                            val strVal = childrenArr.optString(i)
+                            if (strVal.isNotBlank()) {
+                                childList.add(DynamicSduiNode(type = "text", text = strVal))
+                            }
+                        }
+                    }
+                }
+
+                return DynamicSduiNode(
+                    type = nodeType,
+                    id = json.optString("id", ""),
+                    text = json.optString("text", json.optString("label", json.optString("content", ""))),
+                    title = json.optString("title", json.optString("header", "")),
+                    subtitle = json.optString("subtitle", json.optString("desc", json.optString("description", ""))),
+                    value = json.optString("value", json.optString("val", json.optString("primary", ""))),
+                    secondaryValue = json.optString("secondaryValue", json.optString("secondary", json.optString("sub", ""))),
+                    colorHex = json.optString("color", json.optString("colorHex", "")).takeIf { it.isNotBlank() },
+                    iconName = json.optString("icon", json.optString("iconName", "")).takeIf { it.isNotBlank() },
+                    action = json.optString("action", json.optString("onClick", "")).takeIf { it.isNotBlank() },
+                    actionPayload = json.optString("actionPayload", json.optString("payload", "")).takeIf { it.isNotBlank() },
+                    progress = json.optDouble("progress", 0.0).toFloat(),
+                    style = json.optString("style", "body"),
+                    isBold = json.optBoolean("isBold", json.optBoolean("bold", false)),
+                    padding = json.optInt("padding", 0),
+                    spacing = json.optInt("spacing", 8),
+                    children = childList
+                )
+            }
+        }
+    }
+
+    data class DynamicBlueprint(
+        val id: String,
+        val title: String,
+        val subtitle: String = "",
+        val icon: String = "extension",
+        val themeColorHex: String = "#00E5FF",
+        val rootNode: DynamicSduiNode,
+        val rawJson: String = ""
+    ) : WidgetData("blueprint") {
+        override fun toJson(): String {
+            return if (rawJson.isNotBlank()) rawJson else """{"type":"blueprint","id":"$id","title":"$title","subtitle":"$subtitle"}"""
+        }
+
+        override fun computeContentHash(): String {
+            return hashString(toJson())
+        }
+
+        companion object {
+            fun fromJson(json: JSONObject): DynamicBlueprint {
+                val id = json.optString("id", json.optString("featureId", "blueprint_${System.currentTimeMillis() % 10000}"))
+                val title = json.optString("title", json.optString("name", "Dynamic Cellular Blueprint"))
+                val subtitle = json.optString("subtitle", json.optString("description", "Server-Driven UI"))
+                val icon = json.optString("icon", json.optString("iconName", "extension"))
+                val color = json.optString("themeColorHex", json.optString("color", "#00E5FF"))
+
+                val rootObj = json.optJSONObject("root") ?: json.optJSONObject("layout") ?: json.optJSONObject("ui")
+                val rootNode = if (rootObj != null) {
+                    DynamicSduiNode.fromJson(rootObj)
+                } else {
+                    // Treat the object itself or its components as container root
+                    DynamicSduiNode.fromJson(json.apply {
+                        if (!has("type") || optString("type") == "blueprint" || optString("type") == "sdui") {
+                            put("type", "column")
+                        }
+                    })
+                }
+
+                return DynamicBlueprint(
+                    id = id,
+                    title = title,
+                    subtitle = subtitle,
+                    icon = icon,
+                    themeColorHex = color,
+                    rootNode = rootNode,
+                    rawJson = json.toString()
+                )
+            }
+
+            fun fromGenericJson(json: JSONObject): DynamicBlueprint {
+                val title = json.optString("title", json.optString("name", json.optString("type", "Cellular Schema").replace("_", " ").capitalize()))
+                val id = json.optString("id", "dyn_${System.currentTimeMillis() % 1000}")
+                val subtitle = json.optString("subtitle", json.optString("status", ""))
+                
+                val children = mutableListOf<DynamicSduiNode>()
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    if (k in listOf("type", "id", "title", "subtitle")) continue
+                    val v = json.opt(k)
+                    if (v is JSONObject) {
+                        children.add(DynamicSduiNode.fromJson(v))
+                    } else if (v is JSONArray) {
+                        val items = mutableListOf<DynamicSduiNode>()
+                        for (i in 0 until v.length()) {
+                            val itemObj = v.optJSONObject(i)
+                            if (itemObj != null) {
+                                items.add(DynamicSduiNode.fromJson(itemObj))
+                            } else {
+                                items.add(DynamicSduiNode(type = "chip", text = v.optString(i)))
+                            }
+                        }
+                        children.add(DynamicSduiNode(type = "row", title = k.capitalize(), children = items))
+                    } else {
+                        children.add(DynamicSduiNode(type = "key_value", title = k.replace("_", " ").capitalize(), value = v.toString()))
+                    }
+                }
+
+                val root = DynamicSduiNode(
+                    type = "column",
+                    children = children
+                )
+
+                return DynamicBlueprint(
+                    id = id,
+                    title = title,
+                    subtitle = subtitle,
+                    rootNode = root,
+                    rawJson = json.toString()
+                )
+            }
+        }
+    }
+
     data class SystemStatus(
         val batteryPct: Int,
         val signalDbm: Int,
@@ -363,7 +517,8 @@ sealed class WidgetData(val type: String) {
         private fun parseJsonInternal(jsonString: String): WidgetData? {
             return try {
                 val obj = JSONObject(jsonString)
-                when (obj.optString("type")) {
+                val type = obj.optString("type")
+                when (type) {
                     "weather" -> Weather.fromJson(obj)
                     "news_digest" -> NewsDigest.fromJson(obj)
                     "market_ticker" -> MarketTicker.fromJson(obj)
@@ -374,7 +529,16 @@ sealed class WidgetData(val type: String) {
                     "calendar_event" -> CalendarEvent.fromJson(obj)
                     "task_checklist" -> TaskChecklist.fromJson(obj)
                     "system_status" -> SystemStatus.fromJson(obj)
-                    else -> null
+                    "blueprint", "sdui", "dynamic", "custom", "layout", "screen", "widget" -> DynamicBlueprint.fromJson(obj)
+                    else -> {
+                        if (obj.has("children") || obj.has("components") || obj.has("elements") || obj.has("root") || obj.has("layout") || obj.has("title")) {
+                            DynamicBlueprint.fromJson(obj)
+                        } else if (obj.length() > 0) {
+                            DynamicBlueprint.fromGenericJson(obj)
+                        } else {
+                            null
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 null

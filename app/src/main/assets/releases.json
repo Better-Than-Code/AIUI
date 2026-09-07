@@ -1,5 +1,19 @@
 [
   {
+    "versionCode": 14,
+    "versionName": "2.3",
+    "fileName": "pallyai-v14.apk",
+    "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v14.apk",
+    "releaseNotes": "Release v14 - Live Pally gateway (+16462619684), abortBroadcast protocol protection, Room-backed outbox queue, WAP_PUSH_DELIVER MMS receiver, dynamic SDUI tree parser"
+  },
+  {
+    "versionCode": 13,
+    "versionName": "2.2",
+    "fileName": "pallyai-v13.apk",
+    "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v13.apk",
+    "releaseNotes": "Release v13 - Multi-conversation thread multiplexing over cellular SMS/RPC & Thread Management Drawer"
+  },
+  {
     "versionCode": 12,
     "versionName": "2.1",
     "fileName": "pallyai-v12.apk",

@@ -45,7 +45,7 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
         get() = CellularRpcForegroundService.activeEngine ?: CellularRpcApp.instance.queueEngine
 
     // UI State observation
-    val outboxItems: StateFlow<List<OutboxEntity>> = outboxDao.getAllFlow()
+    val outboxItems: StateFlow<List<OutboxEntity>> = outboxDao.getActiveQueueFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val pendingCount: StateFlow<Int> = outboxDao.getPendingCountFlow()
@@ -58,7 +58,8 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val isEngineRunning: StateFlow<Boolean> = queueEngine.isEngineRunning
-    val inFlightCount: StateFlow<Int> = queueEngine.inFlightCount
+    val inFlightCount: StateFlow<Int> = outboxDao.getPendingCountFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
     val txCount: StateFlow<Int> = queueEngine.txPacketCount
     val rxCount: StateFlow<Int> = queueEngine.rxPacketCount
     val bytesSaved304: StateFlow<Int> = queueEngine.bytesSavedBy304

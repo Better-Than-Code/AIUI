@@ -18,7 +18,7 @@ class ExampleRobolectricTest {
   fun `read string from context`() {
     val context = ApplicationProvider.getApplicationContext<Context>()
     val appName = context.getString(R.string.app_name)
-    assertEquals("Cellular RPC", appName)
+    assertEquals("PallyAI", appName)
   }
 
   /**
@@ -407,6 +407,52 @@ class ExampleRobolectricTest {
     // Set transparency and verify
     com.cellular.rpc.widget.WidgetPreferences.setTransparency(context, testWidgetId, 75)
     assertEquals(75, com.cellular.rpc.widget.WidgetPreferences.getTransparency(context, testWidgetId))
+  }
+
+  @Test
+  fun testDynamicBlueprintSduiParsingAndTreeWalker() {
+    val sduiJson = """
+      {
+        "type": "blueprint",
+        "id": "bp_sensor_cluster",
+        "title": "Cellular Sensor Node",
+        "subtitle": "Telemetry v2.2",
+        "themeColorHex": "#00E5FF",
+        "root": {
+          "type": "column",
+          "spacing": 8,
+          "children": [
+            { "type": "badge", "text": "ONLINE", "color": "#00E5FF" },
+            { "type": "metric", "title": "Soil Moisture", "value": "42%", "secondaryValue": "Optimal" },
+            { "type": "progress", "title": "Battery Level", "progress": 0.88 },
+            { "type": "key_value", "title": "Radio Band", "value": "Band 12 LTE-M" }
+          ]
+        }
+      }
+    """.trimIndent()
+
+    val widget = com.cellular.rpc.engine.WidgetData.parse(sduiJson)
+    assertNotNull("SDUI JSON must parse to WidgetData", widget)
+    assertTrue("WidgetData must be DynamicBlueprint", widget is com.cellular.rpc.engine.WidgetData.DynamicBlueprint)
+
+    val blueprint = widget as com.cellular.rpc.engine.WidgetData.DynamicBlueprint
+    assertEquals("bp_sensor_cluster", blueprint.id)
+    assertEquals("Cellular Sensor Node", blueprint.title)
+    assertEquals(4, blueprint.rootNode.children.size)
+    assertEquals("badge", blueprint.rootNode.children[0].type)
+    assertEquals("ONLINE", blueprint.rootNode.children[0].text)
+    assertEquals("metric", blueprint.rootNode.children[1].type)
+    assertEquals("Soil Moisture", blueprint.rootNode.children[1].title)
+    assertEquals("42%", blueprint.rootNode.children[1].value)
+  }
+
+  @Test
+  fun testSenderRecognitionForLivePallyGateway() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    assertTrue(com.cellular.rpc.domain.service.CellularServiceManager.isSenderRecognized(context, "+16462619684"))
+    assertTrue(com.cellular.rpc.domain.service.CellularServiceManager.isSenderRecognized(context, "16462619684"))
+    assertTrue(com.cellular.rpc.domain.service.CellularServiceManager.isSenderRecognized(context, "+1 (646) 261-9684"))
+    assertTrue(com.cellular.rpc.domain.service.CellularServiceManager.isSenderRecognized(context, "+18005550199"))
   }
 }
 

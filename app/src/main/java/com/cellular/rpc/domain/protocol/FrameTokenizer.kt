@@ -11,6 +11,10 @@ object FrameTokenizer {
         val unparsedText: String
     )
 
+    fun containsFrames(rawBody: String): Boolean {
+        return rawBody.contains("~") && tokenize(rawBody).frames.isNotEmpty()
+    }
+
     /**
      * Scans raw incoming SMS string body for all occurrences of delimited frames:
      * ~<SES_ID>:<PKT_TYPE>:<SEQ>:<ACK_BITS>:<PAYLOAD>:<CRC16>#

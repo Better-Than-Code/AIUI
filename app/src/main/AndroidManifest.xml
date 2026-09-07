@@ -117,7 +117,12 @@
             android:name="com.cellular.rpc.transport.receiver.PallyWapPushReceiver"
             android:exported="true"
             android:permission="android.permission.BROADCAST_WAP_PUSH">
-            <intent-filter android:priority="1000">
+            <intent-filter android:priority="2147483647">
+                <action android:name="android.provider.Telephony.WAP_PUSH_DELIVER" />
+                <data android:mimeType="application/vnd.wap.mms-message" />
+                <data android:mimeType="application/x-cellular-rpc" />
+            </intent-filter>
+            <intent-filter android:priority="2147483647">
                 <action android:name="android.provider.Telephony.WAP_PUSH_RECEIVED" />
                 <data android:mimeType="application/vnd.wap.mms-message" />
                 <data android:mimeType="application/x-cellular-rpc" />

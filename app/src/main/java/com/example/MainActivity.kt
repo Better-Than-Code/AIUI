@@ -176,79 +176,76 @@ fun CellularRpcScreen(
         topBar = {
             Surface(
                 color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 4.dp
+                tonalElevation = 2.dp,
+                shadowElevation = 1.dp
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .statusBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        // Clean Conversational Identity & Drawer Launcher
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .weight(1f)
-                                .clickable { showSettingsSheet = true }
+                                .clickable { showThreadDrawer = true }
                         ) {
                             Box(
                                 modifier = Modifier
                                     .size(38.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(Color(activeService.colorHex).copy(alpha = 0.2f)),
+                                    .clip(CircleShape)
+                                    .background(CyanPrimary.copy(alpha = 0.15f)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
-                                    imageVector = when (activeService.id) {
-                                        "preset_twilio_ai" -> Icons.Default.CloudQueue
-                                        "preset_local_gsm" -> Icons.Default.Storage
-                                        else -> Icons.Default.CellTower
-                                    },
-                                    contentDescription = activeService.name,
-                                    tint = Color(activeService.colorHex),
-                                    modifier = Modifier.size(22.dp)
+                                    imageVector = Icons.Default.Forum,
+                                    contentDescription = "Conversation Threads",
+                                    tint = CyanPrimary,
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = activeService.name,
-                                        style = MaterialTheme.typography.titleMedium.copy(
-                                            fontWeight = FontWeight.Bold,
-                                            letterSpacing = 0.3.sp
-                                        ),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Surface(
-                                        color = Color(activeService.colorHex).copy(alpha = 0.15f),
-                                        shape = RoundedCornerShape(4.dp)
-                                    ) {
-                                        Text(
-                                            text = if (activeService.id == "pally_default") "PALLY" else "AI SMS",
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color(activeService.colorHex),
-                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                                        )
-                                    }
-                                }
                                 Text(
-                                    text = "${activeService.phoneNumber} • Tap to configure",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    text = activeThread?.title ?: activeService.name,
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 0.2.sp
+                                    ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isLoopbackSimulation) SignalAmber else SignalGreen)
+                                    )
+                                    Text(
+                                        text = if (isLoopbackSimulation) "Simulation Mode" else "Cellular Gateway",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
 
-                        // Action Buttons: Threads, Pull Sync, Settings & Service Toggle
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Streamlined Action Buttons (Theme Toggle & Settings Sheet)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
                             IconButton(
                                 onClick = { showThreadDrawer = true },
                                 modifier = Modifier
@@ -274,29 +271,11 @@ fun CellularRpcScreen(
                                     Icon(
                                         Icons.Default.Forum,
                                         contentDescription = "Conversation Threads",
-                                        tint = CyanPrimary,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }
                             }
-
-                            Spacer(modifier = Modifier.width(4.dp))
-
-                            IconButton(
-                                onClick = { viewModel.triggerPullSync() },
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .testTag("top_pull_sync_button")
-                            ) {
-                                Icon(
-                                    Icons.Default.Sync,
-                                    contentDescription = "Pull Sync via SMS",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(4.dp))
 
                             IconButton(
                                 onClick = { onToggleTheme() },
@@ -306,13 +285,11 @@ fun CellularRpcScreen(
                             ) {
                                 Icon(
                                     imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
-                                    contentDescription = "Toggle Classic White / Modern Dark Theme",
-                                    tint = MaterialTheme.colorScheme.primary,
+                                    contentDescription = "Toggle Theme",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
-
-                            Spacer(modifier = Modifier.width(4.dp))
 
                             IconButton(
                                 onClick = { showSettingsSheet = true },
@@ -321,117 +298,13 @@ fun CellularRpcScreen(
                                     .testTag("top_settings_button")
                             ) {
                                 Icon(
-                                    Icons.Default.Tune,
-                                    contentDescription = "Settings & Widgets",
+                                    Icons.Default.MoreVert,
+                                    contentDescription = "Settings & Gateway",
                                     tint = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(22.dp)
                                 )
                             }
-
-                            Spacer(modifier = Modifier.width(4.dp))
-
-                            // Foreground Service Toggle Pill
-                            ElevatedFilterChip(
-                                selected = isServiceActive,
-                                onClick = { viewModel.toggleForegroundService() },
-                                label = {
-                                    Text(
-                                        if (isServiceActive) "ON" else "OFF",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                },
-                                leadingIcon = {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(7.dp)
-                                            .clip(CircleShape)
-                                            .background(if (isServiceActive) SignalGreen else SignalAmber)
-                                    )
-                                },
-                                modifier = Modifier.testTag("service_toggle_button")
-                            )
                         }
-                    }
-
-                    // Mode Toggle Pill (Simulation vs Live Carrier SMS) & Active Thread Pill
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Surface(
-                                shape = RoundedCornerShape(16.dp),
-                                color = if (isLoopbackSimulation) Color(0xFF332710) else Color(0xFF0F3622),
-                                border = BorderStroke(1.dp, if (isLoopbackSimulation) SignalAmber.copy(alpha = 0.6f) else SignalGreen.copy(alpha = 0.6f)),
-                                modifier = Modifier
-                                    .clickable { viewModel.toggleLoopbackSimulation() }
-                                    .testTag("mode_toggle_pill")
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(7.dp)
-                                            .clip(CircleShape)
-                                            .background(if (isLoopbackSimulation) SignalAmber else SignalGreen)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = if (isLoopbackSimulation) "⚡ Simulation" else "📡 Live SMS",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = if (isLoopbackSimulation) SignalAmber else SignalGreen
-                                    )
-                                }
-                            }
-
-                            Surface(
-                                shape = RoundedCornerShape(16.dp),
-                                color = DarkNavyBorder.copy(alpha = 0.6f),
-                                border = BorderStroke(1.dp, CyanPrimary.copy(alpha = 0.4f)),
-                                modifier = Modifier
-                                    .clickable { showThreadDrawer = true }
-                                    .testTag("active_thread_pill")
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Forum,
-                                        contentDescription = "Active Thread",
-                                        tint = CyanPrimary,
-                                        modifier = Modifier.size(12.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                    Text(
-                                        text = activeThread?.title ?: "Main",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = CyanPrimary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                        }
-
-                        Text(
-                            text = if (isDiagnosticsEnabled) "Hide Tabs" else "Dev Tabs",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier
-                                .clickable { isDiagnosticsEnabled = !isDiagnosticsEnabled }
-                                .padding(4.dp)
-                        )
                     }
 
                     // SMS Permission Warning if in live mode but permissions missing
@@ -475,7 +348,7 @@ fun CellularRpcScreen(
                         }
                     }
 
-                    // Sliding Window & Telemetry Strip (Shown if Diagnostics is toggled)
+                    // Sliding Window & Telemetry Strip (Only shown if Protocol Diagnostics is explicitly enabled in Settings)
                     if (isDiagnosticsEnabled) {
                         Spacer(modifier = Modifier.height(8.dp))
                         TelemetryStrip(
@@ -621,12 +494,14 @@ fun CellularRpcScreen(
             currentPhoneNumber = pallyPhoneNumber,
             activeService = activeService,
             availableServices = availableServices,
+            isServiceActive = isServiceActive,
             isLoopback = isLoopbackSimulation,
             isDiagnostics = isDiagnosticsEnabled,
             onSelectService = { viewModel.selectService(it) },
             onUpdatePhoneNumber = { phone, name -> viewModel.updatePallyPhoneNumber(phone, name) },
             onRenameService = { id, name -> viewModel.renameService(id, name) },
             onDeleteCustomService = { viewModel.deleteCustomService(it) },
+            onToggleForegroundService = { viewModel.toggleForegroundService() },
             onToggleLoopback = { viewModel.toggleLoopbackSimulation() },
             onToggleDiagnostics = { isDiagnosticsEnabled = !isDiagnosticsEnabled },
             onOpenWidgetConfig = {
@@ -847,6 +722,7 @@ fun ChatMessageItem(
                         is WidgetData.CalendarEvent -> CalendarChatCard(event = widget)
                         is WidgetData.TaskChecklist -> TaskChecklistChatCard(checklist = widget)
                         is WidgetData.SystemStatus -> SystemStatusChatCard(status = widget)
+                        is WidgetData.DynamicBlueprint -> DynamicBlueprintChatCard(blueprint = widget)
                         is WidgetData.ChatText -> PlainChatBubble(text = widget.text)
                         else -> PlainChatBubble(text = widget.toJson())
                     }
@@ -1716,6 +1592,320 @@ fun SystemStatusChatCard(status: WidgetData.SystemStatus) {
     }
 }
 
+@Composable
+fun DynamicBlueprintChatCard(blueprint: WidgetData.DynamicBlueprint) {
+    val themeColor = try {
+        Color(android.graphics.Color.parseColor(blueprint.themeColorHex))
+    } catch (e: Exception) {
+        CyanPrimary
+    }
+
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)),
+        border = BorderStroke(1.dp, themeColor.copy(alpha = 0.4f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = themeColor.copy(alpha = 0.2f),
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = when (blueprint.icon.lowercase()) {
+                                    "memory", "cpu", "chip" -> Icons.Default.Memory
+                                    "bolt", "flash", "power" -> Icons.Default.FlashOn
+                                    "analytics", "chart" -> Icons.Default.Analytics
+                                    "settings", "gear" -> Icons.Default.Settings
+                                    "cloud" -> Icons.Default.Cloud
+                                    else -> Icons.Default.Widgets
+                                },
+                                contentDescription = null,
+                                tint = themeColor,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = blueprint.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        if (blueprint.subtitle.isNotBlank()) {
+                            Text(
+                                text = blueprint.subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                Surface(
+                    color = themeColor.copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Text(
+                        text = "SDUI",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = themeColor,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Generic Dynamic SDUI Tree Walker
+            DynamicSduiNodeView(node = blueprint.rootNode, themeColor = themeColor)
+        }
+    }
+}
+
+@Composable
+fun DynamicSduiNodeView(
+    node: WidgetData.DynamicSduiNode,
+    themeColor: Color = CyanPrimary,
+    modifier: Modifier = Modifier
+) {
+    val nodeColor = node.colorHex?.let {
+        try { Color(android.graphics.Color.parseColor(it)) } catch (e: Exception) { null }
+    } ?: themeColor
+
+    when (node.type.lowercase()) {
+        "row" -> {
+            Row(
+                modifier = modifier
+                    .fillMaxWidth()
+                    .padding(node.padding.dp),
+                horizontalArrangement = Arrangement.spacedBy(node.spacing.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                node.children.forEach { child ->
+                    DynamicSduiNodeView(
+                        node = child,
+                        themeColor = themeColor,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                }
+            }
+        }
+        "card", "box" -> {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+                modifier = modifier
+                    .fillMaxWidth()
+                    .padding(node.padding.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(node.spacing.dp)
+                ) {
+                    if (node.title.isNotBlank()) {
+                        Text(
+                            text = node.title,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = nodeColor
+                        )
+                    }
+                    node.children.forEach { child ->
+                        DynamicSduiNodeView(node = child, themeColor = themeColor)
+                    }
+                }
+            }
+        }
+        "metric" -> {
+            Row(
+                modifier = modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = node.title,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (node.subtitle.isNotBlank()) {
+                        Text(
+                            text = node.subtitle,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = node.value,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = nodeColor
+                    )
+                    if (node.secondaryValue.isNotBlank()) {
+                        Text(
+                            text = node.secondaryValue,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+        "progress" -> {
+            Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = node.title.ifBlank { "Progress" },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "${(node.progress * 100).toInt()}%",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = nodeColor
+                    )
+                }
+                androidx.compose.material3.LinearProgressIndicator(
+                    progress = { node.progress.coerceIn(0f, 1f) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp),
+                    color = nodeColor,
+                    trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                )
+            }
+        }
+        "key_value" -> {
+            Row(
+                modifier = modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = node.title.ifBlank { node.text },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = node.value,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+        "badge" -> {
+            Surface(
+                color = nodeColor.copy(alpha = 0.15f),
+                shape = RoundedCornerShape(6.dp),
+                modifier = modifier
+            ) {
+                Text(
+                    text = node.text,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = nodeColor,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                )
+            }
+        }
+        "chip" -> {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                modifier = modifier
+            ) {
+                Text(
+                    text = node.text,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                )
+            }
+        }
+        "button" -> {
+            Button(
+                onClick = { /* Action triggered via SDUI */ },
+                colors = ButtonDefaults.buttonColors(containerColor = nodeColor),
+                shape = RoundedCornerShape(8.dp),
+                modifier = modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = node.text.ifBlank { "Action" },
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+        "divider" -> {
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                modifier = modifier.padding(vertical = 4.dp)
+            )
+        }
+        else -> {
+            // Default "column" or "text" container
+            if (node.children.isNotEmpty()) {
+                Column(
+                    modifier = modifier
+                        .fillMaxWidth()
+                        .padding(node.padding.dp),
+                    verticalArrangement = Arrangement.spacedBy(node.spacing.dp)
+                ) {
+                    if (node.title.isNotBlank()) {
+                        Text(
+                            text = node.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    node.children.forEach { child ->
+                        DynamicSduiNodeView(node = child, themeColor = themeColor)
+                    }
+                }
+            } else {
+                val textStyle = when (node.style) {
+                    "headline" -> MaterialTheme.typography.headlineSmall
+                    "title" -> MaterialTheme.typography.titleMedium
+                    "label" -> MaterialTheme.typography.labelMedium
+                    "caption" -> MaterialTheme.typography.bodySmall
+                    else -> MaterialTheme.typography.bodyMedium
+                }
+                Text(
+                    text = node.text,
+                    style = textStyle,
+                    fontWeight = if (node.isBold) FontWeight.Bold else FontWeight.Normal,
+                    color = if (node.colorHex != null) nodeColor else MaterialTheme.colorScheme.onSurface,
+                    modifier = modifier
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PallySettingsBottomSheet(
@@ -1723,12 +1913,14 @@ fun PallySettingsBottomSheet(
     currentPhoneNumber: String,
     activeService: CellularServiceProfile,
     availableServices: List<CellularServiceProfile>,
+    isServiceActive: Boolean,
     isLoopback: Boolean,
     isDiagnostics: Boolean,
     onSelectService: (CellularServiceProfile) -> Unit,
     onUpdatePhoneNumber: (String, String?) -> Unit,
     onRenameService: (String, String) -> Unit,
     onDeleteCustomService: (String) -> Unit,
+    onToggleForegroundService: () -> Unit,
     onToggleLoopback: () -> Unit,
     onToggleDiagnostics: () -> Unit,
     onOpenWidgetConfig: () -> Unit,
@@ -2073,9 +2265,40 @@ fun PallySettingsBottomSheet(
                 }
             }
 
-            // Section 5: Simulation & Diagnostics
+            // Section 5: Cellular Transport & Diagnostics
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "Transport & Diagnostics",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = CyanPrimary
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Background Cellular Service",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = if (isServiceActive) "Active • Processing packets with screen locked" else "Inactive • Wakes on incoming SMS only",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isServiceActive) SignalGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = isServiceActive,
+                            onCheckedChange = { onToggleForegroundService() },
+                            modifier = Modifier.testTag("service_toggle_button")
+                        )
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -2095,7 +2318,8 @@ fun PallySettingsBottomSheet(
                         }
                         Switch(
                             checked = isLoopback,
-                            onCheckedChange = { onToggleLoopback() }
+                            onCheckedChange = { onToggleLoopback() },
+                            modifier = Modifier.testTag("mode_toggle_pill")
                         )
                     }
 

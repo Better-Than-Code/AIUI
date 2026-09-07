@@ -9,6 +9,9 @@ interface OutboxDao {
     @Query("SELECT * FROM outbox ORDER BY createdAtMs ASC")
     fun getAllFlow(): Flow<List<OutboxEntity>>
 
+    @Query("SELECT * FROM outbox WHERE status = 'PENDING' OR status = 'IN_FLIGHT' ORDER BY createdAtMs ASC")
+    fun getActiveQueueFlow(): Flow<List<OutboxEntity>>
+
     @Query("SELECT * FROM outbox WHERE status = :status ORDER BY seqNo ASC")
     suspend fun getByStatus(status: String): List<OutboxEntity>
 
@@ -17,6 +20,9 @@ interface OutboxDao {
 
     @Query("SELECT COUNT(*) FROM outbox WHERE status = 'PENDING' OR status = 'IN_FLIGHT'")
     fun getPendingCountFlow(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM outbox WHERE status = 'PENDING' OR status = 'IN_FLIGHT'")
+    suspend fun getPendingCount(): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(frame: OutboxEntity): Long
@@ -32,6 +38,9 @@ interface OutboxDao {
 
     @Query("UPDATE outbox SET status = 'ACKNOWLEDGED' WHERE sessionId = :sessionId AND seqNo = :seqNo")
     suspend fun markAcknowledged(sessionId: Int, seqNo: Int)
+
+    @Query("UPDATE outbox SET status = 'ACKNOWLEDGED' WHERE id = :id")
+    suspend fun markAcknowledgedById(id: Long)
 
     @Query("DELETE FROM outbox WHERE sessionId = :sessionId AND seqNo = :seqNo")
     suspend fun deleteBySeq(sessionId: Int, seqNo: Int)

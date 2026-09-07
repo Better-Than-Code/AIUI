@@ -135,6 +135,38 @@ Deliver a resilient, consumer-grade AI assistant application that operates compl
 - **Verification & Build:**
   - Verified with `compile_applet` and executed `gradle assembleDebug` to keep compiled APKs synchronized.
 
+### Sprint 8: Live Gateway Routing, Protocol Frame Interception, Room Queue Sync, WAP Push MMS & Dynamic SDUI (COMPLETED)
+- **Live Pally Gateway Routing:**
+  - Standardized gateway phone number matching in `CellularServiceManager.kt` to recognize `+16462619684` along with international/domestic formatting variations.
+- **Protocol Frame Interception (`abortBroadcast`):**
+  - Added `abortBroadcast()` on ordered `SMS_RECEIVED` and `WAP_PUSH_DELIVER` broadcasts in `PallySmsReceiver` and `PallyWapPushReceiver` whenever protocol frames (`~1A2F:`, `REQ:`, `RES:`, or Base85 frames) are detected, preventing system SMS feed clutter.
+- **Room Database Outbox State Synchronization:**
+  - Added `getActiveQueueFlow()` and `getPendingCountFlow()` to `OutboxDao.kt`.
+  - Updated `CarrierSafeQueueEngine.kt` to prune acknowledged frames and continuously sync in-flight count with Room database state.
+  - Bound `CellularRpcViewModel` to live database flows for accurate UI queue counts.
+- **MMS WAP Push Receiver Manifest Registration:**
+  - Registered `WAP_PUSH_DELIVER` intent filter in `AndroidManifest.xml` with high priority (`999`) and mimeType `application/vnd.wap.mms-message`.
+- **Generic Server-Driven UI (SDUI) Blueprint Engine:**
+  - Added `WidgetData.DynamicBlueprint` and recursive `WidgetData.DynamicSduiNode` tree models to `WidgetModels.kt`.
+  - Integrated generic blueprint parsing in `WidgetData.parse()` to dynamically render custom JSON schemas as interactive visual cards.
+  - Implemented `DynamicBlueprintChatCard` and `DynamicSduiNodeView` in `MainActivity.kt` supporting container layouts (Column, Row, Card, Box), typography styles, metrics, progress bars, key-value items, badges, chips, and interactive buttons.
+- **Verification & Release:**
+  - Executed full Robolectric suite with 100% pass rate.
+  - Assembled debug APK `pallyai-v14.apk` and updated release catalogs.
+
+### Sprint 9: Minimalist Top App Bar & Calm Infrastructure UX (COMPLETED)
+- **Apple-Inspired Top App Bar:**
+  - Streamlined `TopAppBar` in `MainActivity.kt` to a single-tier, calm layout.
+  - Eliminated the prominent "ON / OFF" chip, mode switch button strip, and redundant sync icons from the primary chat canvas.
+  - Added clean conversational identity with active thread title, an unobtrusive 6dp connection health dot (SignalGreen / SignalAmber), and direct drawer launcher tapping.
+  - Streamlined trailing actions to Theme Toggle and More/Settings.
+- **Relocated Transport Controls to Settings Sheet:**
+  - Integrated the Background Cellular Service toggle with descriptive guidance into Section 5 of `PallySettingsBottomSheet`.
+  - Maintained full testability with preserved `service_toggle_button` and `mode_toggle_pill` test tags.
+- **Verification & Build:**
+  - Ran unit and Robolectric test suite (100% pass rate).
+  - Built debug APK and updated latest distribution artifacts.
+
 ---
 
 ## 4. The V2 Backlog (Parking Lot)

@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import com.cellular.rpc.engine.ChatMessage
 import com.cellular.rpc.engine.MessageDeliveryStatus
 import com.cellular.rpc.engine.MessageSender
+import kotlinx.coroutines.launch
 import com.cellular.rpc.engine.WidgetData
 import com.example.ui.theme.*
 import java.text.SimpleDateFormat
@@ -186,6 +187,25 @@ fun NextGenChatMessageItem(
                                 is WidgetData.CalendarEvent -> com.example.CalendarChatCard(event = widget)
                                 is WidgetData.TaskChecklist -> com.example.TaskChecklistChatCard(checklist = widget)
                                 is WidgetData.SystemStatus -> com.example.SystemStatusChatCard(status = widget)
+                                is WidgetData.MiniAppPreview -> {
+                                    val blueprint = com.cellular.rpc.domain.miniapp.MiniAppBlueprint.fromJson(widget.rawBlueprintJson)
+                                    if (blueprint != null) {
+                                        val context = androidx.compose.ui.platform.LocalContext.current
+                                        val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
+                                        com.cellular.rpc.ui.miniapp.DynamicAppHost(
+                                            blueprint = blueprint,
+                                            isPreviewMode = true,
+                                            onInstallToDeck = { bp, st ->
+                                                coroutineScope.launch {
+                                                    com.cellular.rpc.domain.miniapp.MiniAppDeckManager.installApp(context, bp, st)
+                                                }
+                                            }
+                                        )
+                                    } else {
+                                        AiMarkdownBubble(text = widget.rawBlueprintJson, onLongClick = { showContextMenu = true })
+                                    }
+                                }
+                                is WidgetData.DynamicBlueprint -> com.example.DynamicBlueprintChatCard(blueprint = widget)
                                 is WidgetData.ChatText -> if (message.text.isBlank()) {
                                     AiMarkdownBubble(
                                         text = widget.text,

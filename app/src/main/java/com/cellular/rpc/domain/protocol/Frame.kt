@@ -114,9 +114,10 @@ data class Frame(
         const val MAGIC_BYTE: Byte = 0x7E
         const val PROTOCOL_VERSION: Byte = 0x01
         const val HEADER_SIZE: Int = 9
-        const val MAX_PAYLOAD_SIZE: Int = 122
+        const val SINGLE_SMS_MTU: Int = 122 // Safe MTU for single binary SMS PDU
+        const val MAX_PAYLOAD_SIZE: Int = 65535 // Supports full multi-segment text, JSON, SDUI blueprints, & RPC prompts
         const val TRAILER_SIZE: Int = 2
-        const val MAX_FRAME_SIZE: Int = HEADER_SIZE + MAX_PAYLOAD_SIZE + TRAILER_SIZE // 133 Bytes
+        const val MAX_FRAME_SIZE: Int = HEADER_SIZE + MAX_PAYLOAD_SIZE + TRAILER_SIZE
 
         // Packet Types
         const val PKT_RPC_REQ: Byte = 0x01

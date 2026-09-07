@@ -26,6 +26,7 @@ object CellularSchemaRegistry {
         register(CalendarEventSchema)
         register(TaskChecklistSchema)
         register(SystemStatusSchema)
+        register(MiniAppBlueprintSchema)
     }
 
     /**

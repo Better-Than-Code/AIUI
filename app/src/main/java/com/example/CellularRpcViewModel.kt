@@ -43,10 +43,16 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
     private val chatMessageDao = db.chatMessageDao()
     private val dynamicFeatureDao = db.dynamicFeatureDao()
     private val conversationThreadDao = db.conversationThreadDao()
+    private val customActionDao = db.customActionDao()
     val chatRepository = com.cellular.rpc.data.repository.ChatRepository(chatMessageDao)
 
     private val queueEngine: CarrierSafeQueueEngine
         get() = CellularRpcForegroundService.activeEngine ?: CellularRpcApp.instance.queueEngine
+
+    // Custom Instant Cellular AI Actions
+    val customActions: StateFlow<List<com.cellular.rpc.data.local.CustomActionEntity>> =
+        customActionDao.getAllActionsFlow()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // UI State observation
     val outboxItems: StateFlow<List<OutboxEntity>> = outboxDao.getActiveQueueFlow()
@@ -235,6 +241,49 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
     // Dynamic Features (Offline Extension Engine)
     val dynamicFeatures: StateFlow<List<com.cellular.rpc.data.local.DynamicFeatureEntity>> = dynamicFeatureDao.getAllFeaturesFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Installed Universal Mini Apps Deck
+    private val appBlueprintDao = db.appBlueprintDao()
+    val installedMiniApps: StateFlow<List<com.cellular.rpc.data.local.AppBlueprintEntity>> = appBlueprintDao.getAllInstalledAppsFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _selectedMiniApp = MutableStateFlow<com.cellular.rpc.data.local.AppBlueprintEntity?>(null)
+    val selectedMiniApp: StateFlow<com.cellular.rpc.data.local.AppBlueprintEntity?> = _selectedMiniApp.asStateFlow()
+
+    fun selectMiniApp(app: com.cellular.rpc.data.local.AppBlueprintEntity?) {
+        _selectedMiniApp.value = app
+    }
+
+    fun installMiniApp(blueprint: com.cellular.rpc.domain.miniapp.MiniAppBlueprint, state: Map<String, Any?>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val app = getApplication<Application>()
+            com.cellular.rpc.domain.miniapp.MiniAppDeckManager.installApp(app, blueprint, state)
+        }
+    }
+
+    fun updateMiniAppState(appId: String, newState: Map<String, Any?>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val app = getApplication<Application>()
+            com.cellular.rpc.domain.miniapp.MiniAppDeckManager.updateState(app, appId, newState)
+        }
+    }
+
+    fun uninstallMiniApp(appId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val app = getApplication<Application>()
+            com.cellular.rpc.domain.miniapp.MiniAppDeckManager.uninstallApp(app, appId)
+            if (_selectedMiniApp.value?.appId == appId) {
+                _selectedMiniApp.value = null
+            }
+        }
+    }
+
+    fun seedSampleMiniApps() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val app = getApplication<Application>()
+            com.cellular.rpc.domain.miniapp.MiniAppDeckManager.seedSampleMiniAppsIfEmpty(app)
+        }
+    }
 
     private val _selectedFeature = MutableStateFlow<com.cellular.rpc.data.local.DynamicFeatureEntity?>(null)
     val selectedFeature: StateFlow<com.cellular.rpc.data.local.DynamicFeatureEntity?> = _selectedFeature.asStateFlow()
@@ -509,6 +558,81 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
                 )
             }
         }
+
+        // Preload default Instant Cellular AI Actions
+        viewModelScope.launch(Dispatchers.IO) {
+            if (customActionDao.getCount() == 0) {
+                val presets = listOf(
+                    com.cellular.rpc.data.local.CustomActionEntity(
+                        id = "act_weather",
+                        label = "Weather",
+                        prompt = "Please provide current weather in JSON format: {\"type\":\"weather\"}",
+                        type = "weather",
+                        iconName = "weather",
+                        colorHex = "#00E5FF",
+                        isPreset = true
+                    ),
+                    com.cellular.rpc.data.local.CustomActionEntity(
+                        id = "act_markets",
+                        label = "Markets",
+                        prompt = "Please provide market prices in JSON format: {\"type\":\"market_ticker\"}",
+                        type = "market_ticker",
+                        iconName = "market",
+                        colorHex = "#00E676",
+                        isPreset = true
+                    ),
+                    com.cellular.rpc.data.local.CustomActionEntity(
+                        id = "act_news",
+                        label = "News",
+                        prompt = "Please provide top news in JSON format: {\"type\":\"news_digest\"}",
+                        type = "news_digest",
+                        iconName = "news",
+                        colorHex = "#FFB300",
+                        isPreset = true
+                    ),
+                    com.cellular.rpc.data.local.CustomActionEntity(
+                        id = "act_poll",
+                        label = "Poll",
+                        prompt = "Please create a poll in JSON format: {\"type\":\"poll\"}",
+                        type = "poll",
+                        iconName = "poll",
+                        colorHex = "#E040FB",
+                        isPreset = true
+                    ),
+                    com.cellular.rpc.data.local.CustomActionEntity(
+                        id = "act_tasks",
+                        label = "Tasks",
+                        prompt = "Please provide a task checklist in JSON format: {\"type\":\"task_checklist\"}",
+                        type = "task_checklist",
+                        iconName = "task",
+                        colorHex = "#7C4DFF",
+                        isPreset = true
+                    ),
+                    com.cellular.rpc.data.local.CustomActionEntity(
+                        id = "act_calc",
+                        label = "Calculator",
+                        prompt = "Please calculate tip and split in JSON format: {\"type\":\"tool\",\"title\":\"Tip Calculator\"}",
+                        type = "tool",
+                        iconName = "calc",
+                        colorHex = "#40C4FF",
+                        isPreset = true
+                    )
+                )
+                customActionDao.insertAll(presets)
+            }
+        }
+    }
+
+    fun saveCustomAction(action: com.cellular.rpc.data.local.CustomActionEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            customActionDao.insertAction(action)
+        }
+    }
+
+    fun deleteCustomAction(id: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            customActionDao.deleteAction(id)
+        }
     }
 
     fun toggleForegroundService() {
@@ -550,79 +674,83 @@ class CellularRpcViewModel(application: Application) : AndroidViewModel(applicat
         )
 
         viewModelScope.launch(Dispatchers.IO) {
-            chatRepository.saveMessage(userMessage)
-            conversationThreadDao.updateLastMessage(currentTid, trimmed.take(60), System.currentTimeMillis())
+            try {
+                chatRepository.saveMessage(userMessage)
+                conversationThreadDao.updateLastMessage(currentTid, trimmed.take(60), System.currentTimeMillis())
 
-            // Build outbound prompt incorporating attachment references if present
-            val promptBody = buildString {
+                // Build outbound prompt incorporating attachment references if present
+                val promptBody = buildString {
+                    if (mainAttachment != null) {
+                        when (mainAttachment.type) {
+                            com.cellular.rpc.engine.AttachmentType.IMAGE -> append("[Attached Image: ${mainAttachment.fileName}] ")
+                            com.cellular.rpc.engine.AttachmentType.FILE -> append("[Attached File: ${mainAttachment.fileName}] ")
+                            com.cellular.rpc.engine.AttachmentType.VOICE_NOTE -> append("[Attached Voice Note: ${mainAttachment.durationMs / 1000}s] ")
+                        }
+                    }
+                    append(trimmed)
+                }.trim()
+
+                // Determine if user is querying a widget or requesting an action
+                val lower = promptBody.lowercase()
+                val detectedType = when {
+                    lower.contains("weather") -> "weather"
+                    lower.contains("news") -> "news_digest"
+                    lower.contains("market") || lower.contains("btc") || lower.contains("crypto") || lower.contains("price") -> "market_ticker"
+                    lower.contains("send") || lower.contains("pay") || lower.contains("transfer") || lower.contains("$") -> "transfer"
+                    lower.contains("poll") || lower.contains("vote") -> "poll"
+                    lower.contains("tool") || lower.contains("tip") || lower.contains("calc") || lower.contains("split") -> "tool"
+                    lower.contains("calendar") || lower.contains("event") || lower.contains("meeting") -> "calendar_event"
+                    lower.contains("task") || lower.contains("todo") || lower.contains("checklist") -> "task_checklist"
+                    lower.contains("system") || lower.contains("telemetry") || lower.contains("status") -> "system_status"
+                    else -> null
+                }
+
+                if (detectedType != null) {
+                    lastQueriedType = detectedType
+                }
+
+                val activeService = com.cellular.rpc.domain.service.CellularServiceManager.getActiveService(getApplication())
+                val basePrompt = if (activeService.promptPrefix.isNotBlank()) {
+                    "${activeService.promptPrefix} $trimmed"
+                } else {
+                    trimmed
+                }
+
+                // Multiplex thread ID over cellular wire format: [TID:<threadId>] <prompt>
+                val promptToSend = if (currentTid != "th_main") {
+                    "[TID:$currentTid] $basePrompt"
+                } else {
+                    basePrompt
+                }
+
+                // If an attachment is present, dispatch via native carrier MMS
                 if (mainAttachment != null) {
-                    when (mainAttachment.type) {
-                        com.cellular.rpc.engine.AttachmentType.IMAGE -> append("[Attached Image: ${mainAttachment.fileName}] ")
-                        com.cellular.rpc.engine.AttachmentType.FILE -> append("[Attached File: ${mainAttachment.fileName}] ")
-                        com.cellular.rpc.engine.AttachmentType.VOICE_NOTE -> append("[Attached Voice Note: ${mainAttachment.durationMs / 1000}s] ")
+                    try {
+                        val targetNum = queueEngine.destinationAddress.replace(Regex("[^0-9+]"), "").ifBlank {
+                            activeService.phoneNumber.replace(Regex("[^0-9+]"), "")
+                        }
+                        val attUri = android.net.Uri.parse(mainAttachment.uri)
+                        com.cellular.rpc.transport.receiver.PallyMmsHelper.dispatchCarrierMms(
+                            context = getApplication(),
+                            destinationNumber = targetNum,
+                            text = trimmed,
+                            attachmentUri = attUri,
+                            mimeType = mainAttachment.mimeType ?: "image/*"
+                        )
+                    } catch (e: Exception) {
+                        android.util.Log.w("CellularRpcViewModel", "Carrier MMS dispatch error: ${e.message}")
                     }
                 }
-                append(trimmed)
-            }.trim()
 
-            // Determine if user is querying a widget or requesting an action
-            val lower = promptBody.lowercase()
-            val detectedType = when {
-                lower.contains("weather") -> "weather"
-                lower.contains("news") -> "news_digest"
-                lower.contains("market") || lower.contains("btc") || lower.contains("crypto") || lower.contains("price") -> "market_ticker"
-                lower.contains("send") || lower.contains("pay") || lower.contains("transfer") || lower.contains("$") -> "transfer"
-                lower.contains("poll") || lower.contains("vote") -> "poll"
-                lower.contains("tool") || lower.contains("tip") || lower.contains("calc") || lower.contains("split") -> "tool"
-                lower.contains("calendar") || lower.contains("event") || lower.contains("meeting") -> "calendar_event"
-                lower.contains("task") || lower.contains("todo") || lower.contains("checklist") -> "task_checklist"
-                lower.contains("system") || lower.contains("telemetry") || lower.contains("status") -> "system_status"
-                else -> null
+                // Always enqueue the user's natural text prompt so AI agent receives human-readable text
+                queueEngine.enqueuePayload(
+                    sessionId = activeSessionId,
+                    pktType = Frame.PKT_RPC_REQ,
+                    payload = promptToSend.toByteArray(Charsets.UTF_8)
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("CellularRpcViewModel", "Failed to enqueue chat message: ${e.message}", e)
             }
-
-            if (detectedType != null) {
-                lastQueriedType = detectedType
-            }
-
-            val activeService = com.cellular.rpc.domain.service.CellularServiceManager.getActiveService(getApplication())
-            val basePrompt = if (activeService.promptPrefix.isNotBlank()) {
-                "${activeService.promptPrefix} $trimmed"
-            } else {
-                trimmed
-            }
-
-            // Multiplex thread ID over cellular wire format: [TID:<threadId>] <prompt>
-            val promptToSend = if (currentTid != "th_main") {
-                "[TID:$currentTid] $basePrompt"
-            } else {
-                basePrompt
-            }
-
-            // If an attachment is present, dispatch via native carrier MMS
-            if (mainAttachment != null) {
-                try {
-                    val targetNum = queueEngine.destinationAddress.replace(Regex("[^0-9+]"), "").ifBlank {
-                        activeService.phoneNumber.replace(Regex("[^0-9+]"), "")
-                    }
-                    val attUri = android.net.Uri.parse(mainAttachment.uri)
-                    com.cellular.rpc.transport.receiver.PallyMmsHelper.dispatchCarrierMms(
-                        context = getApplication(),
-                        destinationNumber = targetNum,
-                        text = trimmed,
-                        attachmentUri = attUri,
-                        mimeType = mainAttachment.mimeType ?: "image/*"
-                    )
-                } catch (e: Exception) {
-                    android.util.Log.w("CellularRpcViewModel", "Carrier MMS dispatch error: ${e.message}")
-                }
-            }
-
-            // Always enqueue the user's natural text prompt so AI agent receives human-readable text
-            queueEngine.enqueuePayload(
-                sessionId = activeSessionId,
-                pktType = Frame.PKT_RPC_REQ,
-                payload = promptToSend.toByteArray(Charsets.UTF_8)
-            )
         }
     }
 

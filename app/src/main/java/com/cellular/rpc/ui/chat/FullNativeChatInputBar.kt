@@ -52,6 +52,9 @@ fun FullNativeChatInputBar(
     onCancelReply: () -> Unit,
     onSendMessage: (String, List<MessageAttachment>) -> Unit,
     onSelectQuickPrompt: (String, String) -> Unit,
+    customActions: List<com.cellular.rpc.data.local.CustomActionEntity> = emptyList(),
+    onCreateCustomAction: () -> Unit = {},
+    onDeleteCustomAction: ((String) -> Unit)? = null,
     onSelectTemplate: ((com.cellular.rpc.orchestrator.AiTemplate) -> Unit)? = null,
     destinationPhone: String,
     isLoopback: Boolean,
@@ -562,34 +565,136 @@ fun FullNativeChatInputBar(
                         HorizontalDivider(color = DarkNavyBorder.copy(alpha = 0.5f), thickness = 0.5.dp)
                         Spacer(modifier = Modifier.height(10.dp))
 
-                        Text(
-                            text = "Instant Cellular AI Actions",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Row 2: Cellular AI Structured Tool Triggers
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            ToolGridIcon(Icons.Default.WbSunny, "Weather") {
-                                onSelectQuickPrompt("Please provide current weather in JSON format: {\"type\":\"weather\"}", "weather")
-                                showAttachmentDrawer = false
+                            Text(
+                                text = "Instant Cellular AI Actions",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            TextButton(
+                                onClick = {
+                                    onCreateCustomAction()
+                                    showAttachmentDrawer = false
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "New Action",
+                                    tint = CyanPrimary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "New Action",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = CyanPrimary,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
-                            ToolGridIcon(Icons.Default.TrendingUp, "Markets") {
-                                onSelectQuickPrompt("Please provide market prices in JSON format: {\"type\":\"market_ticker\"}", "market_ticker")
-                                showAttachmentDrawer = false
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Dynamic Custom & Preset Actions Row
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            items(customActions, key = { it.id }) { action ->
+                                val actionColor = try {
+                                    Color(android.graphics.Color.parseColor(action.colorHex))
+                                } catch (e: Exception) { CyanPrimary }
+
+                                val iconVec = when (action.iconName.lowercase()) {
+                                    "weather" -> Icons.Default.WbSunny
+                                    "market", "markets", "chart" -> Icons.Default.TrendingUp
+                                    "news", "article" -> Icons.Default.Article
+                                    "poll", "vote" -> Icons.Default.HowToVote
+                                    "task", "tasks", "checklist" -> Icons.Default.Checklist
+                                    "calendar", "event" -> Icons.Default.Event
+                                    "calc", "tool" -> Icons.Default.Calculate
+                                    "terminal", "code" -> Icons.Default.Terminal
+                                    "speed", "telemetry" -> Icons.Default.Speed
+                                    "flight" -> Icons.Default.FlightTakeoff
+                                    "restaurant", "food" -> Icons.Default.Restaurant
+                                    "fitness", "workout" -> Icons.Default.FitnessCenter
+                                    else -> Icons.Default.Bolt
+                                }
+
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            onSelectQuickPrompt(action.prompt, action.type)
+                                            showAttachmentDrawer = false
+                                        }
+                                        .padding(4.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(38.dp)
+                                            .clip(CircleShape)
+                                            .background(actionColor.copy(alpha = 0.15f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = iconVec,
+                                            contentDescription = action.label,
+                                            tint = actionColor,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = action.label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1
+                                    )
+                                }
                             }
-                            ToolGridIcon(Icons.Default.Article, "News") {
-                                onSelectQuickPrompt("Please provide top news in JSON format: {\"type\":\"news_digest\"}", "news_digest")
-                                showAttachmentDrawer = false
-                            }
-                            ToolGridIcon(Icons.Default.HowToVote, "Poll") {
-                                onSelectQuickPrompt("Please create a poll in JSON format: {\"type\":\"poll\"}", "poll")
-                                showAttachmentDrawer = false
+
+                            // "+ Add" tile at the end of the row
+                            item {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            onCreateCustomAction()
+                                            showAttachmentDrawer = false
+                                        }
+                                        .padding(4.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(38.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = "Add Custom Action",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Custom",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
 

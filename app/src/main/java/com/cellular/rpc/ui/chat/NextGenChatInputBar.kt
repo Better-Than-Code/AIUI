@@ -46,6 +46,8 @@ fun NextGenChatInputBar(
     onCancelReply: () -> Unit,
     onSendMessage: (String) -> Unit,
     onSelectQuickPrompt: (String, String) -> Unit,
+    customActions: List<com.cellular.rpc.data.local.CustomActionEntity> = emptyList(),
+    onCreateCustomAction: () -> Unit = {},
     destinationPhone: String,
     isLoopback: Boolean,
     hasSmsPermissions: Boolean,
@@ -140,7 +142,27 @@ fun NextGenChatInputBar(
                     .padding(bottom = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                quickActions.forEach { action ->
+                customActions.forEach { action ->
+                    val actionColor = try {
+                        Color(android.graphics.Color.parseColor(action.colorHex))
+                    } catch (e: Exception) { CyanPrimary }
+
+                    val iconVec = when (action.iconName.lowercase()) {
+                        "weather" -> Icons.Default.WbSunny
+                        "market", "markets", "chart" -> Icons.Default.TrendingUp
+                        "news", "article" -> Icons.Default.Article
+                        "poll", "vote" -> Icons.Default.HowToVote
+                        "task", "tasks", "checklist" -> Icons.Default.Checklist
+                        "calendar", "event" -> Icons.Default.Event
+                        "calc", "tool" -> Icons.Default.Calculate
+                        "terminal", "code" -> Icons.Default.Terminal
+                        "speed", "telemetry" -> Icons.Default.Speed
+                        "flight" -> Icons.Default.FlightTakeoff
+                        "restaurant", "food" -> Icons.Default.Restaurant
+                        "fitness", "workout" -> Icons.Default.FitnessCenter
+                        else -> Icons.Default.Bolt
+                    }
+
                     SuggestionChip(
                         onClick = {
                             onSelectQuickPrompt(action.prompt, action.type)
@@ -154,9 +176,9 @@ fun NextGenChatInputBar(
                         },
                         icon = {
                             Icon(
-                                imageVector = action.icon,
+                                imageVector = iconVec,
                                 contentDescription = action.label,
-                                tint = CyanPrimary,
+                                tint = actionColor,
                                 modifier = Modifier.size(14.dp)
                             )
                         },
@@ -167,6 +189,32 @@ fun NextGenChatInputBar(
                         border = null
                     )
                 }
+
+                // Add Custom Action Chip
+                SuggestionChip(
+                    onClick = onCreateCustomAction,
+                    label = {
+                        Text(
+                            text = "+ Custom",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = CyanPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "New Action",
+                            tint = CyanPrimary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = SuggestionChipDefaults.suggestionChipColors(
+                        containerColor = CyanPrimary.copy(alpha = 0.12f)
+                    ),
+                    border = null
+                )
             }
 
             // Input Bar & Action Buttons

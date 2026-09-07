@@ -203,6 +203,26 @@ Deliver a resilient, consumer-grade AI assistant application that operates compl
   - Added `testTabbedChatsLifecycleAndHistoryPreservation` to `ExampleRobolectricTest`.
   - Recompiled and assembled fresh debug APK via `gradle assembleDebug`.
 
+### Sprint 13: Universal Mini App System Directive & Runtime Architecture (COMPLETED)
+- **3-Phase Mini App Lifecycle (Intake -> In-Feed Preview -> Deck Installation):**
+  - **Phase 1 (Intake & Discovery):** AI agent guides scope definition with targeted questions, compiling user requirements into a deterministic JSON blueprint AST.
+  - **Phase 2 (In-Feed Preview Card):** Embedded `WidgetData.MiniAppPreview` cards in the chat feed render executable, testable mini-apps directly in Jetpack Compose without requiring installation first.
+  - **Phase 3 (Deck Installation & Room Persistence):** One-tap "Install to Deck" permanently registers mini-apps into `installed_mini_apps` table in `AppDatabase` (Room schema v6), exposing them in the Apps Drawer/Deck tab.
+- **Deterministic Blueprint AST Engine (`MiniAppModels`, `DynamicAppHost`):**
+  - Recursive Jetpack Compose AST interpreter supporting `Column`, `Row`, `Card`, `Text`, `Input` (TextField with two-way binding), `Button`, `Checkbox`, `Badge`, `Divider`, and `List` (dynamic items loop).
+  - Instant in-memory state evaluation (`ActionExecutor`) supporting `SET_VALUE`, `TOGGLE_PROP`, `APPEND`, `REMOVE`, `INCREMENT`, and `DECREMENT` operations without waiting for SMS round-trips.
+- **Bare-Cellular Sync Bridge (`CellularSyncBridge`):**
+  - Provides offline-first state mutations with optional background cellular sync queuing via `OutboxEntity`.
+  - Supports `SYS:APP_SYNC` compaction and delta telemetry reporting over SMS.
+- **Apps Deck Tab & Management (`UniversalAppsDeckTab`, `MiniAppDeckManager`):**
+  - Integrated "Universal Apps Deck" navigation tab supporting launching installed apps, active mini-app execution modal, resetting state, and uninstalling.
+  - Seeded with default offline utilities ("Sprint Task Tracker", "Field Tally Counter").
+- **MCP & Schema Registry Integration (`MiniAppBlueprintSchema`):**
+  - Added `MiniAppBlueprintSchema` into `CellularSchemaRegistry` and single-push `CellularMcpRegistry` manifest for autonomous agent discovery.
+- **Verification & Build:**
+  - 100% test pass rate across `ExampleRobolectricTest` including `testUniversalMiniAppBlueprintAndActionExecutor`.
+  - Assembled production debug APK via `gradle assembleDebug`.
+
 ---
 
 ## 4. The V2 Backlog (Parking Lot)

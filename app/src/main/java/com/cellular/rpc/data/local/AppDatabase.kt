@@ -12,9 +12,11 @@ import androidx.room.RoomDatabase
         PacketLogEntity::class,
         ChatMessageEntity::class,
         DynamicFeatureEntity::class,
-        ConversationThreadEntity::class
+        ConversationThreadEntity::class,
+        CustomActionEntity::class,
+        AppBlueprintEntity::class
     ],
-    version = 4,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -25,6 +27,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun chatMessageDao(): ChatMessageDao
     abstract fun dynamicFeatureDao(): DynamicFeatureDao
     abstract fun conversationThreadDao(): ConversationThreadDao
+    abstract fun customActionDao(): CustomActionDao
+    abstract fun appBlueprintDao(): AppBlueprintDao
 
     companion object {
         @Volatile

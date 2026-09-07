@@ -461,6 +461,42 @@ sealed class WidgetData(val type: String) {
         }
     }
 
+    data class MiniAppPreview(
+        val appId: String,
+        val version: Int = 1,
+        val title: String,
+        val icon: String = "checklist",
+        val description: String = "",
+        val category: String = "productivity",
+        val rawBlueprintJson: String
+    ) : WidgetData("mini_app_blueprint") {
+        override fun toJson(): String = rawBlueprintJson
+
+        override fun computeContentHash(): String = hashString(rawBlueprintJson)
+
+        companion object {
+            fun fromJson(json: JSONObject): MiniAppPreview {
+                val appId = json.optString("appId", "app_${System.currentTimeMillis()}")
+                val version = json.optInt("version", 1)
+                val meta = json.optJSONObject("metadata") ?: JSONObject()
+                val title = meta.optString("title", json.optString("title", "Mini App"))
+                val icon = meta.optString("icon", "checklist")
+                val description = meta.optString("description", "")
+                val category = meta.optString("category", "productivity")
+
+                return MiniAppPreview(
+                    appId = appId,
+                    version = version,
+                    title = title,
+                    icon = icon,
+                    description = description,
+                    category = category,
+                    rawBlueprintJson = json.toString()
+                )
+            }
+        }
+    }
+
     data class SystemStatus(
         val batteryPct: Int,
         val signalDbm: Int,
@@ -528,6 +564,7 @@ sealed class WidgetData(val type: String) {
                     "tool" -> CellularTool.fromJson(obj)
                     "calendar_event" -> CalendarEvent.fromJson(obj)
                     "task_checklist" -> TaskChecklist.fromJson(obj)
+                    "mini_app_blueprint", "mini_app", "miniapp" -> MiniAppPreview.fromJson(obj)
                     "system_status" -> SystemStatus.fromJson(obj)
                     "blueprint", "sdui", "dynamic", "custom", "layout", "screen", "widget" -> DynamicBlueprint.fromJson(obj)
                     else -> {

@@ -585,6 +585,14 @@ class CarrierSafeQueueEngine(
             if (parts.size > 1 && parts[1].startsWith("hash=")) parts[1].removePrefix("hash=") else ""
         } else ""
 
+        val extractedJson = try {
+            val startIdx = queryStr.indexOf('{')
+            val endIdx = queryStr.lastIndexOf('}')
+            if (startIdx != -1 && endIdx > startIdx) {
+                queryStr.substring(startIdx, endIdx + 1)
+            } else null
+        } catch (e: Exception) { null }
+
         if (widgetType != null) {
             val currentWidget = serverWidgets[widgetType] ?: WidgetData.Weather(70, "Unknown", "Clear")
             val currentHash = currentWidget.computeContentHash()
@@ -627,6 +635,25 @@ class CarrierSafeQueueEngine(
                     )
                 )
             }
+        } else if (extractedJson != null) {
+            // Handle Custom Instant Action / Dynamic SDUI Payload simulation
+            val parsedCustom = WidgetData.parse(extractedJson) ?: run {
+                try {
+                    val obj = org.json.JSONObject(extractedJson)
+                    WidgetData.DynamicBlueprint.fromGenericJson(obj)
+                } catch (e: Exception) {
+                    WidgetData.ChatText(text = "Cellular AI Gateway processed custom schema request.")
+                }
+            }
+            val jsonBytes = parsedCustom.toJson().toByteArray(Charsets.UTF_8)
+            val resFrame = Frame(
+                sessionId = reqFrame.sessionId,
+                pktType = Frame.PKT_RPC_RES,
+                seqNo = reqFrame.seqNo + 1,
+                payload = jsonBytes,
+                ackBits = 0L
+            )
+            receiveInbound(resFrame)
         } else if (queryStr.contains("MCP_GENESIS_SYNC") || queryStr.contains("MCP_INIT")) {
             // Simulated AI Gateway acknowledging Single-Push Genesis Manifest Ingestion
             val ackText = "AI Assistant: Ingested MCP Genesis Manifest (v=2.1.0). Registered 10 native schemas & 4 actionable tools. Saved to persistent gateway memory."
@@ -726,6 +753,23 @@ class CarrierSafeQueueEngine(
                             )
                         )
                     }
+                }
+
+                // Dispatch into unified CellularMessageDispatcher for persistent Room storage & UI update
+                try {
+                    com.cellular.rpc.transport.handler.CellularMessageDispatcher.dispatchInbound(
+                        context,
+                        com.cellular.rpc.transport.handler.InboundCellularMessage(
+                            transportType = com.cellular.rpc.transport.handler.CellularTransportType.LOOPBACK_SIMULATION,
+                            senderAddress = "AI_GATEWAY",
+                            rawText = payloadStr,
+                            rawBytes = frame.payload,
+                            frame = frame,
+                            timestampMs = System.currentTimeMillis()
+                        )
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error dispatching loopback frame to dispatcher: ${e.message}")
                 }
             }
         }

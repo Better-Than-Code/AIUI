@@ -3,6 +3,7 @@ package com.example
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.cellular.rpc.domain.protocol.*
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -516,7 +517,7 @@ class ExampleRobolectricTest {
   @Test
   fun testTabbedChatsLifecycleAndHistoryPreservation() = kotlinx.coroutines.runBlocking {
     val context = ApplicationProvider.getApplicationContext<Context>()
-    val db = com.cellular.rpc.data.local.AppDatabase.getDatabase(context)
+    val db = com.cellular.rpc.data.local.AppDatabase.getInstance(context)
     val threadDao = db.conversationThreadDao()
     val chatDao = db.chatMessageDao()
 
@@ -551,19 +552,97 @@ class ExampleRobolectricTest {
     chatDao.insertMessage(msg2)
 
     // 3. Verify messages are saved and isolated per thread
-    val thread1Msgs = chatDao.getMessagesForThread("th_sprint_work").kotlinx.coroutines.flow.first()
-    val thread2Msgs = chatDao.getMessagesForThread("th_tokyo_trip").kotlinx.coroutines.flow.first()
+    val thread1Msgs = chatDao.getMessagesForThread("th_sprint_work").first()
+    val thread2Msgs = chatDao.getMessagesForThread("th_tokyo_trip").first()
     assertEquals(1, thread1Msgs.size)
     assertEquals("Reviewing sprint tasks", thread1Msgs[0].text)
     assertEquals(1, thread2Msgs.size)
     assertEquals("Recommended Shibuya and Shinjuku hotels", thread2Msgs[0].text)
 
     // 4. Verify thread queries and active threads list
-    val allActive = threadDao.getActiveThreadsFlow().kotlinx.coroutines.flow.first()
+    val allActive = threadDao.getActiveThreadsFlow().first()
     assertTrue(allActive.any { it.threadId == "th_sprint_work" })
     assertTrue(allActive.any { it.threadId == "th_tokyo_trip" })
   }
+
+  @Test
+  fun testUniversalMiniAppBlueprintAndActionExecutor() = kotlinx.coroutines.runBlocking {
+    val blueprintJson = """
+      {
+        "type": "mini_app_blueprint",
+        "appId": "app_test_counter",
+        "version": 1,
+        "metadata": {
+          "title": "Test Counter App",
+          "icon": "checklist",
+          "description": "Deterministic local state counter",
+          "category": "productivity"
+        },
+        "initialState": {
+          "count": 5,
+          "items": [{"id":"1","name":"Item A"}]
+        },
+        "ui": {
+          "type": "Column",
+          "children": [
+            {
+              "type": "Text",
+              "text": "Current count: 5"
+            }
+          ]
+        }
+      }
+    """.trimIndent()
+
+    // 1. Verify Blueprint Parsing
+    val blueprint = com.cellular.rpc.domain.miniapp.MiniAppBlueprint.fromJson(blueprintJson)
+    assertNotNull("Blueprint must parse from valid JSON", blueprint)
+    assertEquals("app_test_counter", blueprint!!.appId)
+    assertEquals("Test Counter App", blueprint.metadata.title)
+    assertEquals(5, blueprint.initialState["count"])
+
+    // 2. Test ActionExecutor mutations (INCREMENT)
+    val incAction = mapOf("action" to "MUTATE_STATE", "op" to "INCREMENT", "prop" to "count", "step" to 5)
+    val (state1, changed1) = com.cellular.rpc.domain.miniapp.ActionExecutor.execute(incAction, blueprint.initialState)
+    assertTrue("State should be mutated", changed1)
+    assertEquals(10, state1["count"])
+
+    // 3. Test ActionExecutor mutations (APPEND)
+    val appendAction = mapOf(
+      "action" to "MUTATE_STATE",
+      "op" to "APPEND",
+      "target" to "items",
+      "value" to mapOf("id" to "2", "name" to "Item B")
+    )
+    val (state2, changed2) = com.cellular.rpc.domain.miniapp.ActionExecutor.execute(appendAction, state1)
+    assertTrue("State should be mutated", changed2)
+    val itemsList = state2["items"] as? List<*>
+    assertNotNull("Items list must not be null", itemsList)
+    assertEquals(2, itemsList!!.size)
+
+    // 4. Test Room Persistence via MiniAppDeckManager
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    com.cellular.rpc.domain.miniapp.MiniAppDeckManager.installApp(context, blueprint, state2)
+
+    val db = com.cellular.rpc.data.local.AppDatabase.getInstance(context)
+    val savedApp = db.appBlueprintDao().getAppById("app_test_counter")
+    assertNotNull("Installed app must persist in Room", savedApp)
+    assertEquals("Test Counter App", savedApp!!.title)
+    assertTrue(savedApp.serializedStateJson.contains("Item B"))
+
+    // Test state update
+    com.cellular.rpc.domain.miniapp.MiniAppDeckManager.updateState(context, "app_test_counter", mapOf("count" to 99))
+    val updatedApp = db.appBlueprintDao().getAppById("app_test_counter")
+    assertNotNull(updatedApp)
+    assertTrue(updatedApp!!.serializedStateJson.contains("99"))
+
+    // Test uninstall
+    com.cellular.rpc.domain.miniapp.MiniAppDeckManager.uninstallApp(context, "app_test_counter")
+    val uninstalledApp = db.appBlueprintDao().getAppById("app_test_counter")
+    assertNull("Uninstalled app should be removed from database", uninstalledApp)
+  }
 }
+
 
 
 

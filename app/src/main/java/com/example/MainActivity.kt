@@ -123,6 +123,10 @@ fun CellularRpcScreen(
     val activeIntervention by viewModel.activeIntervention.collectAsStateWithLifecycle()
     val dynamicFeatures by viewModel.dynamicFeatures.collectAsStateWithLifecycle()
     val selectedFeature by viewModel.selectedFeature.collectAsStateWithLifecycle()
+    val installedMiniApps by viewModel.installedMiniApps.collectAsStateWithLifecycle()
+    val selectedMiniApp by viewModel.selectedMiniApp.collectAsStateWithLifecycle()
+    val customActions by viewModel.customActions.collectAsStateWithLifecycle()
+    var showCreateActionDialog by remember { mutableStateOf(false) }
 
     val requiredPermissions = remember {
         val list = mutableListOf(
@@ -434,6 +438,9 @@ fun CellularRpcScreen(
                     onCloseTab = { viewModel.closeTab(it) },
                     onNewChatClick = { viewModel.createNewThread() },
                     onOpenHistoryClick = { showThreadDrawer = true },
+                    customActions = customActions,
+                    onCreateCustomAction = { showCreateActionDialog = true },
+                    onDeleteCustomAction = { viewModel.deleteCustomAction(it) },
                     pallyPhone = pallyPhoneNumber,
                     assistantName = activeService.name,
                     isLoopbackSimulation = isLoopbackSimulation,
@@ -474,12 +481,18 @@ fun CellularRpcScreen(
                     outboxItems = outboxItems,
                     onClearOutbox = { viewModel.clearOutbox() }
                 )
-                5 -> com.cellular.rpc.ui.dynamic.DynamicFeaturesTab(
+                5 -> com.cellular.rpc.ui.miniapp.UniversalAppsDeckTab(
+                    installedMiniApps = installedMiniApps,
+                    selectedMiniApp = selectedMiniApp,
+                    onSelectMiniApp = { viewModel.selectMiniApp(it) },
+                    onUninstallMiniApp = { viewModel.uninstallMiniApp(it) },
+                    onUpdateMiniAppState = { id, state -> viewModel.updateMiniAppState(id, state) },
+                    onSeedSampleMiniApps = { viewModel.seedSampleMiniApps() },
                     dynamicFeatures = dynamicFeatures,
                     selectedFeature = selectedFeature,
                     onSelectFeature = { viewModel.selectDynamicFeature(it) },
                     onDeleteFeature = { viewModel.deleteDynamicFeature(it) },
-                    onDeploySample = { viewModel.deploySampleFeature(it) }
+                    onDeploySampleFeature = { viewModel.deploySampleFeature(it) }
                 )
             }
         }
@@ -544,6 +557,16 @@ fun CellularRpcScreen(
             onDismiss = { showThreadDrawer = false }
         )
     }
+
+    // Custom Cellular AI Action Creator Dialog
+    if (showCreateActionDialog) {
+        com.cellular.rpc.ui.chat.CustomActionDialog(
+            onDismiss = { showCreateActionDialog = false },
+            onSave = { newAction ->
+                viewModel.saveCustomAction(newAction)
+            }
+        )
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -560,6 +583,9 @@ fun CellularChatTab(
     onCloseTab: (String) -> Unit = {},
     onNewChatClick: () -> Unit = {},
     onOpenHistoryClick: () -> Unit = {},
+    customActions: List<com.cellular.rpc.data.local.CustomActionEntity> = emptyList(),
+    onCreateCustomAction: () -> Unit = {},
+    onDeleteCustomAction: ((String) -> Unit)? = null,
     pallyPhone: String,
     assistantName: String = "AI Assistant",
     isLoopbackSimulation: Boolean = false,
@@ -663,11 +689,15 @@ fun CellularChatTab(
                 }
             },
             onSelectQuickPrompt = { prompt, type ->
+                onSendMessage(prompt, emptyList())
                 onRefreshWidget(type)
                 coroutineScope.launch {
                     if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
                 }
             },
+            customActions = customActions,
+            onCreateCustomAction = onCreateCustomAction,
+            onDeleteCustomAction = onDeleteCustomAction,
             onSelectTemplate = onSelectTemplate,
             destinationPhone = pallyPhone,
             isLoopback = isLoopbackSimulation,
@@ -751,6 +781,24 @@ fun ChatMessageItem(
                         is WidgetData.TaskChecklist -> TaskChecklistChatCard(checklist = widget)
                         is WidgetData.SystemStatus -> SystemStatusChatCard(status = widget)
                         is WidgetData.DynamicBlueprint -> DynamicBlueprintChatCard(blueprint = widget)
+                        is WidgetData.MiniAppPreview -> {
+                            val blueprint = com.cellular.rpc.domain.miniapp.MiniAppBlueprint.fromJson(widget.rawBlueprintJson)
+                            if (blueprint != null) {
+                                val context = androidx.compose.ui.platform.LocalContext.current
+                                val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
+                                com.cellular.rpc.ui.miniapp.DynamicAppHost(
+                                    blueprint = blueprint,
+                                    isPreviewMode = true,
+                                    onInstallToDeck = { bp, st ->
+                                        coroutineScope.launch {
+                                            com.cellular.rpc.domain.miniapp.MiniAppDeckManager.installApp(context, bp, st)
+                                        }
+                                    }
+                                )
+                            } else {
+                                PlainChatBubble(text = widget.rawBlueprintJson)
+                            }
+                        }
                         is WidgetData.ChatText -> PlainChatBubble(text = widget.text)
                         else -> PlainChatBubble(text = widget.toJson())
                     }
@@ -1292,15 +1340,17 @@ fun PollChatCard(
                         .clickable { onVote(index) }
                 ) {
                     // Percentage Fill Bar
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(percent)
-                            .matchParentSize()
-                            .background(
-                                if (isSelected) CyanPrimary.copy(alpha = 0.35f)
-                                else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                            )
-                    )
+                    if (percent > 0.001f) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(percent.coerceIn(0f, 1f))
+                                .fillMaxHeight()
+                                .background(
+                                    if (isSelected) CyanPrimary.copy(alpha = 0.35f)
+                                    else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                                )
+                        )
+                    }
 
                     Row(
                         modifier = Modifier

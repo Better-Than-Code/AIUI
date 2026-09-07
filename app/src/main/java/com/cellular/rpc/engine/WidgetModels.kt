@@ -533,8 +533,15 @@ sealed class WidgetData(val type: String) {
         }
 
         fun parse(input: String): WidgetData? {
-            val trimmed = input.trim()
+            var trimmed = input.trim()
             if (trimmed.isEmpty()) return null
+
+            // Strip thread tag e.g. [TID:xyz] if present at the start
+            val tidRegex = Regex("""^\[TID:([a-zA-Z0-9_]+)\]\s*""")
+            val match = tidRegex.find(trimmed)
+            if (match != null) {
+                trimmed = trimmed.replace(tidRegex, "").trim()
+            }
 
             // 1. Direct JSON parse
             parseJsonInternal(trimmed)?.let { return it }

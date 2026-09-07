@@ -1,1 +1,1 @@
-{"versionCode": 6, "versionName": "1.5", "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v6.apk", "releaseNotes": "Version 1.5: Universal SMS interception to guarantee incoming AI replies are captured instantly."}
+{"versionCode": 7, "versionName": "1.6", "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v7.apk", "releaseNotes": "Version 1.6: Configured max priority 2147483647 and BROADCAST_SMS permission for PallySmsReceiver."}

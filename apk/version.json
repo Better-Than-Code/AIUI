@@ -1,1 +1,1 @@
-{"versionCode": 9, "versionName": "1.8", "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v9.apk", "releaseNotes": "Version 1.8: Updated baseline version code to 9 and synchronized remote version check manifest."}
+{"versionCode": 11, "versionName": "2.0", "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v11.apk", "releaseNotes": "Version 2.0: Upgraded SMS ContentObserver to industry-standard Telephony.Sms.CONTENT_URI with strict ID-based tracking."}

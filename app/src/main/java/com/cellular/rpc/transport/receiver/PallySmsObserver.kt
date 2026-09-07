@@ -15,10 +15,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /**
- * Robust fallback SMS ContentObserver that listens to system SMS inbox changes (`content://sms/inbox`).
- * Guarantees that even if background broadcast receivers are suppressed by OEM battery managers
- * or Android OS power restrictions on real devices without ADB, incoming replies are instantly
- * detected and ingested the moment they are written to the device's telephony provider.
+ * Industry-standard SMS ContentObserver monitoring `Telephony.Sms.CONTENT_URI` with `_id` tracking.
+ * Mirrors working production SMS apps to guarantee immediate inbound message ingestion on real devices
+ * without relying on background broadcast receivers.
  */
 class PallySmsObserver(
     private val context: Context,
@@ -27,20 +26,21 @@ class PallySmsObserver(
 
     companion object {
         private const val TAG = "PallySmsObserver"
-        private var lastCheckedTimestamp = System.currentTimeMillis()
+        private var lastProcessedId = -1L
         private var observerInstance: PallySmsObserver? = null
 
         fun register(context: Context) {
             if (observerInstance != null) return
             try {
                 val observer = PallySmsObserver(context.applicationContext)
+                // Observe all SMS content changes (true for notifyForDescendants)
                 context.contentResolver.registerContentObserver(
-                    Uri.parse("content://sms/inbox"),
+                    Telephony.Sms.CONTENT_URI,
                     true,
                     observer
                 )
                 observerInstance = observer
-                Log.i(TAG, "Successfully registered secure SMS Inbox ContentObserver for real-device fallback.")
+                Log.i(TAG, "Successfully registered Telephony.Sms.CONTENT_URI ContentObserver.")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to register SMS ContentObserver: ${e.message}")
             }
@@ -49,31 +49,40 @@ class PallySmsObserver(
 
     override fun onChange(selfChange: Boolean, uri: Uri?) {
         super.onChange(selfChange, uri)
-        
+
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                // Query inbox messages sorted by _id DESC to catch newly inserted incoming texts
                 val cursor = context.contentResolver.query(
-                    Uri.parse("content://sms/inbox"),
-                    arrayOf("address", "body", "date"),
-                    "date > ?",
-                    arrayOf(lastCheckedTimestamp.toString()),
-                    "date DESC LIMIT 1"
+                    Telephony.Sms.Inbox.CONTENT_URI,
+                    arrayOf(Telephony.Sms._ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE, Telephony.Sms.TYPE),
+                    null,
+                    null,
+                    "${Telephony.Sms._ID} DESC LIMIT 5"
                 )
 
                 cursor?.use {
-                    if (it.moveToFirst()) {
-                        val addressCol = it.getColumnIndex("address")
-                        val bodyCol = it.getColumnIndex("body")
-                        val dateCol = it.getColumnIndex("date")
+                    var maxSeenId = lastProcessedId
+                    while (it.moveToNext()) {
+                        val idCol = it.getColumnIndex(Telephony.Sms._ID)
+                        val addressCol = it.getColumnIndex(Telephony.Sms.ADDRESS)
+                        val bodyCol = it.getColumnIndex(Telephony.Sms.BODY)
+                        val dateCol = it.getColumnIndex(Telephony.Sms.DATE)
+                        val typeCol = it.getColumnIndex(Telephony.Sms.TYPE)
 
-                        if (addressCol != -1 && bodyCol != -1 && dateCol != -1) {
+                        if (idCol != -1 && addressCol != -1 && bodyCol != -1) {
+                            val msgId = it.getLong(idCol)
                             val sender = it.getString(addressCol) ?: ""
                             val body = it.getString(bodyCol) ?: ""
-                            val date = it.getLong(dateCol)
+                            val date = if (dateCol != -1) it.getLong(dateCol) else System.currentTimeMillis()
+                            val msgType = if (typeCol != -1) it.getInt(typeCol) else Telephony.Sms.MESSAGE_TYPE_INBOX
 
-                            if (date > lastCheckedTimestamp && body.isNotEmpty()) {
-                                lastCheckedTimestamp = date
-                                Log.i(TAG, "Inbox ContentObserver detected new inbound SMS from $sender: $body")
+                            // If this message ID is newer than what we've processed and it's an inbox (received) message
+                            if (msgId > lastProcessedId && msgType == Telephony.Sms.MESSAGE_TYPE_INBOX && body.isNotEmpty()) {
+                                if (msgId > maxSeenId) {
+                                    maxSeenId = msgId
+                                }
+                                Log.i(TAG, "ContentObserver caught incoming SMS ID $msgId from $sender: $body")
 
                                 val inboundMessage = InboundCellularMessage(
                                     transportType = CellularTransportType.SMS_TEXT_WIRE,
@@ -85,10 +94,14 @@ class PallySmsObserver(
                             }
                         }
                     }
+                    if (maxSeenId > lastProcessedId) {
+                        lastProcessedId = maxSeenId
+                    }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error querying SMS inbox in ContentObserver: ${e.message}")
+                Log.e(TAG, "Error querying SMS ContentObserver inbox: ${e.message}")
             }
         }
     }
 }
+

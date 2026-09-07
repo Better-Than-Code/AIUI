@@ -1,5 +1,12 @@
 [
   {
+    "versionCode": 16,
+    "versionName": "2.5",
+    "fileName": "pallyai-v16.apk",
+    "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v16.apk",
+    "releaseNotes": "Release v16 - Universal Mini App System Directive & Runtime Architecture with 3-phase lifecycle, deterministic AST interpreter, and vendor-agnostic handshake engine"
+  },
+  {
     "versionCode": 15,
     "versionName": "2.4",
     "fileName": "pallyai-v15.apk",

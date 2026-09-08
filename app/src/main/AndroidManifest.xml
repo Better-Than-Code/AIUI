@@ -112,6 +112,16 @@
             </intent-filter>
         </receiver>
 
+        <!-- Delivery Broadcast Receiver (Sprint 4.3 Telephony ACK Loop) -->
+        <receiver
+            android:name="com.cellular.rpc.transport.receiver.DeliveryBroadcastReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.cellular.rpc.SMS_DELIVERED" />
+                <action android:name="android.provider.Telephony.SMS_DELIVERED" />
+            </intent-filter>
+        </receiver>
+
         <!-- Pally MMS WAP Push Receiver -->
         <receiver
             android:name="com.cellular.rpc.transport.receiver.PallyWapPushReceiver"

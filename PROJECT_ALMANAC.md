@@ -27,8 +27,14 @@
 ### Epic 3: Cellular Voice MMS Pipeline [PLANNED]
 - **Sprint 3.1**: Audio recording compression and MMS multi-part carrier wrapper.
 
+### Epic 4: Closed-Loop Delivery Watchdog & Cross-Channel Fallback Engine [IN PROGRESS]
+- **Sprint 4.1**: Backend Dispatch Watchdog & Webhook Listener (35s timeout & state machine). [PLANNED]
+- **Sprint 4.2**: Transport Fallback Orchestrator (RCS -> MMS -> SMS ladder & re-encoding). [PLANNED]
+- **Sprint 4.3**: Client-Side Delivery Receiver (`DeliveryBroadcastReceiver`) & App Ack Loop (`ack:<msg_id>`). [IMPLEMENTING]
+
 ---
 
 ## 4. Sprint History & Build Log
 - **Build 17 (Version 2.6)**: Completed monochrome contrast system, floating horizontal circular action bar, balanced-brace JSON stream demuxer, multi-thread conversation persistence, and V2 End-to-End Encryption Layer (`CryptoKeyManager`).
 - **Build 19 (Version 2.8)**: Packaged release v18, incremented versionCode to 18 and versionName to 2.7, updated `releases.json` and `version.json`, and pruned older APKs in `apk/releases/` to strictly maintain the last 5 release builds (v14 to v18).
+- **Build 20 (Version 2.9)**: Initiated Closed-Loop Delivery Watchdog & Cross-Channel Fallback Engine sprint, designing client-side acknowledgement and telephony delivery monitoring.

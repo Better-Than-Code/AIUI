@@ -9,6 +9,9 @@
 ## 2. Architecture Decision Records (ADR)
 - **ADR-001: Cryptographic Wire Format**: Use standard AES-GCM encryption wrapped inside cellular wire frames (`CryptoKeyManager`).
 - **ADR-002: Differential Patching**: Delta-patch JSON trees using standard JSON Patch (RFC 6902) subsets over MMS or compressed PDU streams.
+- **ADR-003: Carrier-Grade Lossless Payload Carriers**: Mandate lossless PDF containers and PNG metadata chunks (`paLY`) for zero-data state sync and blueprints, discarding lossy video steganography due to carrier transcoder macroblocking.
+- **ADR-004: Single-Container MMS Batching**: Enforce single 300KB - 600KB compressed batch containers (Zstandard/Gzip) to avoid carrier MMSC queue throttling and 10-20s transaction latency overhead.
+- **ADR-005: Edge SLM CPU-Only Execution & mmap Lifecycle**: Pin sub-billion parameter SLMs (SmollM2 / Qwen2.5) to efficiency cores via CPU/XNNPACK with memory-mapped load-on-demand to respect LMK limits on budget hardware (Motorola XT2513V / 4GB RAM).
 
 ---
 

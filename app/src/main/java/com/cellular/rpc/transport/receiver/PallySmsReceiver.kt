@@ -41,10 +41,8 @@ class PallySmsReceiver : BroadcastReceiver() {
             return
         }
 
-        val isRecognizedOrProtocol = { sender: String, text: String ->
-            val isProtocol = text.startsWith("~") || text.contains("~1A2F:") || text.contains("REQ:") || text.contains("RES:") || FrameTokenizer.containsFrames(text)
-            val isRecognizedSender = com.cellular.rpc.domain.service.CellularServiceManager.isSenderRecognized(context, sender)
-            isProtocol || isRecognizedSender
+        val isRecognizedSender = { sender: String ->
+            com.cellular.rpc.domain.service.CellularServiceManager.isSenderRecognized(context, sender)
         }
 
         // Try standard Android Intents helper which correctly merges multi-part/concatenated SMS
@@ -64,7 +62,7 @@ class PallySmsReceiver : BroadcastReceiver() {
                 return
             }
 
-            if (isRecognizedOrProtocol(sender, combinedText)) {
+            if (isRecognizedSender(sender)) {
                 Log.i(TAG, "Intercepted incoming AI SMS from $sender (${combinedText.length} chars): $combinedText")
                 PallySmsTracker.markHandled(sender, combinedText)
 
@@ -115,7 +113,7 @@ class PallySmsReceiver : BroadcastReceiver() {
             return
         }
 
-        if (fallbackSms != null && isRecognizedOrProtocol(fallbackSender, fullText)) {
+        if (fallbackSms != null && isRecognizedSender(fallbackSender)) {
             Log.i(TAG, "Intercepted fallback PDU message from $fallbackSender: $fullText")
             PallySmsTracker.markHandled(fallbackSender, fullText)
 

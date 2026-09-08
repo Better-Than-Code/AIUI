@@ -31,4 +31,4 @@
 
 ## 4. Sprint History & Build Log
 - **Build 17 (Version 2.6)**: Completed monochrome contrast system, floating horizontal circular action bar, balanced-brace JSON stream demuxer, multi-thread conversation persistence, and V2 End-to-End Encryption Layer (`CryptoKeyManager`).
-- **Build 18 (Version 2.7)**: Completed Messaging Reliability Sprint — enforced strict number-based filtering in `PallySmsReceiver` and `PallySmsObserver` to accept messages only from the configured AI SMS number, fortified multi-part SMS outbound dispatching via `CarrierSafeQueueEngine`, and added robust APK download installation fallbacks.
+- **Build 19 (Version 2.8)**: Packaged release v18, incremented versionCode to 18 and versionName to 2.7, updated `releases.json` and `version.json`, and pruned older APKs in `apk/releases/` to strictly maintain the last 5 release builds (v14 to v18).

@@ -1,0 +1,6 @@
+{
+  "versionCode": 22,
+  "versionName": "4.2",
+  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v22.apk",
+  "releaseNotes": "Version 4.2: Cellular Voice MMS Pipeline & Transmission Hardening. Features adaptive AMR-WB voice note compression for cellular transport, hardware-level SMS_SENT and SMS_DELIVERED PendingIntent telemetry, resilient Room outbox in-flight confirmation with automatic retry on radio drops, and 3-stage adaptive MMSC inbox polling."
+}

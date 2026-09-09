@@ -1,0 +1,30 @@
+[
+  {
+    "versionCode": 22,
+    "versionName": "4.2",
+    "fileName": "pallyai-v22.apk",
+    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v22.apk",
+    "releaseNotes": "Release v22 - Version 4.2: Cellular Voice MMS Pipeline & Ingestion/Transmission Hardening. Adaptive AMR-WB voice compression, hardware SMS_SENT and SMS_DELIVERED PendingIntent callbacks, resilient in-flight Room outbox state machine, and 3-stage adaptive MMSC download polling."
+  },
+  {
+    "versionCode": 21,
+    "versionName": "4.0",
+    "fileName": "pallyai-v21.apk",
+    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v21.apk",
+    "releaseNotes": "Release v21 - Version 4.0: The Living Software Ecosystem & Admin Governance. MutationLog black box auditing, BPE outbox micro-compression, CellularMedic crash interceptor & rollback engine, CellularIntentRouter, and interactive Admin Approval UI for SDUI mutations."
+  },
+  {
+    "versionCode": 19,
+    "versionName": "3.2",
+    "fileName": "pallyai-v19.apk",
+    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v19.apk",
+    "releaseNotes": "Release v19 - Differential Mini-App Patching (OTA Deltas) with RFC 6902 JsonPatchEngine and Transport Fallback Orchestrator."
+  },
+  {
+    "versionCode": 18,
+    "versionName": "2.7",
+    "fileName": "pallyai-v18.apk",
+    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v18.apk",
+    "releaseNotes": "Release v18 - Messaging Reliability Sprint: strict AI SMS number filtering in PallySmsReceiver & PallySmsObserver, robust outbound multipart SMS dispatching, and APK installation fallback."
+  }
+]

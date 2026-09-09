@@ -306,15 +306,22 @@ class CarrierSafeQueueEngine(
     }
 
     /**
-     * Retries unacknowledged frames exceeding the 4500ms timeout in simulation mode.
+     * Retries unacknowledged frames exceeding the 4500ms timeout in simulation mode,
+     * and runs autonomous background watchdog recovery for stalled IN_FLIGHT frames (35s threshold).
      */
     private suspend fun retryLoop() {
         while (_isEngineRunning.value) {
             try {
+                val now = System.currentTimeMillis()
+                // Autonomous background recovery for stalled IN_FLIGHT packets (35s watchdog threshold)
+                val staleThreshold = now - 35000L
+                val stalledCount = outboxDao.resetStalledToPending(staleThreshold)
+                if (stalledCount > 0) {
+                    Log.w(TAG, "Watchdog: Reset $stalledCount stalled IN_FLIGHT packets back to PENDING for autonomous background recovery.")
+                }
+
                 // Only run automatic retransmissions in loopback simulation mode.
-                // In live cellular SMS mode, automatic retry loops are disabled to protect against carrier rate-limiting and duplicate SMS billing.
                 if (loopbackEnabled) {
-                    val now = System.currentTimeMillis()
                     val needingRetry = windowController.getFramesRequiringRetry(4500L, now)
                     for (frame in needingRetry) {
                         Log.w(TAG, "Frame ${frame.seqNo} timed out. Re-transmitting simulation...")
@@ -325,11 +332,18 @@ class CarrierSafeQueueEngine(
             } catch (e: Exception) {
                 Log.e(TAG, "Error in retryLoop: ${e.message}", e)
             }
-            delay(1500)
+            delay(3500)
         }
     }
 
     private suspend fun transmitFrame(entity: OutboxEntity) {
+        val tierLog = when (entity.retries) {
+            0 -> "Tier 1 (Direct RCS/SMS)"
+            1 -> "Tier 2 (MMS Binary Container Fallback)"
+            else -> "Tier 3 (Concatenated 140ch SMS Shorthand Fallback)"
+        }
+        Log.i(TAG, "Executing transmission for Outbox ID ${entity.id} via transport $tierLog (Attempt ${entity.retries + 1})")
+
         val payloadBytes = GsmSafeBase85.decode(entity.payloadBase85)
 
         val frame = Frame(

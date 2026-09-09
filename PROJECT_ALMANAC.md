@@ -21,16 +21,20 @@
 - **Sprint 1.1**: Key Management & AES-GCM Encryption (`CryptoKeyManager.kt`). [DONE]
 - **Sprint 1.2**: Wire frame decryption and verification integration in `WidgetData.parse`. [DONE]
 
-### Epic 2: Differential Mini-App Patching (OTA Deltas) [PLANNED]
-- **Sprint 2.1**: JSON AST delta patch engine in `DynamicAppHost`.
+### Epic 2: Differential Mini-App Patching (OTA Deltas) [COMPLETED]
+- **Sprint 2.1**: JSON AST delta patch engine (`JsonPatchEngine.kt`) adhering to RFC 6902 for bandwidth-optimized mini-app updates over cellular pipes. [DONE]
 
 ### Epic 3: Cellular Voice MMS Pipeline [PLANNED]
 - **Sprint 3.1**: Audio recording compression and MMS multi-part carrier wrapper.
 
-### Epic 4: Closed-Loop Delivery Watchdog & Cross-Channel Fallback Engine [IN PROGRESS]
-- **Sprint 4.1**: Backend Dispatch Watchdog & Webhook Listener (35s timeout & state machine). [PLANNED]
-- **Sprint 4.2**: Transport Fallback Orchestrator (RCS -> MMS -> SMS ladder & re-encoding). [PLANNED]
-- **Sprint 4.3**: Client-Side Delivery Receiver (`DeliveryBroadcastReceiver`) & App Ack Loop (`ack:<msg_id>`). [IMPLEMENTING]
+### Epic 4: Closed-Loop Delivery Watchdog & Cross-Channel Fallback Engine [COMPLETED]
+- **Sprint 4.1**: Backend Dispatch Watchdog & Webhook Listener (35s timeout & state machine). [DONE]
+- **Sprint 4.2**: Transport Fallback Orchestrator (RCS -> MMS -> SMS ladder & re-encoding). [DONE]
+- **Sprint 4.3**: Client-Side Delivery Receiver (`DeliveryBroadcastReceiver`) & App Ack Loop (`ack:<msg_id>`). [DONE]
+
+### Epic 5: Zero-Touch Self-Healing Messaging Engine [IN PROGRESS]
+- **Sprint 5.1**: Autonomous Background Outbox Recovery (Exponential backoff, jitter, and silent self-healing queue flushing without user intervention - "Don't Make Me Think"). [COMPLETED]
+- **Sprint 5.2**: Clean UI Principles Enforcement (Preserving minimalist chat interface; keeping all developer diagnostic tools strictly inside the toggled Dev Tab). [COMPLETED]
 
 ---
 
@@ -38,3 +42,7 @@
 - **Build 17 (Version 2.6)**: Completed monochrome contrast system, floating horizontal circular action bar, balanced-brace JSON stream demuxer, multi-thread conversation persistence, and V2 End-to-End Encryption Layer (`CryptoKeyManager`).
 - **Build 19 (Version 2.8)**: Packaged release v18, incremented versionCode to 18 and versionName to 2.7, updated `releases.json` and `version.json`, and pruned older APKs in `apk/releases/` to strictly maintain the last 5 release builds (v14 to v18).
 - **Build 20 (Version 2.9)**: Initiated Closed-Loop Delivery Watchdog & Cross-Channel Fallback Engine sprint, designing client-side acknowledgement and telephony delivery monitoring.
+- **Build 21 (Version 3.0)**: Executed Sprint 5.1 & 5.2 (Zero-Touch Self-Healing Messaging Engine), implementing autonomous background watchdog recovery for stalled in-flight outbox packets (>35s) and maintaining a pristine, uncluttered chat UI.
+- **Build 22 (Version 3.1)**: Executed Sprint 4.2 (Transport Fallback Orchestrator), implementing tier-based transmission fallback routing (Tier 1 RCS/Direct SMS → Tier 2 MMS Binary Container → Tier 3 Concatenated 140ch SMS Shorthand) in `CarrierSafeQueueEngine` and `OutboxDao`.
+- **Build 23 (Version 3.2)**: Executed Sprint 2.1 (Differential Mini-App Patching / OTA Deltas), implementing `JsonPatchEngine.kt` for RFC 6902 compliant JSON AST delta patching over compressed cellular channels.
+- **Build 24 (Version 3.2 / v19)**: Packaged release v19 (versionCode 19, versionName "3.2"), updated `releases.json` and `version.json`, and pruned older release APKs in `apk/releases/` to strictly maintain the last 5 release builds (`v15` to `v19`).

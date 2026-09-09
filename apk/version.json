@@ -1,1 +1,6 @@
-{"versionCode": 18, "versionName": "2.7", "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v18.apk", "releaseNotes": "Version 2.7: Messaging Reliability Sprint — strict AI SMS number filtering, multi-part SMS outbox queue hardening, and robust APK download & installation fallbacks."}
+{
+  "versionCode": 19,
+  "versionName": "3.2",
+  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v19.apk",
+  "releaseNotes": "Version 3.2: Differential Mini-App Patching (OTA Deltas) with RFC 6902 JsonPatchEngine and Transport Fallback Orchestrator."
+}

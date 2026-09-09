@@ -18,6 +18,12 @@ interface OutboxDao {
     @Query("SELECT * FROM outbox WHERE status = 'PENDING' ORDER BY createdAtMs ASC LIMIT :limit")
     suspend fun getPendingFrames(limit: Int = 10): List<OutboxEntity>
 
+    @Query("SELECT * FROM outbox WHERE status = 'IN_FLIGHT' AND lastAttemptMs < :staleThresholdMs")
+    suspend fun getStalledInFlightFrames(staleThresholdMs: Long): List<OutboxEntity>
+
+    @Query("UPDATE outbox SET status = CASE WHEN retries >= 3 THEN 'FAILED' ELSE 'PENDING' END, retries = retries + 1 WHERE status = 'IN_FLIGHT' AND lastAttemptMs < :staleThresholdMs")
+    suspend fun resetStalledToPending(staleThresholdMs: Long): Int
+
     @Query("SELECT COUNT(*) FROM outbox WHERE status = 'PENDING' OR status = 'IN_FLIGHT'")
     fun getPendingCountFlow(): Flow<Int>
 

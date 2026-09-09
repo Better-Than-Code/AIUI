@@ -30,6 +30,9 @@ interface OutboxDao {
     @Query("SELECT COUNT(*) FROM outbox WHERE status = 'PENDING' OR status = 'IN_FLIGHT'")
     suspend fun getPendingCount(): Int
 
+    @Query("SELECT COUNT(*) FROM outbox WHERE sessionId = :sessionId AND pktType = :pktType AND payloadBase85 = :payloadBase85 AND (status = 'PENDING' OR status = 'IN_FLIGHT')")
+    suspend fun countDuplicatePending(sessionId: Int, pktType: Byte, payloadBase85: String): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(frame: OutboxEntity): Long
 

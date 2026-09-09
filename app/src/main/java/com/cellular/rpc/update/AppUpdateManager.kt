@@ -22,13 +22,13 @@ object AppUpdateManager {
 
     // Primary & Fallback URLs for remote update metadata
     private const val GITHUB_RAW_VERSION_URL =
-        "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/version.json"
+        "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/version.json"
     private const val GITHUB_RAW_RELEASES_URL =
-        "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases.json"
+        "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases.json"
     private const val GITHUB_RELEASES_DIR_HTML_URL =
-        "https://github.com/earngameapps/cellular-rpc/tree/main/apk/releases"
+        "https://github.com/Better-Than-Code/AIUI/tree/main/apk/releases"
     private const val GITHUB_API_CONTENTS_URL =
-        "https://api.github.com/repos/earngameapps/cellular-rpc/contents/apk/releases"
+        "https://api.github.com/repos/Better-Than-Code/AIUI/contents/apk/releases"
 
     data class ReleaseItem(
         val versionCode: Int,
@@ -114,22 +114,8 @@ object AppUpdateManager {
                 versionCode = currentVersionCode,
                 versionName = currentVersionName,
                 fileName = "pallyai-v$currentVersionCode.apk",
-                apkUrl = "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v$currentVersionCode.apk",
+                apkUrl = "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v$currentVersionCode.apk",
                 releaseNotes = "Current installed build (v$currentVersionCode)"
-            )
-        }
-
-        // 4. GUARANTEE an available newer update for testing if none is present remotely
-        val nextVersionCode = currentVersionCode + 1
-        val nextVersionName = "2.${nextVersionCode}"
-        val nextFileName = "pallyai-v$nextVersionCode.apk"
-        if (!allDiscovered.values.any { it.versionCode > currentVersionCode }) {
-            allDiscovered[nextVersionCode] = ReleaseItem(
-                versionCode = nextVersionCode,
-                versionName = nextVersionName,
-                fileName = nextFileName,
-                apkUrl = "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/$nextFileName",
-                releaseNotes = "New OTA release v$nextVersionName with enhanced cellular RPC security and stability."
             )
         }
 
@@ -179,7 +165,7 @@ object AppUpdateManager {
                 val vCode = obj.optInt("versionCode", 0)
                 val vName = obj.optString("versionName", "v$vCode")
                 val fileName = obj.optString("fileName", "pallyai-v$vCode.apk")
-                val apkUrl = obj.optString("apkUrl", "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/$fileName")
+                val apkUrl = obj.optString("apkUrl", "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/$fileName")
                 val notes = obj.optString("releaseNotes", "Release v$vCode")
                 if (vCode > 0) {
                     results.add(ReleaseItem(vCode, vName, fileName, apkUrl, notes))

@@ -151,7 +151,9 @@ class PallySmsObserver(
                                 (now - date) <= 30_000L // 30s window on cold start
                             }
 
-                            val isRecognized = com.cellular.rpc.domain.service.CellularServiceManager.isSenderRecognized(context, sender)
+                            val activeAiNumber = PallySmsReceiver.normalizePhoneNumber(com.cellular.rpc.domain.service.CellularServiceManager.getActiveService(context).phoneNumber)
+                            val normalizedSender = PallySmsReceiver.normalizePhoneNumber(sender)
+                            val isRecognized = normalizedSender.isNotBlank() && activeAiNumber.isNotBlank() && normalizedSender == activeAiNumber
                             if (isNew && msgType == Telephony.Sms.MESSAGE_TYPE_INBOX && body.isNotEmpty() && isRecognized) {
                                 candidateRows.add(RawSmsRow(msgId, sender, body, date))
                             }

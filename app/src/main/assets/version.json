@@ -1,1 +1,6 @@
-{"versionCode": 14, "versionName": "2.3", "apkUrl": "https://raw.githubusercontent.com/earngameapps/cellular-rpc/main/apk/releases/pallyai-v14.apk", "releaseNotes": "Version 2.3: Fix Pally live gateway line (+16462619684), abortBroadcast on protocol frames, Room-backed outbox queue clearing, WAP_PUSH_DELIVER MMS receiver, and dynamic Server-Driven UI (SDUI) tree parser."}
+{
+  "versionCode": 19,
+  "versionName": "3.2",
+  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v19.apk",
+  "releaseNotes": "Version 3.2: Differential Mini-App Patching (OTA Deltas) with RFC 6902 JsonPatchEngine and Transport Fallback Orchestrator."
+}

@@ -41,8 +41,10 @@ class PallySmsReceiver : BroadcastReceiver() {
             return
         }
 
+        val activeAiNumber = normalizePhoneNumber(com.cellular.rpc.domain.service.CellularServiceManager.getActiveService(context).phoneNumber)
         val isRecognizedSender = { sender: String ->
-            com.cellular.rpc.domain.service.CellularServiceManager.isSenderRecognized(context, sender)
+            val normalizedSender = normalizePhoneNumber(sender)
+            normalizedSender.isNotBlank() && activeAiNumber.isNotBlank() && normalizedSender == activeAiNumber
         }
 
         // Try standard Android Intents helper which correctly merges multi-part/concatenated SMS

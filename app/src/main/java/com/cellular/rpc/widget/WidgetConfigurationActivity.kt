@@ -118,16 +118,19 @@ fun WidgetConfigScreen(
     onSave: (type: String, city: String, zip: String, unit: String, topic: String, featureId: String, title: String, metricKey: String, transparency: Int, interval: Int) -> Unit,
     onCancel: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val targetId = if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) appWidgetId else 0
+
     var selectedType by remember { mutableStateOf(initialType) }
-    var city by remember { mutableStateOf("San Francisco") }
-    var zip by remember { mutableStateOf("94102") }
-    var unit by remember { mutableStateOf("F") }
-    var topic by remember { mutableStateOf("TECH & WORLD") }
-    var customFeatureId by remember { mutableStateOf("solar_estimator") }
-    var customTitle by remember { mutableStateOf("Solar Array Estimator") }
-    var customMetricKey by remember { mutableStateOf("result") }
-    var transparencyPercent by remember { mutableStateOf(85f) }
-    var selectedInterval by remember { mutableStateOf(60) } // Default 1 hour
+    var city by remember { mutableStateOf(WidgetPreferences.getWeatherCity(context, targetId)) }
+    var zip by remember { mutableStateOf(WidgetPreferences.getWeatherZip(context, targetId)) }
+    var unit by remember { mutableStateOf(WidgetPreferences.getWeatherUnit(context, targetId)) }
+    var topic by remember { mutableStateOf(WidgetPreferences.getNewsTopic(context, targetId)) }
+    var customFeatureId by remember { mutableStateOf(CellularCustomAppWidgetProvider.getCustomFeatureId(context, targetId)) }
+    var customTitle by remember { mutableStateOf(CellularCustomAppWidgetProvider.getCustomTitle(context, targetId)) }
+    var customMetricKey by remember { mutableStateOf(CellularCustomAppWidgetProvider.getCustomMetricKey(context, targetId)) }
+    var transparencyPercent by remember { mutableStateOf(WidgetPreferences.getTransparency(context, targetId).toFloat()) }
+    var selectedInterval by remember { mutableStateOf(WidgetPreferences.getIntervalMinutes(context, targetId)) }
 
     Scaffold(
         topBar = {

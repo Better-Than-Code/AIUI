@@ -37,12 +37,18 @@ import kotlin.random.Random
  * 3. Sliding window controller for Selective Repeat ACKs and Out-of-Order reassembly.
  * 4. Room Outbox persistence and retry policies.
  */
+import com.cellular.rpc.transport.service.NetworkConnectivityObserver
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
+
 class CarrierSafeQueueEngine(
     private val context: Context,
     private val outboxDao: OutboxDao,
     var destinationAddress: String = "+16462619684",
     val destinationPort: Short = 8901
 ) {
+    private val networkObserver = NetworkConnectivityObserver(context)
+    private val okHttpClient = okhttp3.OkHttpClient()
     companion object {
         private const val TAG = "CarrierSafeQueue"
 
@@ -216,15 +222,17 @@ class CarrierSafeQueueEngine(
      * Enqueues an RPC payload to the Outbox.
      */
     suspend fun enqueuePayload(sessionId: Int, pktType: Byte, payload: ByteArray): Int {
-        val frame = Frame(
-            sessionId = sessionId,
-            pktType = pktType,
-            seqNo = 0, // Assigned by windowController when transmitted
-            payload = payload
-        )
+        val finalPayload = if (pktType == Frame.PKT_RPC_REQ || pktType == Frame.PKT_RPC_RES ) CompressionUtils.compress(String(payload, Charsets.UTF_8)) else payload
+        val base85 = GsmSafeBase85.encode(finalPayload)
 
-        val base85 = GsmSafeBase85.encode(payload)
-        val rawHex = payload.joinToString("") { "%02X".format(it) }
+        // Prevent duplicate outbound queueing for identical pending/in-flight frames
+        val duplicateCount = outboxDao.countDuplicatePending(sessionId, pktType, base85)
+        if (duplicateCount > 0) {
+            Log.w(TAG, "Duplicate outbound payload prevented for session $sessionId (pktType=$pktType). Already in queue.")
+            return sessionId
+        }
+
+        val rawHex = finalPayload.joinToString("") { "%02X".format(it) }
 
         val entity = OutboxEntity(
             sessionId = sessionId,
@@ -377,6 +385,20 @@ class CarrierSafeQueueEngine(
         delay(totalGap)
     }
 
+    private suspend fun tryHttpFallback(frame: Frame): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val payload = frame.toBinary()
+            val request = okhttp3.Request.Builder()
+                .url("https://api.pally.com/rpc/v1/frame")
+                .post(payload.toRequestBody("application/octet-stream".toMediaType()))
+                .build()
+            val response = okHttpClient.newCall(request).execute()
+            return@withContext response.isSuccessful
+        } catch (e: Exception) {
+            return@withContext false
+        }
+    }
+
     private suspend fun dispatchPhysicalFrame(frame: Frame) {
         val binary = frame.toBinary()
         val asciiWire = frame.toAsciiWire()
@@ -406,6 +428,13 @@ class CarrierSafeQueueEngine(
         if (loopbackEnabled) {
             handleGatewaySimulation(frame)
         } else {
+            if (networkObserver.isConnected.value) {
+                val success = tryHttpFallback(frame)
+                if (success) {
+                    Log.i(TAG, "HTTPS transport successful for Frame Seq=${frame.seqNo}, bypassing SMS queue.")
+                    return
+                }
+            }
             transmitOverCellularRadio(frame)
         }
     }
@@ -556,7 +585,7 @@ class CarrierSafeQueueEngine(
     }
 
     private suspend fun handleRpcRequest(reqFrame: Frame) {
-        val queryStr = String(reqFrame.payload, Charsets.UTF_8)
+        val queryStr = CompressionUtils.decompress(reqFrame.payload)
         Log.d(TAG, "Gateway received RPC query: $queryStr")
 
         // First emit ACK for the request frame
@@ -627,7 +656,7 @@ class CarrierSafeQueueEngine(
                 db.widgetCacheDao().updateStatus(widgetType, "304_NOT_MODIFIED", System.currentTimeMillis())
             } else {
                 // 200 OK with minified JSON schema
-                val jsonBytes = currentWidget.toJson().toByteArray(Charsets.UTF_8)
+                val jsonBytes = currentWidget.toJson().let { CompressionUtils.compress(it) }
                 val resFrame = Frame(
                     sessionId = reqFrame.sessionId,
                     pktType = Frame.PKT_RPC_RES,
@@ -659,7 +688,7 @@ class CarrierSafeQueueEngine(
                     WidgetData.ChatText(text = "Cellular AI Gateway processed custom schema request.")
                 }
             }
-            val jsonBytes = parsedCustom.toJson().toByteArray(Charsets.UTF_8)
+            val jsonBytes = parsedCustom.toJson().let { CompressionUtils.compress(it) }
             val resFrame = Frame(
                 sessionId = reqFrame.sessionId,
                 pktType = Frame.PKT_RPC_RES,
@@ -672,7 +701,7 @@ class CarrierSafeQueueEngine(
             // Simulated AI Gateway acknowledging Single-Push Genesis Manifest Ingestion
             val ackText = "AI Assistant: Ingested MCP Genesis Manifest (v=2.1.0). Registered 10 native schemas & 4 actionable tools. Saved to persistent gateway memory."
             val chatResponse = WidgetData.ChatText(text = ackText)
-            val jsonBytes = chatResponse.toJson().toByteArray(Charsets.UTF_8)
+            val jsonBytes = chatResponse.toJson().let { CompressionUtils.compress(it) }
             val resFrame = Frame(
                 sessionId = reqFrame.sessionId,
                 pktType = Frame.PKT_RPC_RES,
@@ -686,7 +715,7 @@ class CarrierSafeQueueEngine(
             val chatResponse = WidgetData.ChatText(
                 text = "Cellular RPC Gateway: Received '$queryStr'. Transport link verified via SMS PDU."
             )
-            val jsonBytes = chatResponse.toJson().toByteArray(Charsets.UTF_8)
+            val jsonBytes = chatResponse.toJson().let { CompressionUtils.compress(it) }
             val resFrame = Frame(
                 sessionId = reqFrame.sessionId,
                 pktType = Frame.PKT_RPC_RES,
@@ -748,7 +777,7 @@ class CarrierSafeQueueEngine(
                 }
             }
             Frame.PKT_RPC_RES -> {
-                val payloadStr = String(frame.payload, Charsets.UTF_8)
+                val payloadStr = CompressionUtils.decompress(frame.payload)
                 _inboundDeliveredFlow.emit(frame to payloadStr)
                 if (payloadStr == "304") {
                     Log.i(TAG, "State is 304 Not Modified! Cache verified.")

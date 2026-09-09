@@ -14,9 +14,10 @@ import androidx.room.RoomDatabase
         DynamicFeatureEntity::class,
         ConversationThreadEntity::class,
         CustomActionEntity::class,
-        AppBlueprintEntity::class
+        AppBlueprintEntity::class,
+        MutationLogEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -29,6 +30,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun conversationThreadDao(): ConversationThreadDao
     abstract fun customActionDao(): CustomActionDao
     abstract fun appBlueprintDao(): AppBlueprintDao
+    abstract fun mutationLogDao(): MutationLogDao
 
     companion object {
         @Volatile

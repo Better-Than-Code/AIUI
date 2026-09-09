@@ -596,6 +596,15 @@ sealed class WidgetData(val type: String) {
                     }
                 }
             } catch (e: Exception) {
+                // Sprint 6.3: Medic Guardian Hook
+                com.example.CellularRpcApp.instance.let { app ->
+                    com.cellular.rpc.engine.CellularMedic.onFaultDetected(
+                        context = app,
+                        componentName = "WidgetModels.parse",
+                        faultDescription = "JSON Parsing Fault: ${e.message}",
+                        rawPayload = jsonString
+                    )
+                }
                 null
             }
         }

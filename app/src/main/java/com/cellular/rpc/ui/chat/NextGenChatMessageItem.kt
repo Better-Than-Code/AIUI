@@ -168,25 +168,25 @@ fun NextGenChatMessageItem(
                         if (message.widgetData != null) {
                             // Render rich inline widget
                             when (val widget = message.widgetData) {
-                                is WidgetData.Weather -> com.example.WeatherChatCard(
+                                is WidgetData.Weather -> WeatherChatCard(
                                     weather = widget,
                                     is304 = message.is304NotModified,
                                     onRefresh = { onRefreshWidget("weather") }
                                 )
-                                is WidgetData.NewsDigest -> com.example.NewsChatCard(news = widget)
-                                is WidgetData.MarketTicker -> com.example.MarketChatCard(ticker = widget)
-                                is WidgetData.CellularTransfer -> com.example.TransferChatCard(
+                                is WidgetData.NewsDigest -> NewsChatCard(news = widget)
+                                is WidgetData.MarketTicker -> MarketChatCard(ticker = widget)
+                                is WidgetData.CellularTransfer -> TransferChatCard(
                                     transfer = widget,
                                     onConfirm = { onConfirmTransfer(widget.id) }
                                 )
-                                is WidgetData.CellularPoll -> com.example.PollChatCard(
+                                is WidgetData.CellularPoll -> PollChatCard(
                                     poll = widget,
                                     onVote = { onVote(widget.id, it) }
                                 )
-                                is WidgetData.CellularTool -> com.example.ToolChatCard(tool = widget)
-                                is WidgetData.CalendarEvent -> com.example.CalendarChatCard(event = widget)
-                                is WidgetData.TaskChecklist -> com.example.TaskChecklistChatCard(checklist = widget)
-                                is WidgetData.SystemStatus -> com.example.SystemStatusChatCard(status = widget)
+                                is WidgetData.CellularTool -> ToolChatCard(tool = widget)
+                                is WidgetData.CalendarEvent -> CalendarChatCard(event = widget)
+                                is WidgetData.TaskChecklist -> TaskChecklistChatCard(checklist = widget)
+                                is WidgetData.SystemStatus -> SystemStatusChatCard(status = widget)
                                 is WidgetData.MiniAppPreview -> {
                                     val blueprint = com.cellular.rpc.domain.miniapp.MiniAppBlueprint.fromJson(widget.rawBlueprintJson)
                                     if (blueprint != null) {
@@ -205,7 +205,7 @@ fun NextGenChatMessageItem(
                                         AiMarkdownBubble(text = widget.rawBlueprintJson, onLongClick = { showContextMenu = true })
                                     }
                                 }
-                                is WidgetData.DynamicBlueprint -> com.example.DynamicBlueprintChatCard(blueprint = widget)
+                                is WidgetData.DynamicBlueprint -> DynamicBlueprintChatCard(blueprint = widget)
                                 is WidgetData.ChatText -> if (message.text.isBlank()) {
                                     AiMarkdownBubble(
                                         text = widget.text,

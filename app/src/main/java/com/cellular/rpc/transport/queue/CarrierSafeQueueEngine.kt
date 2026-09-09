@@ -222,7 +222,14 @@ class CarrierSafeQueueEngine(
      * Enqueues an RPC payload to the Outbox.
      */
     suspend fun enqueuePayload(sessionId: Int, pktType: Byte, payload: ByteArray): Int {
-        val finalPayload = if (pktType == Frame.PKT_RPC_REQ || pktType == Frame.PKT_RPC_RES ) CompressionUtils.compress(String(payload, Charsets.UTF_8)) else payload
+        val finalPayload = if (pktType == Frame.PKT_RPC_REQ || pktType == Frame.PKT_RPC_RES ) {
+            val payloadStr = String(payload, Charsets.UTF_8)
+            val bpeCompressed = CellularBpeTokenizer.compress(payloadStr)
+            // Epic 6.2: Using BPE Algorithm for micro-compression (replaces GZIP which had too much overhead for tiny SMS payloads)
+            bpeCompressed
+        } else {
+            payload
+        }
         val base85 = GsmSafeBase85.encode(finalPayload)
 
         // Prevent duplicate outbound queueing for identical pending/in-flight frames
@@ -585,7 +592,7 @@ class CarrierSafeQueueEngine(
     }
 
     private suspend fun handleRpcRequest(reqFrame: Frame) {
-        val queryStr = CompressionUtils.decompress(reqFrame.payload)
+        val queryStr = CellularBpeTokenizer.decompress(reqFrame.payload)
         Log.d(TAG, "Gateway received RPC query: $queryStr")
 
         // First emit ACK for the request frame
@@ -656,7 +663,7 @@ class CarrierSafeQueueEngine(
                 db.widgetCacheDao().updateStatus(widgetType, "304_NOT_MODIFIED", System.currentTimeMillis())
             } else {
                 // 200 OK with minified JSON schema
-                val jsonBytes = currentWidget.toJson().let { CompressionUtils.compress(it) }
+                val jsonBytes = currentWidget.toJson().let { CellularBpeTokenizer.compress(it) }
                 val resFrame = Frame(
                     sessionId = reqFrame.sessionId,
                     pktType = Frame.PKT_RPC_RES,
@@ -688,7 +695,7 @@ class CarrierSafeQueueEngine(
                     WidgetData.ChatText(text = "Cellular AI Gateway processed custom schema request.")
                 }
             }
-            val jsonBytes = parsedCustom.toJson().let { CompressionUtils.compress(it) }
+            val jsonBytes = parsedCustom.toJson().let { CellularBpeTokenizer.compress(it) }
             val resFrame = Frame(
                 sessionId = reqFrame.sessionId,
                 pktType = Frame.PKT_RPC_RES,
@@ -701,7 +708,7 @@ class CarrierSafeQueueEngine(
             // Simulated AI Gateway acknowledging Single-Push Genesis Manifest Ingestion
             val ackText = "AI Assistant: Ingested MCP Genesis Manifest (v=2.1.0). Registered 10 native schemas & 4 actionable tools. Saved to persistent gateway memory."
             val chatResponse = WidgetData.ChatText(text = ackText)
-            val jsonBytes = chatResponse.toJson().let { CompressionUtils.compress(it) }
+            val jsonBytes = chatResponse.toJson().let { CellularBpeTokenizer.compress(it) }
             val resFrame = Frame(
                 sessionId = reqFrame.sessionId,
                 pktType = Frame.PKT_RPC_RES,
@@ -715,7 +722,7 @@ class CarrierSafeQueueEngine(
             val chatResponse = WidgetData.ChatText(
                 text = "Cellular RPC Gateway: Received '$queryStr'. Transport link verified via SMS PDU."
             )
-            val jsonBytes = chatResponse.toJson().let { CompressionUtils.compress(it) }
+            val jsonBytes = chatResponse.toJson().let { CellularBpeTokenizer.compress(it) }
             val resFrame = Frame(
                 sessionId = reqFrame.sessionId,
                 pktType = Frame.PKT_RPC_RES,
@@ -777,7 +784,7 @@ class CarrierSafeQueueEngine(
                 }
             }
             Frame.PKT_RPC_RES -> {
-                val payloadStr = CompressionUtils.decompress(frame.payload)
+                val payloadStr = CellularBpeTokenizer.decompress(frame.payload)
                 _inboundDeliveredFlow.emit(frame to payloadStr)
                 if (payloadStr == "304") {
                     Log.i(TAG, "State is 304 Not Modified! Cache verified.")

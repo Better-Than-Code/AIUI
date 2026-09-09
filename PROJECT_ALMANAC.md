@@ -36,6 +36,12 @@
 - **Sprint 5.1**: Autonomous Background Outbox Recovery (Exponential backoff, jitter, and silent self-healing queue flushing without user intervention - "Don't Make Me Think"). [COMPLETED]
 - **Sprint 5.2**: Clean UI Principles Enforcement (Preserving minimalist chat interface; keeping all developer diagnostic tools strictly inside the toggled Dev Tab). [COMPLETED]
 
+### Epic 6: The Living Software Ecosystem (Self-Healing Edge Architecture) [COMPLETED]
+- **Sprint 6.1**: **The Black Box (Mutation Tracking Infrastructure)**. Construct local `MutationLogEntity` Room Database tables. Build a manual JSON export capability in the Diagnostics Tab for manual sync with AI Studio. Implement safe dynamic Server-Driven UI (SDUI) JSON patching. [COMPLETED]
+- **Sprint 6.2**: **The Compressor (Algorithmic BPE Engine)**. Implement a static Byte-Pair Encoding (BPE) tokenizer to heavily compress outbound prompts and decompress inbound payloads in `CarrierSafeQueueEngine.kt`. [COMPLETED]
+- **Sprint 6.3**: **The Medic (Anomaly & Fallback Guardian)**. Wire a global error interceptor for JSON parsing and UI faults. Introduce silent `[DIAGNOSTIC_PING]` SMS fallback routing and auto-rollback mechanics to previous known-good blueprints. [COMPLETED]
+- **Sprint 6.4**: **The Router (Intent Classification via TFLite)**. Integrate quantized sub-15MB TFLite classification (TinyBERT/MobileBERT). Route `LOCAL_UI_CHANGE` intents to local execution and `EXTERNAL_KNOWLEDGE` intents to the remote SMS AI. [COMPLETED]
+
 ---
 
 ## 4. Sprint History & Build Log
@@ -46,3 +52,4 @@
 - **Build 22 (Version 3.1)**: Executed Sprint 4.2 (Transport Fallback Orchestrator), implementing tier-based transmission fallback routing (Tier 1 RCS/Direct SMS → Tier 2 MMS Binary Container → Tier 3 Concatenated 140ch SMS Shorthand) in `CarrierSafeQueueEngine` and `OutboxDao`.
 - **Build 23 (Version 3.2)**: Executed Sprint 2.1 (Differential Mini-App Patching / OTA Deltas), implementing `JsonPatchEngine.kt` for RFC 6902 compliant JSON AST delta patching over compressed cellular channels.
 - **Build 24 (Version 3.2 / v19)**: Packaged release v19 (versionCode 19, versionName "3.2"), updated `releases.json` and `version.json`, and pruned older release APKs in `apk/releases/` to strictly maintain the last 5 release builds (`v15` to `v19`).
+- **Build 25 (Version 4.0)**: Executed Epic 6 (The Living Software Ecosystem). Implemented offline Black Box mutation tracking, BPE payload micro-compression, automated SDUI Medic crash-fallback loop, and TFLite local intent routing. Incremented versionCode to 21 and versionName to "4.0".

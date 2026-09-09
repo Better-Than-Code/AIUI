@@ -58,12 +58,37 @@ object JsonPatchEngine {
                 }
                 if (!success) {
                     Log.e(TAG, "Patch operation '${patch.op}' failed at path '${patch.path}'")
+                    com.example.CellularRpcApp.instance.let { app ->
+                        com.cellular.rpc.engine.CellularMedic.onFaultDetected(
+                            context = app,
+                            componentName = "JsonPatchEngine.applyPatch",
+                            faultDescription = "Patch validation failed at path: ${patch.path}",
+                            rawPayload = patchOperations.toString()
+                        )
+                    }
                     return false
                 }
+            }
+            
+            // If completely successful, notify the Medic to close the loop
+            com.example.CellularRpcApp.instance.let { app ->
+                com.cellular.rpc.engine.CellularMedic.onPatchApplied(
+                    context = app,
+                    componentName = "JsonPatchEngine",
+                    patchJson = patchOperations.toString()
+                )
             }
             return true
         } catch (e: Exception) {
             Log.e(TAG, "Error applying JSON patch: ${e.message}", e)
+            com.example.CellularRpcApp.instance.let { app ->
+                com.cellular.rpc.engine.CellularMedic.onFaultDetected(
+                    context = app,
+                    componentName = "JsonPatchEngine.applyPatch",
+                    faultDescription = "Exception applying JSON patch: ${e.message}",
+                    rawPayload = patchOperations.toString()
+                )
+            }
             return false
         }
     }

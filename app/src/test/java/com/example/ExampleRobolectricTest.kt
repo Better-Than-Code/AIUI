@@ -655,6 +655,69 @@ class ExampleRobolectricTest {
     assertTrue(parsedWidget is com.cellular.rpc.engine.WidgetData.Weather)
     assertEquals(72, (parsedWidget as com.cellular.rpc.engine.WidgetData.Weather).temp)
   }
+
+  /**
+   * Epic 3 (Sprint 3.1): Cellular Voice MMS Pipeline Test
+   * Verifies audio compression ratio computation, file packaging into MMS-friendly containers,
+   * and carrier MMS intent multi-part wrapping.
+   */
+  @Test
+  fun `epic 3 cellular voice note MMS wrapper and compression test`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+
+    // 1. Create mock audio file (simulating recorded voice note)
+    val testAudioDir = java.io.File(context.cacheDir, "test_voice").apply { mkdirs() }
+    val mockAudioFile = java.io.File(testAudioDir, "test_voice_note.m4a").apply {
+      // Write 40 KB of mock compressed audio payload
+      writeBytes(ByteArray(40_000) { (it % 128).toByte() })
+    }
+
+    assertTrue("Mock audio file must exist", mockAudioFile.exists())
+    assertEquals(40_000L, mockAudioFile.length())
+
+    // 2. Test CellularAudioCompressor compression pipeline
+    kotlinx.coroutines.runBlocking {
+      val compressionResult = com.cellular.rpc.transport.mms.CellularAudioCompressor.compressForCarrierMms(
+        context = context,
+        inputFile = mockAudioFile,
+        targetDurationMs = 15_000L
+      )
+
+      assertNotNull("Compression result must not be null", compressionResult)
+      assertTrue("Compressed file must exist", compressionResult.compressedFile.exists())
+      assertTrue("Compressed size must be > 0", compressionResult.compressedSizeBytes > 0)
+      assertTrue("Original size must match 40,000 bytes", compressionResult.originalSizeBytes == 40_000L)
+      assertEquals(15_000L, compressionResult.durationMs)
+    }
+
+    // 3. Test MessageAttachment creation for VOICE_NOTE
+    val voiceAttachment = com.cellular.rpc.engine.MessageAttachment(
+      id = "voice_test_001",
+      type = com.cellular.rpc.engine.AttachmentType.VOICE_NOTE,
+      uri = android.net.Uri.fromFile(mockAudioFile).toString(),
+      fileName = mockAudioFile.name,
+      fileSizeBytes = mockAudioFile.length(),
+      mimeType = "audio/mp4",
+      durationMs = 15_000L,
+      voiceAmplitudes = listOf(0.2f, 0.5f, 0.8f, 0.4f, 0.6f)
+    )
+
+    assertEquals(com.cellular.rpc.engine.AttachmentType.VOICE_NOTE, voiceAttachment.type)
+    assertEquals(5, voiceAttachment.voiceAmplitudes.size)
+
+    // 4. Test Carrier MMS intent creation with FileProvider wrapping
+    try {
+      com.cellular.rpc.transport.receiver.PallyMmsHelper.dispatchCarrierMms(
+        context = context,
+        destinationNumber = "+15551234567",
+        text = "Voice Note Attached",
+        attachmentUri = android.net.Uri.fromFile(mockAudioFile),
+        mimeType = voiceAttachment.mimeType
+      )
+    } catch (e: Exception) {
+      fail("dispatchCarrierMms must not throw exception: ${e.message}")
+    }
+  }
 }
 
 

@@ -1,5 +1,12 @@
 [
   {
+    "versionCode": 21,
+    "versionName": "4.0",
+    "fileName": "pallyai-v21.apk",
+    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v21.apk",
+    "releaseNotes": "Release v21 - Version 4.0: The Living Software Ecosystem & Admin Governance. MutationLog black box auditing, BPE outbox micro-compression, CellularMedic crash interceptor & rollback engine, CellularIntentRouter, and interactive Admin Approval UI for SDUI mutations."
+  },
+  {
     "versionCode": 19,
     "versionName": "3.2",
     "fileName": "pallyai-v19.apk",

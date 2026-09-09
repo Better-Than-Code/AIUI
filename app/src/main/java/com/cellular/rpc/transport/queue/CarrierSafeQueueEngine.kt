@@ -1,6 +1,7 @@
 package com.cellular.rpc.transport.queue
 
 import android.Manifest
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -374,7 +375,7 @@ class CarrierSafeQueueEngine(
 
         outboxDao.markAttempted(entity.id, OutboxEntity.STATUS_IN_FLIGHT, System.currentTimeMillis())
 
-        dispatchPhysicalFrame(finalFrame)
+        dispatchPhysicalFrame(finalFrame, entity.id)
 
         // Enforce Carrier Spam & Velocity Mitigation (2200ms + Random(200..700ms))
         applyCarrierGap()
@@ -406,7 +407,7 @@ class CarrierSafeQueueEngine(
         }
     }
 
-    private suspend fun dispatchPhysicalFrame(frame: Frame) {
+    private suspend fun dispatchPhysicalFrame(frame: Frame, outboxId: Long = 0L) {
         val binary = frame.toBinary()
         val asciiWire = frame.toAsciiWire()
 
@@ -442,7 +443,7 @@ class CarrierSafeQueueEngine(
                     return
                 }
             }
-            transmitOverCellularRadio(frame)
+            transmitOverCellularRadio(frame, outboxId)
         }
     }
 
@@ -491,7 +492,7 @@ class CarrierSafeQueueEngine(
         return trimmed
     }
 
-    private fun transmitOverCellularRadio(frame: Frame) {
+    private fun transmitOverCellularRadio(frame: Frame, outboxId: Long = 0L) {
         val cleanNumber = destinationAddress.replace(Regex("[^0-9+]"), "")
         if (cleanNumber.isBlank()) {
             Log.w(TAG, "Cannot transmit message: Destination phone number is empty.")
@@ -525,18 +526,56 @@ class CarrierSafeQueueEngine(
 
             Log.i(TAG, "Dispatching cellular SMS via SmsManager to $cleanNumber (${textToSend.length} chars): $textToSend")
 
-            val parts = smsManager.divideMessage(textToSend)
-            if (parts.size > 1) {
-                smsManager.sendMultipartTextMessage(cleanNumber, null, parts, null, null)
+            // Construct sent & delivery PendingIntents for hardware-level telemetry
+            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             } else {
-                smsManager.sendTextMessage(cleanNumber, null, textToSend, null, null)
+                PendingIntent.FLAG_UPDATE_CURRENT
             }
 
-            // Immediately acknowledge outbound frame in sliding window and clear from Room outbox
+            val sentIntent = Intent("com.cellular.rpc.SMS_SENT").apply {
+                putExtra("msg_id", "msg_${frame.sessionId}_${frame.seqNo}")
+                putExtra("session_id", frame.sessionId)
+                putExtra("seq_no", frame.seqNo)
+                putExtra("outbox_id", outboxId)
+                setPackage(context.packageName)
+            }
+            val sentPI = PendingIntent.getBroadcast(
+                context,
+                (frame.sessionId * 31 + frame.seqNo),
+                sentIntent,
+                flags
+            )
+
+            val deliveryIntent = Intent("com.cellular.rpc.SMS_DELIVERED").apply {
+                putExtra("msg_id", "msg_${frame.sessionId}_${frame.seqNo}")
+                putExtra("session_id", frame.sessionId)
+                putExtra("seq_no", frame.seqNo)
+                setPackage(context.packageName)
+            }
+            val deliveryPI = PendingIntent.getBroadcast(
+                context,
+                (frame.sessionId * 37 + frame.seqNo),
+                deliveryIntent,
+                flags
+            )
+
+            val parts = smsManager.divideMessage(textToSend)
+            if (parts.size > 1) {
+                val sentList = ArrayList<PendingIntent>(parts.size).apply {
+                    for (i in parts.indices) add(sentPI)
+                }
+                val deliveryList = ArrayList<PendingIntent>(parts.size).apply {
+                    for (i in parts.indices) add(deliveryPI)
+                }
+                smsManager.sendMultipartTextMessage(cleanNumber, null, parts, sentList, deliveryList)
+            } else {
+                smsManager.sendTextMessage(cleanNumber, null, textToSend, sentPI, deliveryPI)
+            }
+
+            // Acknowledge in sliding window; outbox record transitions to ACKNOWLEDGED upon SMS_SENT callback
             scope.launch {
                 windowController.markFrameAcknowledged(frame.seqNo)
-                outboxDao.markAcknowledged(frame.sessionId, frame.seqNo)
-                outboxDao.clearAcknowledged()
                 _inFlightCount.value = outboxDao.getPendingCount()
             }
         } catch (e: Exception) {

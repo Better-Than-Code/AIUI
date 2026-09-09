@@ -1,6 +1,7 @@
 package com.cellular.rpc.ui.diagnostics
 
 import android.content.ClipData
+import kotlinx.coroutines.launch
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
@@ -177,6 +178,36 @@ fun MutationLogCard(log: MutationLogEntity) {
                     fontSize = 10.sp,
                     modifier = Modifier.padding(8.dp)
                 )
+            }
+
+            if (log.stabilityStatus == "PENDING_ADMIN_APPROVAL") {
+                Spacer(modifier = Modifier.height(8.dp))
+                val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
+                val localContext = LocalContext.current
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                com.cellular.rpc.domain.dynamic.DynamicFeatureManager.rejectAndDiscard(localContext, log)
+                            }
+                        }
+                    ) {
+                        Text("Reject")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            coroutineScope.launch {
+                                com.cellular.rpc.domain.dynamic.DynamicFeatureManager.approveAndInstall(localContext, log)
+                            }
+                        }
+                    ) {
+                        Text("Approve")
+                    }
+                }
             }
         }
     }

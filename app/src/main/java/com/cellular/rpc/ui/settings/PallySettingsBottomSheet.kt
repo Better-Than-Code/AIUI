@@ -64,6 +64,7 @@ fun PallySettingsBottomSheet(
     availableServices: List<CellularServiceProfile>,
     isServiceActive: Boolean,
     isLoopback: Boolean,
+    isAdminApproval: Boolean,
     isDiagnostics: Boolean,
     onSelectService: (CellularServiceProfile) -> Unit,
     onUpdatePhoneNumber: (String, String?) -> Unit,
@@ -71,6 +72,7 @@ fun PallySettingsBottomSheet(
     onDeleteCustomService: (String) -> Unit,
     onToggleForegroundService: () -> Unit,
     onToggleLoopback: () -> Unit,
+    onToggleAdminApproval: () -> Unit,
     onToggleDiagnostics: () -> Unit,
     onOpenWidgetConfig: () -> Unit,
     onOpenInspector: () -> Unit,
@@ -476,6 +478,7 @@ fun PallySettingsBottomSheet(
                         )
                     }
 
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -506,6 +509,35 @@ fun PallySettingsBottomSheet(
                                 .padding(top = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Admin Approval Mode",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.error
+                                        )
+                                        Text(
+                                            text = if (isAdminApproval) "SDUI mutations require manual confirmation" else "SDUI mutations apply instantly",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onErrorContainer
+                                        )
+                                    }
+                                    Switch(
+                                        checked = isAdminApproval,
+                                        onCheckedChange = { onToggleAdminApproval() }
+                                    )
+                                }
+                            }
                             OutlinedButton(
                                 onClick = onOpenInspector,
                                 modifier = Modifier.fillMaxWidth(),

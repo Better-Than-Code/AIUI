@@ -47,10 +47,8 @@ class PallyWapPushReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 if (mimeType == "application/vnd.wap.mms-message") {
-                    Log.i(TAG, "MMS WAP Push notification received (${data.size} bytes). Triggering delayed MMS inbox sync.")
-                    // Do NOT decode binary notification PDU as text!
-                    // Wait 2000ms for system telephony service to download MMS parts from MMSC
-                    kotlinx.coroutines.delay(2000)
+                    Log.i(TAG, "MMS WAP Push notification received (${data.size} bytes). Triggering adaptive MMS inbox sync.")
+                    // Trigger multi-stage adaptive polling loop in PallyMmsHelper
                     PallyMmsHelper.checkMmsInboxNow(context.applicationContext)
                     return@launch
                 }

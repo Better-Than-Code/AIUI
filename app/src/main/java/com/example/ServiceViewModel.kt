@@ -35,6 +35,11 @@ class ServiceViewModel(application: Application) : AndroidViewModel(application)
     )
     val isLoopbackSimulation: StateFlow<Boolean> = _isLoopbackSimulation.asStateFlow()
 
+    private val _isAdminApprovalMode = MutableStateFlow(
+        WidgetPreferences.isAdminApprovalModeEnabled(application)
+    )
+    val isAdminApprovalMode: StateFlow<Boolean> = _isAdminApprovalMode.asStateFlow()
+
     init {
         CellularServiceManager.initialize(application)
         refreshServices()
@@ -92,6 +97,13 @@ class ServiceViewModel(application: Application) : AndroidViewModel(application)
         WidgetPreferences.setLoopbackSimulationEnabled(app, enabled)
         _isLoopbackSimulation.value = enabled
         queueEngine.loopbackEnabled = enabled
+    }
+
+    fun toggleAdminApprovalMode() {
+        val app = getApplication<Application>()
+        val newState = !_isAdminApprovalMode.value
+        WidgetPreferences.setAdminApprovalModeEnabled(app, newState)
+        _isAdminApprovalMode.value = newState
     }
 
     fun toggleForegroundService() {

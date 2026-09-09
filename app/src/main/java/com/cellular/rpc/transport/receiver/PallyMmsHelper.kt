@@ -11,6 +11,7 @@ import android.os.Looper
 import android.provider.Telephony
 import android.util.Log
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.cellular.rpc.engine.AttachmentType
 import com.cellular.rpc.engine.MessageAttachment
 import com.cellular.rpc.transport.handler.CellularMessageDispatcher
@@ -96,12 +97,30 @@ class PallyMmsHelper(
          */
         fun checkMmsInboxNow(context: Context) {
             helperScope.launch {
-                queryMmsInbox(context.applicationContext)
+                pollMmsInboxWithRetry(context.applicationContext, maxAttempts = 3)
+            }
+        }
+
+        /**
+         * Polls the MMS inbox across multiple backoff intervals (1.5s, 3.5s, 6s)
+         * to guarantee complete part retrieval even under sluggish carrier MMSC transaction latencies.
+         */
+        private suspend fun pollMmsInboxWithRetry(context: Context, maxAttempts: Int = 3) {
+            val delays = listOf(1500L, 3500L, 6000L)
+            for (attempt in 0 until maxAttempts) {
+                val delayTime = delays.getOrElse(attempt) { 4000L }
+                delay(delayTime)
+                val foundNew = queryMmsInbox(context)
+                Log.d(TAG, "MMS poll attempt ${attempt + 1}/$maxAttempts: foundNew=$foundNew")
+                if (foundNew) {
+                    break
+                }
             }
         }
 
         /**
          * Dispatches an outbound MMS with attachment using the system telephony provider / carrier SMS-MMS handler.
+         * Ensures file:// URIs are converted to shareable content:// URIs via FileProvider.
          */
         fun dispatchCarrierMms(
             context: Context,
@@ -112,29 +131,45 @@ class PallyMmsHelper(
         ) {
             try {
                 val cleanNumber = destinationNumber.replace(Regex("[^0-9+]"), "")
+                
+                // Convert file:// or relative paths to FileProvider content:// URI if necessary
+                val shareableUri = if (attachmentUri != null && (attachmentUri.scheme == "file" || attachmentUri.scheme == null)) {
+                    val filePath = attachmentUri.path ?: ""
+                    val file = File(filePath)
+                    if (file.exists()) {
+                        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                    } else {
+                        attachmentUri
+                    }
+                } else {
+                    attachmentUri
+                }
+
                 val intent = Intent(Intent.ACTION_SEND).apply {
-                    type = mimeType ?: "image/*"
+                    type = mimeType ?: "*/*"
                     putExtra("address", cleanNumber)
                     putExtra(Intent.EXTRA_PHONE_NUMBER, cleanNumber)
                     putExtra("sms_body", text)
                     putExtra(Intent.EXTRA_TEXT, text)
-                    if (attachmentUri != null) {
-                        putExtra(Intent.EXTRA_STREAM, attachmentUri)
+                    if (shareableUri != null) {
+                        putExtra(Intent.EXTRA_STREAM, shareableUri)
                     }
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                Log.i(TAG, "Dispatched carrier MMS intent for $cleanNumber with attachment $attachmentUri")
+                Log.i(TAG, "Dispatched carrier MMS intent for $cleanNumber with shareableUri $shareableUri (MIME: $mimeType)")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to launch carrier MMS intent: ${e.message}", e)
             }
         }
 
-        private suspend fun queryMmsInbox(context: Context) {
+        private suspend fun queryMmsInbox(context: Context): Boolean {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
-                return
+                return false
             }
+
+            var ingestedAny = false
 
             try {
                 val cursor = context.contentResolver.query(
@@ -171,6 +206,7 @@ class PallyMmsHelper(
                                 attachment = attachment
                             )
                             CellularMessageDispatcher.dispatchInbound(context, inboundMessage)
+                            ingestedAny = true
                         }
                     }
 
@@ -181,6 +217,7 @@ class PallyMmsHelper(
             } catch (e: Exception) {
                 Log.w(TAG, "Error querying MMS inbox: ${e.message}")
             }
+            return ingestedAny
         }
 
         private fun getMmsSender(context: Context, mmsId: Long): String {

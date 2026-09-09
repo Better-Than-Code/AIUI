@@ -72,6 +72,16 @@ object WidgetPreferences {
         com.cellular.rpc.domain.service.CellularServiceManager.setManualPhoneNumber(context, number.trim())
     }
 
+    // Global Admin Approval Mode
+    private const val KEY_ADMIN_APPROVAL_MODE = "global_admin_approval_mode"
+
+    fun isAdminApprovalModeEnabled(context: Context): Boolean =
+        getPrefs(context).getBoolean(KEY_ADMIN_APPROVAL_MODE, false)
+
+    fun setAdminApprovalModeEnabled(context: Context, enabled: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_ADMIN_APPROVAL_MODE, enabled).apply()
+    }
+
     // Global Loopback / Emulated Response Mode
     fun isLoopbackSimulationEnabled(context: Context): Boolean =
         getPrefs(context).getBoolean(KEY_LOOPBACK_SIMULATION, true)

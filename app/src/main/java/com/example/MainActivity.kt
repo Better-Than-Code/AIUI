@@ -109,6 +109,12 @@ fun CellularRpcScreen(
     var showThreadDrawer by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+    var pendingApprovalLog by remember { mutableStateOf<com.cellular.rpc.data.local.MutationLogEntity?>(null) }
+    LaunchedEffect(Unit) {
+        com.cellular.rpc.engine.AdminApprovalState.pendingApprovals.collect { log ->
+            pendingApprovalLog = log
+        }
+    }
     val chatMessages by chatViewModel.chatMessages.collectAsStateWithLifecycle()
     val conversationThreads by chatViewModel.conversationThreads.collectAsStateWithLifecycle()
     val openTabThreadIds by chatViewModel.openTabThreadIds.collectAsStateWithLifecycle()
@@ -131,6 +137,7 @@ fun CellularRpcScreen(
     val activeService by serviceViewModel.activeServiceProfile.collectAsStateWithLifecycle()
     val availableServices by serviceViewModel.availableServices.collectAsStateWithLifecycle()
     val isLoopbackSimulation by serviceViewModel.isLoopbackSimulation.collectAsStateWithLifecycle()
+    val isAdminApprovalMode by serviceViewModel.isAdminApprovalMode.collectAsStateWithLifecycle()
     val isMcpSynced by diagnosticsViewModel.isMcpSynced.collectAsStateWithLifecycle()
     val mcpCatalogHash by diagnosticsViewModel.mcpCatalogHash.collectAsStateWithLifecycle()
     val handshakeStatus by diagnosticsViewModel.handshakeStatus.collectAsStateWithLifecycle()
@@ -509,6 +516,50 @@ fun CellularRpcScreen(
         )
     }
 
+    // Admin Approval Mode Dialog
+    pendingApprovalLog?.let { log ->
+        AlertDialog(
+            onDismissRequest = { /* Require explicit action */ },
+            title = { Text("Admin Approval Required") },
+            text = { Text("Incoming SDUI mutation intercepted:\n${log.triggerEvent}\n\nDo you want to approve and deploy this update?") },
+            confirmButton = {
+                Button(onClick = {
+                    val currentLog = pendingApprovalLog
+                    pendingApprovalLog = null
+                    if (currentLog != null) {
+                        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                            com.cellular.rpc.domain.dynamic.DynamicFeatureManager.approveAndInstall(context, currentLog)
+                        }
+                    }
+                }) {
+                    Text("Approve")
+                }
+            },
+            dismissButton = {
+                Row {
+                    OutlinedButton(onClick = {
+                        val currentLog = pendingApprovalLog
+                        pendingApprovalLog = null
+                        if (currentLog != null) {
+                            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                                com.cellular.rpc.domain.dynamic.DynamicFeatureManager.rejectAndDiscard(context, currentLog)
+                            }
+                        }
+                    }) {
+                        Text("Reject")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    TextButton(onClick = {
+                        // Just dismiss the dialog, keep in queue
+                        pendingApprovalLog = null
+                    }) {
+                        Text("Ignore")
+                    }
+                }
+            }
+        )
+    }
+
     // Settings BottomSheet Dialog
     if (showSettingsSheet) {
         PallySettingsBottomSheet(
@@ -518,6 +569,7 @@ fun CellularRpcScreen(
             availableServices = availableServices,
             isServiceActive = isServiceActive,
             isLoopback = isLoopbackSimulation,
+            isAdminApproval = isAdminApprovalMode,
             isDiagnostics = isDiagnosticsEnabled,
             onSelectService = { serviceViewModel.selectService(it) },
             onUpdatePhoneNumber = { phone, name -> serviceViewModel.updatePallyPhoneNumber(phone, name) },
@@ -525,6 +577,7 @@ fun CellularRpcScreen(
             onDeleteCustomService = { serviceViewModel.deleteCustomService(it) },
             onToggleForegroundService = { serviceViewModel.toggleForegroundService() },
             onToggleLoopback = { serviceViewModel.toggleLoopbackSimulation() },
+            onToggleAdminApproval = { serviceViewModel.toggleAdminApprovalMode() },
             onToggleDiagnostics = { isDiagnosticsEnabled = !isDiagnosticsEnabled },
             onOpenWidgetConfig = {
                 context.startActivity(Intent(context, com.cellular.rpc.widget.WidgetConfigurationActivity::class.java))
@@ -584,5 +637,13 @@ fun CellularRpcScreen(
             }
         )
     }
+}
+
+@Composable
+fun Greeting(name: String, modifier: Modifier = Modifier) {
+    Text(
+        text = "Hello $name!",
+        modifier = modifier
+    )
 }
 

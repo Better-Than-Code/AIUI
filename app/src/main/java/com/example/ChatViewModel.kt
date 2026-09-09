@@ -347,13 +347,45 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         val targetNum = queueEngine.destinationAddress.replace(Regex("[^0-9+]"), "").ifBlank {
                             activeService.phoneNumber.replace(Regex("[^0-9+]"), "")
                         }
-                        val attUri = android.net.Uri.parse(mainAttachment.uri)
+
+                        // For voice notes, run compression pipeline if file exceeds bandwidth limit
+                        val finalAttachment = if (mainAttachment.type == com.cellular.rpc.engine.AttachmentType.VOICE_NOTE) {
+                            try {
+                                val originalUri = android.net.Uri.parse(mainAttachment.uri)
+                                val originalFile = if (originalUri.scheme == "file" || originalUri.scheme == null) {
+                                    java.io.File(originalUri.path ?: "")
+                                } else null
+
+                                if (originalFile != null && originalFile.exists()) {
+                                    val compression = com.cellular.rpc.transport.mms.CellularAudioCompressor.compressForCarrierMms(
+                                        context = getApplication(),
+                                        inputFile = originalFile,
+                                        targetDurationMs = mainAttachment.durationMs
+                                    )
+                                    mainAttachment.copy(
+                                        uri = compression.compressedFile.toURI().toString(),
+                                        fileName = compression.compressedFile.name,
+                                        fileSizeBytes = compression.compressedSizeBytes,
+                                        mimeType = compression.mimeType
+                                    )
+                                } else {
+                                    mainAttachment
+                                }
+                            } catch (e: Exception) {
+                                android.util.Log.w("ChatViewModel", "Voice note compression bypass: ${e.message}")
+                                mainAttachment
+                            }
+                        } else {
+                            mainAttachment
+                        }
+
+                        val attUri = android.net.Uri.parse(finalAttachment.uri)
                         com.cellular.rpc.transport.receiver.PallyMmsHelper.dispatchCarrierMms(
                             context = getApplication(),
                             destinationNumber = targetNum,
                             text = trimmed,
                             attachmentUri = attUri,
-                            mimeType = mainAttachment.mimeType ?: "image/*"
+                            mimeType = finalAttachment.mimeType ?: "image/*"
                         )
                     } catch (e: Exception) {
                         android.util.Log.w("ChatViewModel", "Carrier MMS dispatch error: ${e.message}")

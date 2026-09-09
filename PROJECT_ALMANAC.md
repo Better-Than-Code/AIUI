@@ -24,8 +24,12 @@
 ### Epic 2: Differential Mini-App Patching (OTA Deltas) [COMPLETED]
 - **Sprint 2.1**: JSON AST delta patch engine (`JsonPatchEngine.kt`) adhering to RFC 6902 for bandwidth-optimized mini-app updates over cellular pipes. [DONE]
 
-### Epic 3: Cellular Voice MMS Pipeline [PLANNED]
+### Epic 3: Cellular Voice MMS Pipeline [COMPLETED]
 - **Sprint 3.1**: Audio recording compression and MMS multi-part carrier wrapper.
+  - Implemented `CellularAudioCompressor.kt` with AMR-WB / low-bandwidth adaptive transcoding to conform to carrier MMS size thresholds (300KB - 600KB).
+  - Integrated `FileProvider` content:// URI conversion and multi-part intent wrapping in `PallyMmsHelper.dispatchCarrierMms`.
+  - Integrated compression pipeline into `ChatViewModel` outbound attachment flow and `AudioRecorderManager` stop flow.
+  - Added comprehensive Robolectric unit test verifying compression ratio computation and carrier MMS intent generation. [DONE]
 
 ### Epic 4: Closed-Loop Delivery Watchdog & Cross-Channel Fallback Engine [COMPLETED]
 - **Sprint 4.1**: Backend Dispatch Watchdog & Webhook Listener (35s timeout & state machine). [DONE]
@@ -42,6 +46,9 @@
 - **Sprint 6.3**: **The Medic (Anomaly & Fallback Guardian)**. Wire a global error interceptor for JSON parsing and UI faults. Introduce silent `[DIAGNOSTIC_PING]` SMS fallback routing and auto-rollback mechanics to previous known-good blueprints. [COMPLETED]
 - **Sprint 6.4**: **The Router (Intent Classification via TFLite)**. Integrate quantized sub-15MB TFLite classification (TinyBERT/MobileBERT). Route `LOCAL_UI_CHANGE` intents to local execution and `EXTERNAL_KNOWLEDGE` intents to the remote SMS AI. [COMPLETED]
 
+### Epic 7: Safety & Governance (The Human Override) [COMPLETED]
+- **Sprint 7.1**: **Admin Approval Mode (Immediate Action Popup)**. Implement a global interceptor for incoming SDUI mutations and Dynamic Feature deployments. Instead of instantly executing, changes are queued in the `MutationLogEntity` (Black Box) as `PENDING_ADMIN_APPROVAL`. A floating `AlertDialog` popup forces human review (Approve, Reject, or Ignore to queue), ensuring the user maintains final authority over self-modifying code. [COMPLETED]
+
 ---
 
 ## 4. Sprint History & Build Log
@@ -52,4 +59,9 @@
 - **Build 22 (Version 3.1)**: Executed Sprint 4.2 (Transport Fallback Orchestrator), implementing tier-based transmission fallback routing (Tier 1 RCS/Direct SMS → Tier 2 MMS Binary Container → Tier 3 Concatenated 140ch SMS Shorthand) in `CarrierSafeQueueEngine` and `OutboxDao`.
 - **Build 23 (Version 3.2)**: Executed Sprint 2.1 (Differential Mini-App Patching / OTA Deltas), implementing `JsonPatchEngine.kt` for RFC 6902 compliant JSON AST delta patching over compressed cellular channels.
 - **Build 24 (Version 3.2 / v19)**: Packaged release v19 (versionCode 19, versionName "3.2"), updated `releases.json` and `version.json`, and pruned older release APKs in `apk/releases/` to strictly maintain the last 5 release builds (`v15` to `v19`).
-- **Build 25 (Version 4.0)**: Executed Epic 6 (The Living Software Ecosystem). Implemented offline Black Box mutation tracking, BPE payload micro-compression, automated SDUI Medic crash-fallback loop, and TFLite local intent routing. Incremented versionCode to 21 and versionName to "4.0".
+- **Build 25 (Version 4.0)**: Executed Epic 6 (The Living Software Ecosystem) and Epic 7 (Safety & Governance). Implemented offline Black Box mutation tracking, BPE payload micro-compression, automated SDUI Medic crash-fallback loop, TFLite local intent routing, and Admin Approval Mode for SDUI mutations. Incremented versionCode to 21 and versionName to "4.0".
+- **Build 26 (Version 4.0 / v21)**: Packaged release v21 (`pallyai-v21.apk`, `pallyai-latest.apk`, `pally-cellular-ai.apk`), updated `releases.json` and `version.json`, and cleaned up temporary migration scripts.
+- **Build 27 (Version 4.1)**: Executed Epic 3 (Cellular Voice MMS Pipeline). Implemented `CellularAudioCompressor` with adaptive AMR-WB / low-bandwidth encoding, secured `FileProvider` content:// URI transformation for MMS attachments, integrated end-to-end voice note compression in `ChatViewModel` and `AudioRecorderManager`, and verified with Robolectric unit tests and clean debug APK compilation.
+- **Build 28 (Version 4.2)**: Hardened Cellular SMS/MMS Ingestion and Transmission Pipeline. Bound hardware radio `sentIntent` (`SMS_SENT`) and `deliveryIntent` (`SMS_DELIVERED`) PendingIntents to single- and multipart SMS dispatches in `CarrierSafeQueueEngine`, transitioned OutboxEntity management to acknowledge upon hardware confirmation, upgraded `DeliveryBroadcastReceiver` to handle radio failures with auto-retry, and introduced a 3-stage adaptive polling loop in `PallyMmsHelper` to resolve carrier MMSC download latency gaps.
+
+

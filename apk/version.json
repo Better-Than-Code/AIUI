@@ -1,6 +1,6 @@
 {
-  "versionCode": 19,
-  "versionName": "3.2",
-  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v19.apk",
-  "releaseNotes": "Version 3.2: Differential Mini-App Patching (OTA Deltas) with RFC 6902 JsonPatchEngine and Transport Fallback Orchestrator."
+  "versionCode": 21,
+  "versionName": "4.0",
+  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v21.apk",
+  "releaseNotes": "Version 4.0: The Living Software Ecosystem & Admin Governance. Includes MutationLog black box offline auditing, BPE micro-compression in carrier outbox, CellularMedic crash interceptor & rollback engine, CellularIntentRouter, and interactive Admin Approval UI for SDUI mutations."
 }

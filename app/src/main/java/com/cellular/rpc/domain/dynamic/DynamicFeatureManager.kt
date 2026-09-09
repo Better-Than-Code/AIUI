@@ -54,6 +54,23 @@ object DynamicFeatureManager {
         )
 
         val db = AppDatabase.getInstance(context)
+        if (com.cellular.rpc.widget.WidgetPreferences.isAdminApprovalModeEnabled(context)) {
+            Log.i(TAG, "Admin Approval Mode enabled. Queuing dynamic feature: ${dynamicFeature.title}")
+            val mutationId = java.util.UUID.randomUUID().toString()
+            val logEntry = com.cellular.rpc.data.local.MutationLogEntity(
+                id = mutationId,
+                timestamp = System.currentTimeMillis(),
+                triggerEvent = "INBOUND_UI_MUTATION: ${dynamicFeature.featureId}",
+                patchApplied = rawText,
+                stabilityStatus = "PENDING_ADMIN_APPROVAL"
+            )
+            db.mutationLogDao().insert(logEntry)
+            
+            // Emit to UI for the popup
+            com.cellular.rpc.engine.AdminApprovalState.emitPendingApproval(logEntry)
+            return true
+        }
+
         db.dynamicFeatureDao().insertOrUpdate(entity)
 
         // Save confirmation in chat log
@@ -70,6 +87,48 @@ object DynamicFeatureManager {
 
         _featureInstalledEvents.tryEmit(entity)
         return true
+    }
+
+    suspend fun approveAndInstall(context: Context, logEntry: com.cellular.rpc.data.local.MutationLogEntity) {
+        val rawText = logEntry.patchApplied
+        val dynamicFeature = DynamicFeatureWireParser.parsePayload(rawText) ?: return
+        val entity = DynamicFeatureEntity(
+            featureId = dynamicFeature.featureId,
+            title = dynamicFeature.title,
+            version = dynamicFeature.version,
+            description = dynamicFeature.description,
+            iconName = dynamicFeature.iconName,
+            initialStateJson = dynamicFeature.initialStateJson,
+            currentStateJson = dynamicFeature.currentStateJson,
+            uiAstJson = dynamicFeature.uiAstJson,
+            jsLogic = dynamicFeature.jsLogic,
+            lastUpdatedMs = System.currentTimeMillis()
+        )
+        val db = AppDatabase.getInstance(context)
+        db.dynamicFeatureDao().insertOrUpdate(entity)
+
+        // Save confirmation in chat log
+        val chatEntity = ChatMessageEntity(
+            id = UUID.randomUUID().toString(),
+            sender = MessageSender.AI_GATEWAY.name,
+            text = "✨ [Cellular App Engine] Deployed '${dynamicFeature.title}' (v${dynamicFeature.version}) following Admin Approval.",
+            widgetDataJson = null,
+            byteSize = rawText.toByteArray(Charsets.UTF_8).size,
+            pduCount = ((rawText.toByteArray(Charsets.UTF_8).size + 139) / 140).coerceAtLeast(1),
+            timestampMs = System.currentTimeMillis()
+        )
+        db.chatMessageDao().insertMessage(chatEntity)
+        _featureInstalledEvents.tryEmit(entity)
+
+        // Mark as approved in DB
+        val updatedLog = logEntry.copy(stabilityStatus = "APPROVED_BY_ADMIN")
+        db.mutationLogDao().insert(updatedLog)
+    }
+
+    suspend fun rejectAndDiscard(context: Context, logEntry: com.cellular.rpc.data.local.MutationLogEntity) {
+        val db = AppDatabase.getInstance(context)
+        val updatedLog = logEntry.copy(stabilityStatus = "REJECTED_BY_ADMIN")
+        db.mutationLogDao().insert(updatedLog)
     }
 
     /**

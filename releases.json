@@ -1,5 +1,12 @@
 [
   {
+    "versionCode": 23,
+    "versionName": "4.4",
+    "fileName": "pallyai-v23.apk",
+    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v23.apk",
+    "releaseNotes": "Release v23 - Version 4.4: Self-Contained Edge Execution & Zero-Network Canvas Hardening. 100% on-device continuous 120Hz vector canvas drawing with CanvasStrokeStore recomposition memory and offline snapshot saving, carrier-safe unpadded Base64/GZIP cellular decompression in DualResponseParser, automated WCAG 2.2 AA contrast guardian in ChatThemeConfig, and Android 12/13/14 exact alarm permission safety fallbacks."
+  },
+  {
     "versionCode": 22,
     "versionName": "4.2",
     "fileName": "pallyai-v22.apk",

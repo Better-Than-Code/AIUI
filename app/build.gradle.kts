@@ -21,10 +21,16 @@ android {
         versionName = "4.2"
 
         ndk {
-            abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a"))
+            abiFilters.addAll(listOf("arm64-v8a"))
         }
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+  }
+
+  packaging {
+    jniLibs {
+      useLegacyPackaging = true
+    }
   }
 
   signingConfigs {

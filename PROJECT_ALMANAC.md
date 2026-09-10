@@ -64,6 +64,8 @@
 - **Build 27 (Version 4.1)**: Executed Epic 3 (Cellular Voice MMS Pipeline). Implemented `CellularAudioCompressor` with adaptive AMR-WB / low-bandwidth encoding, secured `FileProvider` content:// URI transformation for MMS attachments, integrated end-to-end voice note compression in `ChatViewModel` and `AudioRecorderManager`, and verified with Robolectric unit tests and clean debug APK compilation.
 - **Build 28 (Version 4.2)**: Hardened Cellular SMS/MMS Ingestion and Transmission Pipeline. Bound hardware radio `sentIntent` (`SMS_SENT`) and `deliveryIntent` (`SMS_DELIVERED`) PendingIntents to single- and multipart SMS dispatches in `CarrierSafeQueueEngine`, transitioned OutboxEntity management to acknowledge upon hardware confirmation, upgraded `DeliveryBroadcastReceiver` to handle radio failures with auto-retry, and introduced a 3-stage adaptive polling loop in `PallyMmsHelper` to resolve carrier MMSC download latency gaps.
 - **Build 29 (Version 4.2 / v22)**: Packaged release v22 (`pallyai-v22.apk`, `pallyai-latest.apk`, `pally-cellular-ai.apk`), incremented versionCode to 22 and versionName to "4.2", updated `apk/version.json` and `apk/releases.json`, and pruned older release builds to maintain the rolling 5 latest versions.
+- **Build 30 (Version 4.2 / v22 Binary Optimization)**: Reduced release binary footprint to 28.5 MB (29,882,190 bytes) by standardizing on 64-bit ARM (`arm64-v8a`) with legacy compressed JNI packaging, successfully bringing the APK well below the cloud control-plane proxy limits (32 MB) and GitHub single-file commit thresholds. Updated distribution targets in `apk/releases/pallyai-v22.apk`.
 
 
 
+ 

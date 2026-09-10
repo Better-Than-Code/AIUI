@@ -4,7 +4,7 @@
     "versionName": "4.2",
     "fileName": "pallyai-v22.apk",
     "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v22.apk",
-    "releaseNotes": "Release v22 - Version 4.2: Cellular Voice MMS Pipeline & Ingestion/Transmission Hardening. Adaptive AMR-WB voice compression, hardware SMS_SENT and SMS_DELIVERED PendingIntent callbacks, resilient in-flight Room outbox state machine, and 3-stage adaptive MMSC download polling."
+    "releaseNotes": "Release v22 - Version 4.2: Cellular Voice MMS Pipeline & Ingestion/Transmission Hardening. Adaptive AMR-WB voice compression, hardware SMS_SENT and SMS_DELIVERED PendingIntent callbacks, resilient in-flight Room outbox state machine, and 3-stage adaptive MMSC download polling. (Optimized binary 28.5 MB)"
   },
   {
     "versionCode": 19,
@@ -21,3 +21,4 @@
     "releaseNotes": "Release v18 - Messaging Reliability Sprint: strict AI SMS number filtering in PallySmsReceiver & PallySmsObserver, robust outbound multipart SMS dispatching, and APK installation fallback."
   }
 ]
+ 

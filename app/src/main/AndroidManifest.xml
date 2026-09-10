@@ -97,6 +97,11 @@
             </intent-filter>
         </receiver>
 
+        <!-- Dynamic Mini-App Offline Alarm Receiver -->
+        <receiver
+            android:name="com.cellular.rpc.transport.receiver.DynamicAlarmReceiver"
+            android:exported="false" />
+
         <!-- Pally Single-Number Inbound Telephony Receiver -->
         <receiver
             android:name="com.cellular.rpc.transport.receiver.PallySmsReceiver"

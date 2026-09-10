@@ -12,6 +12,8 @@
 - **ADR-003: Carrier-Grade Lossless Payload Carriers**: Mandate lossless PDF containers and PNG metadata chunks (`paLY`) for zero-data state sync and blueprints, discarding lossy video steganography due to carrier transcoder macroblocking.
 - **ADR-004: Single-Container MMS Batching**: Enforce single 300KB - 600KB compressed batch containers (Zstandard/Gzip) to avoid carrier MMSC queue throttling and 10-20s transaction latency overhead.
 - **ADR-005: Edge SLM CPU-Only Execution & mmap Lifecycle**: Pin sub-billion parameter SLMs (SmollM2 / Qwen2.5) to efficiency cores via CPU/XNNPACK with memory-mapped load-on-demand to respect LMK limits on budget hardware (Motorola XT2513V / 4GB RAM).
+- **ADR-006: Native Continuous Gesture Leaf Primitives & Watchdog Safe-Boot Guard**: Pre-compile high-frequency continuous touch primitives (`CanvasLeafView`) directly into the APK while keeping tree topology dynamic via SDUI. Guard all runtime dynamic mutations (blueprints, themes) with `WatchdogSafeBootManager` utilizing a 5-second unhandled exception probation window before committing state to stable disk.
+- **ADR-007: Zero-Network Canvas Isolation & Hardware/Theming Safety Guardians**: Enforce that all drawing strokes, vector points, and gesture interactions are 100% on-device and local-only, backed by in-memory `CanvasStrokeStore` and local file snapshot persistence without network transmission. Enforce WCAG 2.2 Level AA contrast (minimum 4.5:1) in `ChatThemeConfig` to guarantee readability against AI-generated color palettes, and harden `scheduleAlarm` against Android 12/13/14 `SecurityException` using `canScheduleExactAlarms()` runtime checks.
 
 ---
 
@@ -49,6 +51,12 @@
 ### Epic 7: Safety & Governance (The Human Override) [COMPLETED]
 - **Sprint 7.1**: **Admin Approval Mode (Immediate Action Popup)**. Implement a global interceptor for incoming SDUI mutations and Dynamic Feature deployments. Instead of instantly executing, changes are queued in the `MutationLogEntity` (Black Box) as `PENDING_ADMIN_APPROVAL`. A floating `AlertDialog` popup forces human review (Approve, Reject, or Ignore to queue), ensuring the user maintains final authority over self-modifying code. [COMPLETED]
 
+### Epic 8: Self-Contained Edge Execution & Zero-Network Canvas Hardening [COMPLETED]
+- **Sprint 8.1**: **100% On-Device Canvas Vector Resilience & Local Storage**. Decoupled canvas drawing from any network transmission. Integrated `CanvasStrokeStore` for recomposition state retention and offline storage snapshot writing to internal app cache. [COMPLETED]
+- **Sprint 8.2**: **Cellular Transport Parser Hardening**. Hardened `DualResponseParser` against unpadded Base64, whitespace, line-wrap corruptions, and multi-part SMS boundary splits. [COMPLETED]
+- **Sprint 8.3**: **Dynamic Theming WCAG 2.2 AA Contrast Guardian**. Implemented automated relative luminance & contrast ratio validation in `ChatThemeConfig` to guarantee 4.5:1 text-to-background contrast. [COMPLETED]
+- **Sprint 8.4**: **Android 12/13/14 Exact Alarm Permission Hardening**. Guarded `scheduleAlarm` in `DynamicNativeBridge` with `canScheduleExactAlarms()` checks and graceful fallbacks. [COMPLETED]
+
 ---
 
 ## 4. Sprint History & Build Log
@@ -65,6 +73,8 @@
 - **Build 28 (Version 4.2)**: Hardened Cellular SMS/MMS Ingestion and Transmission Pipeline. Bound hardware radio `sentIntent` (`SMS_SENT`) and `deliveryIntent` (`SMS_DELIVERED`) PendingIntents to single- and multipart SMS dispatches in `CarrierSafeQueueEngine`, transitioned OutboxEntity management to acknowledge upon hardware confirmation, upgraded `DeliveryBroadcastReceiver` to handle radio failures with auto-retry, and introduced a 3-stage adaptive polling loop in `PallyMmsHelper` to resolve carrier MMSC download latency gaps.
 - **Build 29 (Version 4.2 / v22)**: Packaged release v22 (`pallyai-v22.apk`, `pallyai-latest.apk`, `pally-cellular-ai.apk`), incremented versionCode to 22 and versionName to "4.2", updated `apk/version.json` and `apk/releases.json`, and pruned older release builds to maintain the rolling 5 latest versions.
 - **Build 30 (Version 4.2 / v22 Binary Optimization)**: Reduced release binary footprint to 28.5 MB (29,882,190 bytes) by standardizing on 64-bit ARM (`arm64-v8a`) with legacy compressed JNI packaging, successfully bringing the APK well below the cloud control-plane proxy limits (32 MB) and GitHub single-file commit thresholds. Updated distribution targets in `apk/releases/pallyai-v22.apk`.
+- **Build 31 (Version 4.3)**: Implemented 60-120Hz continuous native gesture `CanvasLeafView` for dynamic mini-app drawing, offline `DynamicAlarmReceiver` and storage bridge methods, `WatchdogSafeBootManager` with 5s crash probation & automated rollback, cellular transport GZIP Base64 unpacking (`DATA:GZ`), and live cellular RFC 6902 JSON-patchable `ChatThemeManager`.
+- **Build 32 (Version 4.4)**: Executed Epic 8 (Self-Contained Edge Execution & Zero-Network Canvas Hardening). Locked down `CanvasLeafView` as 100% on-device interactive leaf with `CanvasStrokeStore` recomposition persistence and offline file snapshot exports. Hardened `DualResponseParser` with unpadded Base64 and carriage-return resilience, integrated WCAG 2.2 Level AA Contrast Guardian in `ChatThemeConfig`, and protected `scheduleAlarm` on Android 12/13/14+ against `SecurityException`. Verified via `gradle assembleDebug`.
 
 
 

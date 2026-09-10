@@ -158,6 +158,19 @@ object CellularMessageDispatcher {
                 }
             }
         }
+
+        // Live Chat UI Theming over Cellular
+        val themeConsumer: SchemaPayloadConsumer = { response, context ->
+            try {
+                if (response.payload.isNotBlank()) {
+                    com.cellular.rpc.ui.chat.theme.ChatThemeManager.updateTheme(context, response.payload, isStaged = true)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to apply live chat theme: ${e.message}")
+            }
+        }
+        registerConsumer("chat_theme", themeConsumer)
+        registerConsumer("theme", themeConsumer)
     }
 
     /**

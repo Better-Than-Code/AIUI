@@ -1428,6 +1428,22 @@ fun DynamicSduiNodeView(
                 modifier = modifier.padding(vertical = 4.dp)
             )
         }
+        "canvas", "canvas_view", "draw_canvas", "sketch", "paint" -> {
+            com.cellular.rpc.ui.miniapp.CanvasLeafView(
+                modifier = modifier,
+                canvasHeightDp = 220,
+                initialColorHex = node.colorHex
+            )
+        }
+        "markdown", "reader", "article" -> {
+            RichMarkdownText(
+                text = node.text,
+                textColor = MaterialTheme.colorScheme.onSurface,
+                modifier = modifier
+                    .fillMaxWidth()
+                    .padding(node.padding.dp)
+            )
+        }
         else -> {
             // Default "column" or "text" container
             if (node.children.isNotEmpty()) {

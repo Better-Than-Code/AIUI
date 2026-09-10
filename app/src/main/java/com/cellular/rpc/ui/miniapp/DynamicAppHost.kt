@@ -434,6 +434,125 @@ private fun RenderNode(
             }
         }
 
+        "canvas", "canvas_view", "draw_canvas", "sketch", "paint" -> {
+            val canvasHeight = (node.modifier["height"] as? Number)?.toInt()
+                ?: (node.modifier["canvasHeight"] as? Number)?.toInt()
+                ?: 260
+            val colorHex = (node.modifier["color"] as? String) ?: node.hint.ifBlank { null }
+            val canvasId = if (node.bind.isNotBlank()) node.bind else "canvas_${node.text.hashCode()}"
+            CanvasLeafView(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(node.padding.dp),
+                canvasId = canvasId,
+                canvasHeightDp = canvasHeight,
+                initialColorHex = colorHex,
+                onStateExport = { strokeCount, strokeColorHex ->
+                    val bindKey = if (node.bind.isNotBlank()) node.bind else "canvas_strokes"
+                    onDirectStateMutation(bindKey, strokeCount)
+                    onDirectStateMutation("canvas_color", strokeColorHex)
+                }
+            )
+        }
+
+        "markdown", "reader", "article" -> {
+            val rawMarkdown = when {
+                node.bind.isNotBlank() -> resolveBinding(node.bind, appState, itemContext)
+                node.text.isNotBlank() -> node.text
+                else -> ""
+            }
+            com.cellular.rpc.ui.chat.RichMarkdownText(
+                text = rawMarkdown,
+                textColor = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(node.padding.dp)
+            )
+        }
+
+        "switch", "toggle" -> {
+            val isChecked = when {
+                node.bindChecked.isNotBlank() -> resolveBooleanBinding(node.bindChecked, appState, itemContext)
+                node.bind.isNotBlank() -> resolveBooleanBinding(node.bind, appState, itemContext)
+                else -> false
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (node.text.isNotBlank()) {
+                    Text(
+                        text = node.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Switch(
+                    checked = isChecked,
+                    onCheckedChange = { newState ->
+                        if (node.bindChecked.isNotBlank()) {
+                            onDirectStateMutation(node.bindChecked, newState)
+                        } else if (node.bind.isNotBlank()) {
+                            onDirectStateMutation(node.bind, newState)
+                        }
+                        if (node.onToggle != null) {
+                            onPerformAction(node.onToggle, itemContext)
+                        }
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = CyanPrimary,
+                        checkedTrackColor = CyanPrimary.copy(alpha = 0.5f)
+                    )
+                )
+            }
+        }
+
+        "progress", "progressbar" -> {
+            val progressVal = when {
+                node.bindValue.isNotBlank() -> (appState[node.bindValue] as? Number)?.toFloat() ?: 0f
+                node.bind.isNotBlank() -> (appState[node.bind] as? Number)?.toFloat() ?: 0f
+                node.modifier.containsKey("progress") -> (node.modifier["progress"] as? Number)?.toFloat() ?: 0f
+                else -> 0f
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            ) {
+                if (node.text.isNotBlank()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = node.text,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "${(progressVal.coerceIn(0f, 1f) * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = CyanPrimary
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+                LinearProgressIndicator(
+                    progress = { progressVal.coerceIn(0f, 1f) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                    color = CyanPrimary,
+                    trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                )
+            }
+        }
+
         else -> {
             Surface(
                 color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f),

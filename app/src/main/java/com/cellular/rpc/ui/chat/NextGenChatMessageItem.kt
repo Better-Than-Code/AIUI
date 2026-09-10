@@ -25,6 +25,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.cellular.rpc.domain.dynamic.DynamicFeature
+import com.cellular.rpc.ui.chat.theme.ChatThemeManager
+import com.cellular.rpc.ui.chat.theme.ChatThemeConfig
 import com.cellular.rpc.engine.ChatMessage
 import com.cellular.rpc.engine.MessageDeliveryStatus
 import com.cellular.rpc.engine.MessageSender
@@ -57,6 +60,8 @@ fun NextGenChatMessageItem(
     modifier: Modifier = Modifier
 ) {
     val isUser = message.sender == MessageSender.USER
+    val themeConfig by ChatThemeManager.themeFlow.collectAsState()
+    val bubbleRadius = themeConfig.bubbleCornerRadiusDp.dp
     val clipboardManager = LocalClipboardManager.current
     var showContextMenu by remember { mutableStateOf(false) }
     var showWireDetails by remember { mutableStateOf(false) }
@@ -132,16 +137,19 @@ fun NextGenChatMessageItem(
                 }
 
                 if (isUser) {
-                    // USER BUBBLE (iMessage Style Teal/Cyan Pill)
+                    // USER BUBBLE (Dynamic Themed Pill)
                     if (message.text.isNotBlank()) {
                         Surface(
-                            color = CyanPrimaryDark,
+                            color = themeConfig.outgoingBubbleColor,
                             shape = RoundedCornerShape(
-                                topStart = 18.dp,
-                                topEnd = 18.dp,
-                                bottomStart = 18.dp,
+                                topStart = bubbleRadius,
+                                topEnd = bubbleRadius,
+                                bottomStart = bubbleRadius,
                                 bottomEnd = 4.dp
                             ),
+                            border = if (themeConfig.bubbleBorderWidthDp > 0f) {
+                                BorderStroke(themeConfig.bubbleBorderWidthDp.dp, themeConfig.bubbleBorderColor)
+                            } else null,
                             modifier = Modifier.combinedClickable(
                                 onClick = { },
                                 onLongClick = { showContextMenu = true }
@@ -150,7 +158,7 @@ fun NextGenChatMessageItem(
                             Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)) {
                                 RichMarkdownText(
                                     text = message.text,
-                                    textColor = Color.White
+                                    textColor = themeConfig.outgoingTextColor
                                 )
                             }
                         }
@@ -161,6 +169,7 @@ fun NextGenChatMessageItem(
                         if (message.text.isNotBlank()) {
                             AiMarkdownBubble(
                                 text = message.text,
+                                themeConfig = themeConfig,
                                 onLongClick = { showContextMenu = true }
                             )
                         }
@@ -238,14 +247,16 @@ fun NextGenChatMessageItem(
                             fontSize = 9.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "• ${message.byteSize}B (${message.pduCount} PDU)",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontSize = 9.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        if (themeConfig.showPduBadge) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "• ${message.byteSize}B (${message.pduCount} PDU)",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 9.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         Spacer(modifier = Modifier.width(4.dp))
                         when (message.deliveryStatus) {
                             MessageDeliveryStatus.QUEUED -> {
@@ -344,17 +355,21 @@ fun NextGenChatMessageItem(
 @Composable
 private fun AiMarkdownBubble(
     text: String,
+    themeConfig: ChatThemeConfig = ChatThemeConfig.DEFAULT,
     onLongClick: () -> Unit
 ) {
+    val bubbleRadius = themeConfig.bubbleCornerRadiusDp.dp
     Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        color = themeConfig.incomingBubbleColor,
         shape = RoundedCornerShape(
             topStart = 4.dp,
-            topEnd = 18.dp,
-            bottomStart = 18.dp,
-            bottomEnd = 18.dp
+            topEnd = bubbleRadius,
+            bottomStart = bubbleRadius,
+            bottomEnd = bubbleRadius
         ),
-        border = BorderStroke(1.dp, DarkNavyBorder),
+        border = if (themeConfig.bubbleBorderWidthDp > 0f) {
+            BorderStroke(themeConfig.bubbleBorderWidthDp.dp, themeConfig.bubbleBorderColor)
+        } else null,
         modifier = Modifier.combinedClickable(
             onClick = { },
             onLongClick = onLongClick
@@ -363,7 +378,7 @@ private fun AiMarkdownBubble(
         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
             RichMarkdownText(
                 text = text,
-                textColor = MaterialTheme.colorScheme.onSurface
+                textColor = themeConfig.incomingTextColor
             )
         }
     }

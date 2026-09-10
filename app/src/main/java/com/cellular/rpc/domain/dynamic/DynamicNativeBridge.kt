@@ -117,6 +117,60 @@ class DynamicNativeBridge(
         _bridgeEvents.tryEmit(BridgeEvent.LogEmitted(featureId, message))
     }
 
+    @JavascriptInterface
+    fun scheduleAlarm(delaySeconds: Long, title: String, body: String) {
+        try {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? android.app.AlarmManager ?: return
+            val intent = android.content.Intent(context, com.cellular.rpc.transport.receiver.DynamicAlarmReceiver::class.java).apply {
+                putExtra("featureId", featureId)
+                putExtra("title", title)
+                putExtra("body", body)
+            }
+            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            } else {
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT
+            }
+            val pendingIntent = android.app.PendingIntent.getBroadcast(
+                context,
+                (featureId.hashCode() + System.currentTimeMillis().toInt()) and 0x7FFFFFFF,
+                intent,
+                flags
+            )
+            val triggerTimeMs = System.currentTimeMillis() + (delaySeconds.coerceAtLeast(1) * 1000)
+            val canScheduleExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                alarmManager.canScheduleExactAlarms()
+            } else {
+                true
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (canScheduleExact) {
+                    alarmManager.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, triggerTimeMs, pendingIntent)
+                } else {
+                    alarmManager.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, triggerTimeMs, pendingIntent)
+                }
+            } else {
+                alarmManager.set(android.app.AlarmManager.RTC_WAKEUP, triggerTimeMs, pendingIntent)
+            }
+            Log.i(TAG, "[$featureId] Scheduled offline alarm in ${delaySeconds}s: '$title'")
+        } catch (e: Exception) {
+            Log.e(TAG, "[$featureId] Failed to schedule alarm: ${e.message}")
+        }
+    }
+
+    @JavascriptInterface
+    fun setStorage(key: String, value: String) {
+        val prefs = context.getSharedPreferences("cellular_bridge_$featureId", Context.MODE_PRIVATE)
+        prefs.edit().putString(key, value).apply()
+    }
+
+    @JavascriptInterface
+    fun getStorage(key: String): String {
+        val prefs = context.getSharedPreferences("cellular_bridge_$featureId", Context.MODE_PRIVATE)
+        return prefs.getString(key, "") ?: ""
+    }
+
     private fun ensureNotificationChannel(ctx: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val notificationManager = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager

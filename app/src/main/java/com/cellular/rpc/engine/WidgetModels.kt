@@ -582,11 +582,13 @@ sealed class WidgetData(val type: String) {
                     "tool" -> CellularTool.fromJson(obj)
                     "calendar_event" -> CalendarEvent.fromJson(obj)
                     "task_checklist" -> TaskChecklist.fromJson(obj)
-                    "mini_app_blueprint", "mini_app", "miniapp" -> MiniAppPreview.fromJson(obj)
+                    "mini_app_blueprint", "mini_app", "miniapp", "draw_canvas", "canvas_app", "sketch_app" -> MiniAppPreview.fromJson(obj)
                     "system_status" -> SystemStatus.fromJson(obj)
                     "blueprint", "sdui", "dynamic", "custom", "layout", "screen", "widget" -> DynamicBlueprint.fromJson(obj)
                     else -> {
-                        if (obj.has("children") || obj.has("components") || obj.has("elements") || obj.has("root") || obj.has("layout") || obj.has("title")) {
+                        if (obj.has("appId") || obj.has("ui") || obj.has("initialState")) {
+                            MiniAppPreview.fromJson(obj)
+                        } else if (obj.has("children") || obj.has("components") || obj.has("elements") || obj.has("root") || obj.has("layout") || obj.has("title")) {
                             DynamicBlueprint.fromJson(obj)
                         } else if (obj.length() > 0) {
                             DynamicBlueprint.fromGenericJson(obj)

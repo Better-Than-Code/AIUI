@@ -1,5 +1,12 @@
 [
   {
+    "versionCode": 22,
+    "versionName": "4.2",
+    "fileName": "pallyai-v22.apk",
+    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v22.apk",
+    "releaseNotes": "Release v22 - Version 4.2: Cellular Voice MMS Pipeline & Ingestion/Transmission Hardening. Adaptive AMR-WB voice compression, hardware SMS_SENT and SMS_DELIVERED PendingIntent callbacks, resilient in-flight Room outbox state machine, and 3-stage adaptive MMSC download polling. (Optimized binary 28.5 MB)"
+  },
+  {
     "versionCode": 19,
     "versionName": "3.2",
     "fileName": "pallyai-v19.apk",
@@ -12,26 +19,6 @@
     "fileName": "pallyai-v18.apk",
     "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v18.apk",
     "releaseNotes": "Release v18 - Messaging Reliability Sprint: strict AI SMS number filtering in PallySmsReceiver & PallySmsObserver, robust outbound multipart SMS dispatching, and APK installation fallback."
-  },
-  {
-    "versionCode": 17,
-    "versionName": "2.6.1",
-    "fileName": "pallyai-v17.apk",
-    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v17.apk",
-    "releaseNotes": "Release v17 - Monochrome contrast system, floating horizontal circular action bar, and cryptographic E2E encryption layer."
-  },
-  {
-    "versionCode": 16,
-    "versionName": "2.5",
-    "fileName": "pallyai-v16.apk",
-    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v16.apk",
-    "releaseNotes": "Release v16 - Universal Mini App System Directive & Runtime Architecture with 3-phase lifecycle, deterministic AST interpreter, and vendor-agnostic handshake engine."
-  },
-  {
-    "versionCode": 15,
-    "versionName": "2.4",
-    "fileName": "pallyai-v15.apk",
-    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v15.apk",
-    "releaseNotes": "Release v15 - Multi-tabbed chat interface with persistent Room storage, bidirectional AI orchestrator, and interactive template catalog."
   }
 ]
+ 

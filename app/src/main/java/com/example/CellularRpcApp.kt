@@ -25,6 +25,13 @@ class CellularRpcApp : Application() {
         // Automatically start queue engine for responsive offline RPC
         queueEngine.start()
 
+        // Initialize Watchdog Safe-Boot Interceptor & Dynamic Chat Theming Engine
+        try {
+            com.cellular.rpc.ui.chat.theme.ChatThemeManager.initialize(this)
+        } catch (e: Exception) {
+            android.util.Log.e("CellularRpcApp", "Failed to initialize ChatThemeManager: ${e.message}")
+        }
+
         // Register ContentObserver for robust real-device SMS inbox syncing
         try {
             com.cellular.rpc.transport.receiver.PallySmsObserver.register(this)

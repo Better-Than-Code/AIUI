@@ -20,22 +20,36 @@ data class MiniAppBlueprint(
         fun fromJson(jsonStr: String): MiniAppBlueprint? {
             return try {
                 val obj = JSONObject(jsonStr)
-                if (obj.optString("type") != "mini_app_blueprint" && !obj.has("appId")) {
+                val type = obj.optString("type")
+                val isMiniApp = type in listOf("mini_app_blueprint", "mini_app", "miniapp", "draw_canvas", "canvas_app", "sketch_app") ||
+                        obj.has("appId") || obj.has("ui")
+                if (!isMiniApp) {
                     return null
                 }
                 val appId = obj.optString("appId", "app_${System.currentTimeMillis()}")
                 val version = obj.optInt("version", 1)
                 val metaObj = obj.optJSONObject("metadata") ?: JSONObject()
+                val isDrawingApp = type in listOf("draw_canvas", "canvas_app", "sketch_app")
                 val metadata = MiniAppMetadata(
-                    title = metaObj.optString("title", "Mini App"),
-                    icon = metaObj.optString("icon", "checklist"),
-                    description = metaObj.optString("description", ""),
-                    category = metaObj.optString("category", "productivity")
+                    title = metaObj.optString("title", obj.optString("title", if (isDrawingApp) "Canvas Studio" else "Mini App")),
+                    icon = metaObj.optString("icon", obj.optString("icon", if (isDrawingApp) "brush" else "checklist")),
+                    description = metaObj.optString("description", obj.optString("description", if (isDrawingApp) "60-120Hz continuous drawing sandbox" else "")),
+                    category = metaObj.optString("category", if (isDrawingApp) "creative" else "productivity")
                 )
                 val stateObj = obj.optJSONObject("initialState") ?: JSONObject()
                 val initialState = jsonObjectToMap(stateObj)
 
-                val uiObj = obj.optJSONObject("ui") ?: JSONObject()
+                val uiObj = obj.optJSONObject("ui") ?: obj.optJSONObject("layout") ?: obj.optJSONObject("root") ?: run {
+                    if (isDrawingApp) {
+                        JSONObject().apply {
+                            put("type", "canvas_view")
+                            put("height", obj.optInt("height", 280))
+                            if (obj.has("color")) put("color", obj.optString("color"))
+                        }
+                    } else {
+                        JSONObject()
+                    }
+                }
                 val uiRoot = parseUiNode(uiObj)
 
                 MiniAppBlueprint(

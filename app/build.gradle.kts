@@ -20,6 +20,10 @@ android {
         versionCode = 22
         versionName = "4.2"
 
+        ndk {
+            abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a"))
+        }
+
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 

@@ -1,5 +1,12 @@
 [
   {
+    "versionCode": 24,
+    "versionName": "4.6",
+    "fileName": "pallyai-v24.apk",
+    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v24.apk",
+    "releaseNotes": "Release v24 - Version 4.6: Cellular Telephony Ingestion & Hybrid Scripting Engine. HardenedTelephonyObserverService dual reactive SMS/MMS content observers, multi-part segment reassembly with 1200ms debounce, HardenedMmsParser with 3-stage backoff and PduHeaders.FROM resolution, onResume missed-message delta reconciliation, sub-50ms sandboxed JS/arithmetic execution (SimpleMathParser & JavaScriptSandbox), and native SDUI selection components. (Optimized binary 29.9 MB)"
+  },
+  {
     "versionCode": 23,
     "versionName": "4.4",
     "fileName": "pallyai-v23.apk",
@@ -19,13 +26,6 @@
     "fileName": "pallyai-v19.apk",
     "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v19.apk",
     "releaseNotes": "Release v19 - Differential Mini-App Patching (OTA Deltas) with RFC 6902 JsonPatchEngine and Transport Fallback Orchestrator."
-  },
-  {
-    "versionCode": 18,
-    "versionName": "2.7",
-    "fileName": "pallyai-v18.apk",
-    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v18.apk",
-    "releaseNotes": "Release v18 - Messaging Reliability Sprint: strict AI SMS number filtering in PallySmsReceiver & PallySmsObserver, robust outbound multipart SMS dispatching, and APK installation fallback."
   }
 ]
  

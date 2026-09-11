@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cellular.rpc.domain.miniapp.ActionExecutor
 import com.cellular.rpc.domain.miniapp.MiniAppBlueprint
+import com.cellular.rpc.domain.miniapp.MiniAppDeckManager
 import com.cellular.rpc.domain.miniapp.MiniAppUiNode
 import com.example.ui.theme.CyanPrimary
 import com.example.ui.theme.DarkNavyBorder
@@ -45,22 +46,52 @@ fun DynamicAppHost(
     onDiscardPreview: ((String) -> Unit)? = null,
     onStateChanged: ((Map<String, Any?>) -> Unit)? = null
 ) {
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    var isInstalledLocally by remember(blueprint.appId, isPreviewMode) {
+        mutableStateOf(!isPreviewMode)
+    }
     var appState by remember(blueprint.appId, initialStateOverride) {
         mutableStateOf(initialStateOverride ?: blueprint.initialState)
     }
 
+    val handleInstallToDeck: () -> Unit = {
+        isInstalledLocally = true
+        onInstallToDeck?.invoke(blueprint, appState)
+        coroutineScope.launch {
+            MiniAppDeckManager.installApp(context, blueprint, appState)
+        }
+    }
+
     val onPerformAction: (Map<String, Any?>?, Map<String, Any?>?) -> Unit = { actionMap, itemContext ->
         if (actionMap != null) {
-            val (newState, changed) = ActionExecutor.execute(actionMap, appState, itemContext)
+            val (newState, changed) = ActionExecutor.execute(actionMap, appState, itemContext, context)
             if (changed) {
                 appState = newState
                 onStateChanged?.invoke(newState)
+                if (isInstalledLocally || !isPreviewMode) {
+                    coroutineScope.launch {
+                        MiniAppDeckManager.updateState(context, blueprint.appId, newState)
+                    }
+                }
+            }
+
+            if (ActionExecutor.hasScriptAction(actionMap)) {
+                coroutineScope.launch {
+                    val (asyncState, asyncChanged) = ActionExecutor.executeAsync(actionMap, appState, itemContext, context)
+                    if (asyncChanged) {
+                        appState = asyncState
+                        onStateChanged?.invoke(asyncState)
+                        if (isInstalledLocally || !isPreviewMode) {
+                            MiniAppDeckManager.updateState(context, blueprint.appId, asyncState)
+                        }
+                    }
+                }
             }
 
             val actionName = actionMap["action"]?.toString()
             if (actionName == "INSTALL_APP") {
-                onInstallToDeck?.invoke(blueprint, appState)
+                handleInstallToDeck()
             } else if (actionName == "DISCARD_PREVIEW") {
                 onDiscardPreview?.invoke(blueprint.appId)
             }
@@ -72,6 +103,11 @@ fun DynamicAppHost(
         updated[key] = value
         appState = updated
         onStateChanged?.invoke(updated)
+        if (isInstalledLocally || !isPreviewMode) {
+            coroutineScope.launch {
+                MiniAppDeckManager.updateState(context, blueprint.appId, updated)
+            }
+        }
     }
 
     Card(
@@ -121,14 +157,14 @@ fun DynamicAppHost(
                 }
 
                 Surface(
-                    color = if (isPreviewMode) SignalAmber.copy(alpha = 0.15f) else SignalGreen.copy(alpha = 0.15f),
+                    color = if (isInstalledLocally) SignalGreen.copy(alpha = 0.15f) else SignalAmber.copy(alpha = 0.15f),
                     shape = RoundedCornerShape(4.dp)
                 ) {
                     Text(
-                        text = if (isPreviewMode) "IN-FEED PREVIEW" else "INSTALLED",
+                        text = if (isInstalledLocally) "INSTALLED TO DECK ✓" else "IN-FEED PREVIEW",
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
-                        color = if (isPreviewMode) SignalAmber else SignalGreen,
+                        color = if (isInstalledLocally) SignalGreen else SignalAmber,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }
@@ -146,9 +182,43 @@ fun DynamicAppHost(
                 isPreviewMode = isPreviewMode,
                 onPerformAction = onPerformAction,
                 onDirectStateMutation = onDirectStateMutation,
-                onInstallToDeck = { onInstallToDeck?.invoke(blueprint, appState) },
+                onInstallToDeck = handleInstallToDeck,
                 onDiscardPreview = { onDiscardPreview?.invoke(blueprint.appId) }
             )
+
+            // Auto-render install bar for in-feed previews that lack an explicit InstallFooter node
+            if (isPreviewMode && !isInstalledLocally && !hasInstallFooter(blueprint.uiRoot)) {
+                Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick = { onDiscardPreview?.invoke(blueprint.appId) },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Discard", fontSize = 12.sp)
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Button(
+                        onClick = handleInstallToDeck,
+                        colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.Download, contentDescription = null, tint = Color.Black, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Install to Deck", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+            }
         }
     }
 }
@@ -254,11 +324,15 @@ private fun RenderNode(
         }
 
         "text" -> {
-            val rawText = if (node.bind.isNotBlank()) {
-                resolveBinding(node.bind, appState, itemContext)
-            } else {
-                node.text
-            }
+            val rawText = formatAndInterpolateText(
+                textTemplate = node.text,
+                bindExpr = node.bind,
+                format = node.format,
+                style = node.style,
+                modifier = node.modifier,
+                appState = appState,
+                itemContext = itemContext
+            )
 
             val isStrikethrough = if (node.strikethroughWhen.isNotBlank()) {
                 resolveBooleanBinding(node.strikethroughWhen, appState, itemContext)
@@ -278,24 +352,106 @@ private fun RenderNode(
             Text(
                 text = rawText,
                 style = textStyle,
-                fontWeight = if (node.style.contains("Title", ignoreCase = true)) FontWeight.Bold else FontWeight.Normal,
+                fontWeight = if (node.style.contains("Title", ignoreCase = true) || node.style.contains("Bold", ignoreCase = true)) FontWeight.Bold else FontWeight.Normal,
                 textDecoration = if (isStrikethrough) TextDecoration.LineThrough else TextDecoration.None,
                 color = if (isStrikethrough) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface
             )
         }
 
         "badge" -> {
+            val badgeText = formatAndInterpolateText(
+                textTemplate = node.text,
+                bindExpr = node.bind,
+                format = node.format,
+                style = node.style,
+                modifier = node.modifier,
+                appState = appState,
+                itemContext = itemContext
+            )
             Surface(
                 color = CyanPrimary.copy(alpha = 0.15f),
                 shape = RoundedCornerShape(4.dp)
             ) {
                 Text(
-                    text = node.text,
+                    text = badgeText,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
                     color = CyanPrimary,
                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                 )
+            }
+        }
+
+        "select", "segmented", "segmented_button", "radio", "radiogroup", "options", "tabs", "choice", "chips" -> {
+            val bindKey = node.bindValue.ifBlank { node.bind.ifBlank { "selected" } }
+            val currentSelected = appState[bindKey]?.toString() ?: ""
+
+            val optionsList: List<Pair<String, Any>> = remember(node.options, node.modifier, node.hint, node.children) {
+                extractOptionsList(node)
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = (node.padding / 2).dp)
+            ) {
+                if (node.text.isNotBlank()) {
+                    Text(
+                        text = node.text,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    optionsList.forEach { (label, rawValue) ->
+                        val isSelected = currentSelected == rawValue.toString() ||
+                                currentSelected == label ||
+                                (currentSelected.toDoubleOrNull() != null && rawValue is Number && currentSelected.toDouble() == rawValue.toDouble())
+
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 44.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable {
+                                    onDirectStateMutation(bindKey, rawValue)
+                                    val actionMap = node.onSelect ?: node.onClick ?: node.onToggle
+                                    if (actionMap != null) {
+                                        onPerformAction(
+                                            actionMap,
+                                            mapOf("selected" to rawValue, "value" to rawValue, "prop" to bindKey)
+                                        )
+                                    }
+                                },
+                            color = if (isSelected) CyanPrimary else Color.Transparent,
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)
+                            ) {
+                                Text(
+                                    text = label,
+                                    color = if (isSelected) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    fontSize = 12.sp,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -332,6 +488,12 @@ private fun RenderNode(
                 onValueChange = { newValue ->
                     if (node.bindValue.isNotBlank()) {
                         onDirectStateMutation(node.bindValue, newValue)
+                        val changeAction = node.actions?.get("onChange") as? Map<String, Any?>
+                            ?: node.actions?.get("input") as? Map<String, Any?>
+                            ?: node.onClick
+                        if (changeAction != null) {
+                            onPerformAction(changeAction, mapOf("value" to newValue, "prop" to node.bindValue))
+                        }
                     }
                 },
                 placeholder = { Text(node.hint, fontSize = 13.sp) },
@@ -627,5 +789,141 @@ fun getMiniAppIcon(iconName: String): ImageVector {
         "settings" -> Icons.Default.Settings
         "star", "favorite" -> Icons.Default.Star
         else -> Icons.Default.Widgets
+    }
+}
+
+private fun hasInstallFooter(node: MiniAppUiNode): Boolean {
+    if (node.type.equals("installfooter", ignoreCase = true)) return true
+    return node.children.any { hasInstallFooter(it) } || (node.itemTemplate != null && hasInstallFooter(node.itemTemplate))
+}
+
+private fun extractOptionsList(node: MiniAppUiNode): List<Pair<String, Any>> {
+    if (node.options.isNotEmpty()) {
+        return node.options.map { opt -> normalizeOption(opt) }
+    }
+    val modifierOptions = node.modifier["options"] as? List<*>
+    if (!modifierOptions.isNullOrEmpty()) {
+        return modifierOptions.map { opt -> normalizeOption(opt) }
+    }
+    if (node.hint.contains(",")) {
+        return node.hint.split(",").map { it.trim() }.filter { it.isNotBlank() }.map { opt -> normalizeOption(opt) }
+    }
+    if (node.children.isNotEmpty()) {
+        return node.children.map { child ->
+            val label = child.text.ifBlank { child.hint.ifBlank { child.bindValue } }
+            val value = child.bindValue.ifBlank { child.modifier["value"]?.toString() ?: label }
+            Pair(label, value)
+        }
+    }
+    return emptyList()
+}
+
+private fun normalizeOption(opt: Any?): Pair<String, Any> {
+    return when (opt) {
+        is Map<*, *> -> {
+            val label = (opt["label"] ?: opt["text"] ?: opt["name"] ?: opt["value"] ?: "").toString()
+            val value = opt["value"] ?: opt["val"] ?: label
+            Pair(label, value)
+        }
+        is Number -> {
+            val label = if (opt.toDouble() % 1.0 == 0.0) opt.toInt().toString() else opt.toString()
+            Pair(label, opt)
+        }
+        else -> {
+            val str = opt?.toString() ?: ""
+            if (str.endsWith("%")) {
+                val numPart = str.dropLast(1).trim().toDoubleOrNull()
+                if (numPart != null) {
+                    Pair(str, if (numPart % 1.0 == 0.0) numPart.toInt() else numPart)
+                } else {
+                    Pair(str, str)
+                }
+            } else if (str.toDoubleOrNull() != null) {
+                val d = str.toDouble()
+                Pair(str, if (d % 1.0 == 0.0) d.toInt() else d)
+            } else {
+                Pair(str, str)
+            }
+        }
+    }
+}
+
+private fun formatAndInterpolateText(
+    textTemplate: String,
+    bindExpr: String,
+    format: String,
+    style: String,
+    modifier: Map<String, Any?>,
+    appState: Map<String, Any?>,
+    itemContext: Map<String, Any?>?
+): String {
+    val effectiveFormat = format.ifBlank { modifier["format"]?.toString() ?: "" }.lowercase()
+    val isCurrency = effectiveFormat == "currency" || style.contains("currency", ignoreCase = true)
+    val isPercent = effectiveFormat == "percent"
+    val isDecimal = effectiveFormat == "decimal" || effectiveFormat == "fixed2"
+
+    if (bindExpr.isNotBlank() && textTemplate.isBlank()) {
+        val rawVal = resolveBinding(bindExpr, appState, itemContext)
+        return formatSingleValue(rawVal, isCurrency, isPercent, isDecimal)
+    }
+
+    val source = textTemplate.ifBlank { bindExpr }
+    if (source.isBlank()) return ""
+
+    val regex = Regex("""\$?\$?\{?(state|item)\.([a-zA-Z0-9_]+)\}?""")
+    var result = regex.replace(source) { match ->
+        val fullMatch = match.value
+        val hasLeadingDollar = fullMatch.startsWith("$$") || (fullMatch.startsWith("$") && fullMatch.length > 1 && fullMatch[1] == '$')
+        val scope = match.groupValues[1]
+        val key = match.groupValues[2]
+
+        val rawVal = if (scope == "state") {
+            appState[key]
+        } else {
+            itemContext?.get(key)
+        }
+
+        if (rawVal == null) {
+            "0.00"
+        } else {
+            val num = when (rawVal) {
+                is Number -> rawVal.toDouble()
+                is String -> rawVal.replace("$", "").trim().toDoubleOrNull()
+                else -> null
+            }
+
+            if (num != null) {
+                if (hasLeadingDollar || isCurrency || key.contains("amount", ignoreCase = true) || key.contains("total", ignoreCase = true) || key.contains("tip", ignoreCase = true) || key.contains("price", ignoreCase = true)) {
+                    String.format(java.util.Locale.US, "%.2f", num)
+                } else if (num % 1.0 == 0.0) {
+                    num.toInt().toString()
+                } else {
+                    String.format(java.util.Locale.US, "%.2f", num)
+                }
+            } else {
+                rawVal.toString()
+            }
+        }
+    }
+
+    if (isCurrency && !result.startsWith("$") && !source.contains("$")) {
+        val num = result.toDoubleOrNull()
+        if (num != null) {
+            result = String.format(java.util.Locale.US, "$%.2f", num)
+        }
+    }
+
+    return result
+}
+
+private fun formatSingleValue(rawVal: String, isCurrency: Boolean, isPercent: Boolean, isDecimal: Boolean): String {
+    val clean = rawVal.replace("$", "").trim()
+    val num = clean.toDoubleOrNull()
+    return when {
+        isCurrency && num != null -> String.format(java.util.Locale.US, "$%.2f", num)
+        isPercent && num != null -> "${num.toInt()}%"
+        isDecimal && num != null -> String.format(java.util.Locale.US, "%.2f", num)
+        isCurrency && clean.isNotBlank() -> "$$clean"
+        else -> rawVal
     }
 }

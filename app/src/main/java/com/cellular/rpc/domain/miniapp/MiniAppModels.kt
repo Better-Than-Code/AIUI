@@ -128,6 +128,13 @@ data class MiniAppBlueprint(
                 }
             }
 
+            val options = obj.optJSONArray("options")?.let { jsonArrayToList(it) }
+                ?: (modifierMap["options"] as? List<*>)?.filterNotNull()
+                ?: emptyList()
+            val onSelect = obj.optJSONObject("onSelect")?.let { jsonObjectToMap(it) }
+                ?: obj.optJSONObject("onChange")?.let { jsonObjectToMap(it) }
+            val format = obj.optString("format", modifierMap["format"]?.toString() ?: "")
+
             return MiniAppUiNode(
                 type = type,
                 padding = padding,
@@ -148,7 +155,10 @@ data class MiniAppBlueprint(
                 onClick = onClick,
                 actions = actions,
                 itemTemplate = itemTemplate,
-                children = children
+                children = children,
+                options = options,
+                onSelect = onSelect,
+                format = format
             )
         }
     }
@@ -181,5 +191,8 @@ data class MiniAppUiNode(
     val onClick: Map<String, Any?>? = null,
     val actions: Map<String, Any?>? = null,
     val itemTemplate: MiniAppUiNode? = null,
-    val children: List<MiniAppUiNode> = emptyList()
+    val children: List<MiniAppUiNode> = emptyList(),
+    val options: List<Any?> = emptyList(),
+    val onSelect: Map<String, Any?>? = null,
+    val format: String = ""
 )

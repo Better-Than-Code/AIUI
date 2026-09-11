@@ -1,7 +1,7 @@
 {
-  "versionCode": 23,
-  "versionName": "4.4",
-  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v23.apk",
-  "releaseNotes": "Version 4.4: Self-Contained Edge Execution & Zero-Network Canvas Hardening. Features 100% on-device continuous 120Hz vector canvas drawing with CanvasStrokeStore recomposition memory and offline snapshot saving, carrier-safe unpadded Base64/GZIP cellular decompression in DualResponseParser, automated WCAG 2.2 AA contrast guardian in ChatThemeConfig, and Android 12/13/14 exact alarm permission safety fallbacks."
+  "versionCode": 24,
+  "versionName": "4.6",
+  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v24.apk",
+  "releaseNotes": "Version 4.6 (Release v24): Cellular Telephony Ingestion & Hybrid Scripting Engine. Features HardenedTelephonyObserverService with dual reactive SMS/MMS content observers, multi-part segment reassembly with 1200ms debounce, HardenedMmsParser with 3-stage backoff and PduHeaders.FROM resolution, onResume missed-message delta reconciliation, sub-50ms sandboxed JS/arithmetic execution (SimpleMathParser & JavaScriptSandbox), and native SDUI selection components."
 }
  

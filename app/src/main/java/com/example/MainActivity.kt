@@ -82,12 +82,20 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         // Register SMS and MMS ContentObservers to monitor incoming messages
         com.cellular.rpc.transport.receiver.PallySmsObserver.register(applicationContext)
+        com.cellular.rpc.transport.service.HardenedTelephonyObserverService.start(applicationContext)
         setContent {
             var isDarkTheme by remember { mutableStateOf(true) }
             MyApplicationTheme(darkTheme = isDarkTheme) {
                 CellularRpcScreen(chatViewModel, diagnosticsViewModel, miniAppViewModel, serviceViewModel, widgetViewModel, isDarkTheme = isDarkTheme, onToggleTheme = { isDarkTheme = !isDarkTheme })
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Epic 10: Delta reconciliation onResume to capture any messages received while in background
+        com.cellular.rpc.transport.service.HardenedTelephonyObserverService.reconcileMissedMessages(applicationContext)
+        com.cellular.rpc.transport.receiver.PallySmsObserver.checkInboxNow(applicationContext)
     }
 }
 
@@ -178,6 +186,7 @@ fun CellularRpcScreen(
                             results[Manifest.permission.RECEIVE_SMS] == true &&
                             results[Manifest.permission.READ_SMS] == true
         if (hasSmsPermissions) {
+            com.cellular.rpc.transport.service.HardenedTelephonyObserverService.start(context)
             com.cellular.rpc.transport.receiver.PallySmsObserver.checkInboxNow(context)
         }
     }
@@ -186,12 +195,14 @@ fun CellularRpcScreen(
         if (!hasSmsPermissions) {
             permissionLauncher.launch(requiredPermissions)
         } else {
+            com.cellular.rpc.transport.service.HardenedTelephonyObserverService.start(context)
             com.cellular.rpc.transport.receiver.PallySmsObserver.checkInboxNow(context)
         }
     }
 
     LaunchedEffect(selectedTab) {
         if (hasSmsPermissions) {
+            com.cellular.rpc.transport.service.HardenedTelephonyObserverService.reconcileMissedMessages(context)
             com.cellular.rpc.transport.receiver.PallySmsObserver.checkInboxNow(context)
         }
     }

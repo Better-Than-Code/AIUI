@@ -778,18 +778,7 @@ private fun resolveBooleanBinding(bindExpr: String, appState: Map<String, Any?>,
 }
 
 fun getMiniAppIcon(iconName: String): ImageVector {
-    return when (iconName.lowercase()) {
-        "checklist", "check", "task", "todo" -> Icons.Default.Checklist
-        "add", "plus" -> Icons.Default.Add
-        "calculate", "calculator", "calc" -> Icons.Default.Calculate
-        "poll", "vote" -> Icons.Default.Poll
-        "timer", "clock" -> Icons.Default.Timer
-        "bar_chart", "chart", "analytics" -> Icons.Default.BarChart
-        "bolt", "flash" -> Icons.Default.FlashOn
-        "settings" -> Icons.Default.Settings
-        "star", "favorite" -> Icons.Default.Star
-        else -> Icons.Default.Widgets
-    }
+    return com.cellular.rpc.domain.miniapp.SemanticDesignTokens.resolveIcon(iconName)
 }
 
 private fun hasInstallFooter(node: MiniAppUiNode): Boolean {

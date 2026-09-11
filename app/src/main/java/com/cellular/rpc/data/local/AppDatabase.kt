@@ -15,9 +15,10 @@ import androidx.room.RoomDatabase
         ConversationThreadEntity::class,
         CustomActionEntity::class,
         AppBlueprintEntity::class,
-        MutationLogEntity::class
+        MutationLogEntity::class,
+        MiniAppDocumentEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -31,6 +32,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun customActionDao(): CustomActionDao
     abstract fun appBlueprintDao(): AppBlueprintDao
     abstract fun mutationLogDao(): MutationLogDao
+    abstract fun miniAppDocumentDao(): MiniAppDocumentDao
 
     companion object {
         @Volatile

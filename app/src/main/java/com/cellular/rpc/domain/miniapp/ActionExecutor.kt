@@ -4,7 +4,11 @@ import android.content.Context
 import android.util.Log
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
+import com.cellular.rpc.data.local.AppDatabase
+import com.cellular.rpc.data.local.MiniAppDocumentEntity
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
@@ -213,6 +217,75 @@ object ActionExecutor {
                             stateChanged = true
                         }
                     }
+                }
+            }
+
+            "DOC_UPSERT", "UPSERT_DOC", "DOCUMENT_UPSERT" -> {
+                val appId = actionMap["appId"]?.toString() ?: "default_app"
+                val collection = actionMap["collection"]?.toString() ?: "documents"
+                val docId = resolvePlaceholder(actionMap["docId"]?.toString(), itemContext, currentState)
+                    ?: UUID.randomUUID().toString()
+                val payloadMap = actionMap["payload"] as? Map<*, *>
+                    ?: actionMap["data"] as? Map<*, *>
+                    ?: itemContext
+                    ?: emptyMap<Any, Any>()
+                val resolvedPayload = resolveTemplateMap(payloadMap, itemContext, currentState)
+                val jsonStr = JSONObject(resolvedPayload).toString()
+
+                if (context != null) {
+                    CoroutineScope(Dispatchers.IO).launch {
+                        try {
+                            AppDatabase.getInstance(context).miniAppDocumentDao().upsertDocument(
+                                MiniAppDocumentEntity(
+                                    appId = appId,
+                                    collection = collection,
+                                    docId = docId,
+                                    jsonPayload = jsonStr
+                                )
+                            )
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to upsert mini app document: ${e.message}")
+                        }
+                    }
+                }
+                stateChanged = true
+            }
+
+            "DOC_DELETE", "DELETE_DOC", "DOCUMENT_DELETE" -> {
+                val appId = actionMap["appId"]?.toString() ?: "default_app"
+                val collection = actionMap["collection"]?.toString() ?: "documents"
+                val docId = resolvePlaceholder(actionMap["docId"]?.toString(), itemContext, currentState)
+                if (docId != null && context != null) {
+                    CoroutineScope(Dispatchers.IO).launch {
+                        try {
+                            AppDatabase.getInstance(context).miniAppDocumentDao().deleteDocument(
+                                appId = appId,
+                                collection = collection,
+                                docId = docId
+                            )
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to delete mini app document: ${e.message}")
+                        }
+                    }
+                    stateChanged = true
+                }
+            }
+
+            "DOC_CLEAR", "CLEAR_DOCUMENTS" -> {
+                val appId = actionMap["appId"]?.toString() ?: "default_app"
+                val collection = actionMap["collection"]?.toString() ?: "documents"
+                if (context != null) {
+                    CoroutineScope(Dispatchers.IO).launch {
+                        try {
+                            AppDatabase.getInstance(context).miniAppDocumentDao().clearCollection(
+                                appId = appId,
+                                collection = collection
+                            )
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to clear mini app collection: ${e.message}")
+                        }
+                    }
+                    stateChanged = true
                 }
             }
         }

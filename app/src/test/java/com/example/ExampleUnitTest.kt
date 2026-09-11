@@ -84,4 +84,131 @@ class ExampleUnitTest {
     assertNotNull(parsed.widgetData)
     assertEquals("weather", parsed.widgetData?.type)
   }
+
+  @Test
+  fun testBlueprintLinter_validAndInvalidBlueprints() {
+    val validJson = """
+      {
+        "type": "mini_app_blueprint",
+        "appId": "tip_calc_1",
+        "metadata": { "title": "Tip Calculator", "icon": "calculator" },
+        "initialState": { "bill": "50.00", "tip_pct": 20, "tip": 0.0, "total": 0.0 },
+        "ui": {
+          "type": "Column",
+          "children": [
+            { "type": "Input", "hint": "Bill Amount", "bind": "bill" },
+            { "type": "Select", "bind": "tip_pct", "options": [15, 18, 20, 25] },
+            { "type": "Button", "text": "Calculate", "onClick": { "action": "CALCULATE", "formula": "bill * (tip_pct / 100)", "target": "tip" } }
+          ]
+        }
+      }
+    """.trimIndent()
+
+    val blueprint = com.cellular.rpc.domain.miniapp.MiniAppBlueprint.fromJson(validJson)
+    assertNotNull(blueprint)
+    val lintResult = com.cellular.rpc.domain.miniapp.BlueprintLinter.lint(blueprint!!)
+    assertTrue(lintResult.isValid)
+    assertEquals(0, lintResult.errors.size)
+
+    // Test missing appId
+    val invalidJson = """
+      {
+        "type": "mini_app_blueprint",
+        "appId": "",
+        "metadata": { "title": "Broken App" },
+        "initialState": {},
+        "ui": { "type": "Column" }
+      }
+    """.trimIndent()
+    val brokenBlueprint = com.cellular.rpc.domain.miniapp.MiniAppBlueprint.fromJson(invalidJson)
+    assertNotNull(brokenBlueprint)
+    val brokenLintResult = com.cellular.rpc.domain.miniapp.BlueprintLinter.lint(brokenBlueprint!!)
+    assertFalse(brokenLintResult.isValid)
+    assertTrue(brokenLintResult.errors.any { it.contains("appId") })
+  }
+
+  @Test
+  fun testBlueprintFuzzer_syntheticBoundaryExecution() {
+    val blueprintJson = """
+      {
+        "type": "mini_app_blueprint",
+        "appId": "counter_fuzz",
+        "metadata": { "title": "Counter App" },
+        "initialState": { "count": 10, "text": "Hello" },
+        "ui": {
+          "type": "Column",
+          "children": [
+            { "type": "Button", "text": "+", "onClick": { "action": "MUTATE_STATE", "op": "INCREMENT", "prop": "count", "step": 1 } },
+            { "type": "Button", "text": "-", "onClick": { "action": "MUTATE_STATE", "op": "DECREMENT", "prop": "count", "step": 1 } }
+          ]
+        }
+      }
+    """.trimIndent()
+
+    val blueprint = com.cellular.rpc.domain.miniapp.MiniAppBlueprint.fromJson(blueprintJson)
+    assertNotNull(blueprint)
+    val fuzzResult = com.cellular.rpc.domain.miniapp.BlueprintFuzzer.fuzz(blueprint!!)
+    assertTrue(fuzzResult.passed)
+    assertTrue(fuzzResult.actionsTested > 0)
+    assertTrue(fuzzResult.issues.isEmpty())
+  }
+
+  @Test
+  fun testBlueprintPatcher_statePreservingDeltaUpdate() {
+    val baseJson = """
+      {
+        "type": "mini_app_blueprint",
+        "appId": "todo_app",
+        "version": 1,
+        "metadata": { "title": "Todo List", "icon": "checklist" },
+        "initialState": { "input_task": "", "tasks": [] },
+        "ui": {
+          "type": "Column",
+          "children": [
+            { "type": "Text", "text": "My Tasks" }
+          ]
+        }
+      }
+    """.trimIndent()
+
+    val blueprint = com.cellular.rpc.domain.miniapp.MiniAppBlueprint.fromJson(baseJson)
+    assertNotNull(blueprint)
+
+    val activeRuntimeState = mapOf<String, Any?>(
+      "input_task" to "Buy groceries",
+      "tasks" to listOf(mapOf("id" to "1", "name" to "Walk dog", "done" to true))
+    )
+
+    // RFC 6902 patch updating title
+    val patchJson = """
+      [
+        { "op": "replace", "path": "/metadata/title", "value": "Super Todos" }
+      ]
+    """.trimIndent()
+
+    val patchResult = com.cellular.rpc.domain.miniapp.BlueprintPatcher.applyDeltaPatch(
+      currentBlueprint = blueprint!!,
+      currentRuntimeState = activeRuntimeState,
+      patchJsonStr = patchJson
+    )
+
+    assertTrue(patchResult.success)
+    assertNotNull(patchResult.patchedBlueprint)
+    assertEquals("Super Todos", patchResult.patchedBlueprint?.metadata?.title)
+    // Verify runtime user inputs were preserved!
+    assertEquals("Buy groceries", patchResult.preservedState["input_task"])
+  }
+
+  @Test
+  fun testSemanticDesignTokens_tokenResolutions() {
+    assertEquals(0.dp, com.cellular.rpc.domain.miniapp.SemanticDesignTokens.resolveSpacing("none"))
+    assertEquals(8.dp, com.cellular.rpc.domain.miniapp.SemanticDesignTokens.resolveSpacing("sm"))
+    assertEquals(16.dp, com.cellular.rpc.domain.miniapp.SemanticDesignTokens.resolveSpacing("lg"))
+
+    assertEquals(999.dp, com.cellular.rpc.domain.miniapp.SemanticDesignTokens.resolveCornerRadius("pill"))
+    assertEquals(12.dp, com.cellular.rpc.domain.miniapp.SemanticDesignTokens.resolveCornerRadius("md"))
+
+    val searchIcon = com.cellular.rpc.domain.miniapp.SemanticDesignTokens.resolveIcon("search")
+    assertNotNull(searchIcon)
+  }
 }

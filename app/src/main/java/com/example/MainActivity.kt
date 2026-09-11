@@ -97,6 +97,14 @@ class MainActivity : ComponentActivity() {
         com.cellular.rpc.transport.service.HardenedTelephonyObserverService.reconcileMissedMessages(applicationContext)
         com.cellular.rpc.transport.receiver.PallySmsObserver.checkInboxNow(applicationContext)
     }
+
+    override fun onPause() {
+        super.onPause()
+        // Epic 12: Flush active mini-app state checkpoints to Room to survive LMK process terminations
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            com.cellular.rpc.domain.miniapp.AtomicStateMutex.flushCheckpointsToDisk(applicationContext)
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

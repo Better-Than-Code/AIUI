@@ -422,29 +422,59 @@ fun FullNativeChatInputBar(
 
                     Spacer(modifier = Modifier.width(4.dp))
 
-                    // Text Input Field
-                    TextField(
-                        value = inputText,
-                        onValueChange = onInputTextChange,
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("chat_input_field"),
-                        placeholder = {
-                            Text(
-                                "Message AI Assistant...",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent
-                        ),
-                        shape = RoundedCornerShape(20.dp),
-                        maxLines = 4
-                    )
+                    // Text Input Field with Real-time Tariff Badge
+                    Column(modifier = Modifier.weight(1f)) {
+                        val tariff = remember(inputText) {
+                            if (inputText.isNotEmpty()) com.cellular.rpc.transport.Gsm7Normalizer.analyzeWireTariff(inputText) else null
+                        }
+
+                        TextField(
+                            value = inputText,
+                            onValueChange = onInputTextChange,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("chat_input_field"),
+                            placeholder = {
+                                Text(
+                                    "Message AI Assistant...",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent
+                            ),
+                            shape = RoundedCornerShape(20.dp),
+                            maxLines = 4
+                        )
+
+                        // Real-time Tariff & Encoding Badge
+                        if (tariff != null) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp, vertical = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "${tariff.encoding} • ${tariff.pduCount} SMS PDU",
+                                    fontSize = 9.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = if (tariff.isSinglePdu) SignalGreen else SignalAmber
+                                )
+                                Text(
+                                    text = "${tariff.remainingInPdu} chars left",
+                                    fontSize = 9.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.width(6.dp))
 

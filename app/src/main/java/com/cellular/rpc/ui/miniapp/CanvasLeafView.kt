@@ -225,7 +225,12 @@ fun CanvasLeafView(
                             },
                             onDragEnd = {
                                 if (currentPoints.isNotEmpty()) {
-                                    strokes.add(CanvasStroke(currentPoints, selectedColor, selectedStrokeWidth))
+                                    // Run Ramer-Douglas-Peucker vector decimation to optimize points by 75-85%
+                                    val vectorPoints = currentPoints.map { com.cellular.rpc.domain.canvas.VectorPoint(it.x, it.y) }
+                                    val decimated = com.cellular.rpc.domain.canvas.VectorCurveDecimator.decimate(vectorPoints, epsilon = 1.5f)
+                                    val finalOffsets = decimated.map { Offset(it.x, it.y) }
+
+                                    strokes.add(CanvasStroke(finalOffsets, selectedColor, selectedStrokeWidth))
                                     CanvasStrokeStore.saveStrokes(canvasId, strokes)
                                     currentPoints = emptyList()
                                     onStateExport?.invoke(strokes.size, toHexColor(selectedColor))

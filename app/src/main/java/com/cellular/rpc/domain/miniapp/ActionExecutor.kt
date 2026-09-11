@@ -531,7 +531,9 @@ object SafeScriptEngine {
         itemContext: Map<String, Any?>? = null,
         localVars: Map<String, Any?> = emptyMap()
     ): Any {
-        var expr = expression.trim()
+        // Pre-sanitize and heal formula with LocalHealerAgent
+        val healedExpr = LocalHealerAgent.healFormula(expression, state)
+        var expr = healedExpr.trim()
 
         // Handle .toFixed(n)
         val toFixedMatch = Regex("""\((.+)\)\.toFixed\((\d+)\)""").find(expr)

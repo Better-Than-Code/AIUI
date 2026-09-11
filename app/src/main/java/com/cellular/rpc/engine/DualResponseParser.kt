@@ -97,18 +97,30 @@ object DualResponseParser {
             }
         }
 
-        // 5. Embedded braces
+        // 5. Embedded braces or truncated JSON streams
         val startIdx = trimmed.indexOf('{')
         val endIdx = trimmed.lastIndexOf('}')
-        if (startIdx != -1 && endIdx > startIdx) {
-            val candidate = trimmed.substring(startIdx, endIdx + 1)
+        if (startIdx != -1) {
+            val candidate = if (endIdx > startIdx) {
+                trimmed.substring(startIdx, endIdx + 1)
+            } else {
+                trimmed.substring(startIdx)
+            }
             if (extractedThreadId == null) {
                 extractedThreadId = extractTidFromJson(candidate)
             }
-            val widget = WidgetData.parse(candidate)
+            // First try standard parse, then fall back to FuzzyStreamDemuxer repair
+            var widget = WidgetData.parse(candidate)
+            if (widget == null || widget is WidgetData.ChatText) {
+                val repairedJson = FuzzyStreamDemuxer.repairAndParse(candidate)
+                if (repairedJson != null) {
+                    widget = WidgetData.parse(repairedJson.toString())
+                }
+            }
+
             if (widget != null && widget !is WidgetData.ChatText) {
                 val prefix = trimmed.substring(0, startIdx).trim()
-                val suffix = trimmed.substring(endIdx + 1).trim()
+                val suffix = if (endIdx > startIdx) trimmed.substring(endIdx + 1).trim() else ""
                 val conversational = listOf(prefix, suffix).filter { it.isNotEmpty() }.joinToString("\n")
                 return DualParsedResponse(sanitizeConversationalText(conversational), widget, extractedThreadId)
             }

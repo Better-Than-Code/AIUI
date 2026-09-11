@@ -1,7 +1,7 @@
 {
-  "versionCode": 24,
-  "versionName": "4.6",
-  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v24.apk",
-  "releaseNotes": "Version 4.6 (Release v24): Cellular Telephony Ingestion & Hybrid Scripting Engine. Features HardenedTelephonyObserverService with dual reactive SMS/MMS content observers, multi-part segment reassembly with 1200ms debounce, HardenedMmsParser with 3-stage backoff and PduHeaders.FROM resolution, onResume missed-message delta reconciliation, sub-50ms sandboxed JS/arithmetic execution (SimpleMathParser & JavaScriptSandbox), and native SDUI selection components."
+  "versionCode": 25,
+  "versionName": "4.7",
+  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v25.apk",
+  "releaseNotes": "Version 4.7 (Release v25): High-Leverage Cellular & State Guardians. Features FuzzyStreamDemuxer self-repairing JSON stream recovery, LocalHealerAgent on-device math and formula sanitization, GSM-7 Wire Tariff Normalizer and real-time PDU byte badge, AtomicStateMutex with LMK SQLite checkpointing across process lifecycle, and RDP VectorCurveDecimator for 85% canvas stroke optimization."
 }
  

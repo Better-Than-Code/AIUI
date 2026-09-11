@@ -19,6 +19,7 @@ import java.security.MessageDigest
 object CellularMcpRegistry {
 
     const val MCP_PROTOCOL_VERSION = "2.1.0"
+    const val RELEASE_BUILD_ID = "REL-2026-09-11-v4"
 
     /**
      * Tool definition callable by the AI over Cellular RPC.
@@ -149,11 +150,30 @@ object CellularMcpRegistry {
     fun buildGenesisSmsPrompt(): String {
         val hash = computeCatalogHash()
         val manifestJson = buildGenesisManifestJson()
-        return "SYS:MCP_GENESIS_SYNC v=$MCP_PROTOCOL_VERSION hash=$hash\n" +
+        return "SYS:MCP_GENESIS_SYNC v=$MCP_PROTOCOL_VERSION build=$RELEASE_BUILD_ID hash=$hash\n" +
                 "I am initializing the Cellular RPC Gateway with my native capabilities.\n" +
                 "Store this manifest in persistent memory. Use these widget schemas and tool signatures for all structured interactions.\n" +
                 "---CELLULAR_DATA---\n" +
                 manifestJson
+    }
+
+    /**
+     * Splits the Genesis payload into carrier-safe chunks (max ~130 chars each) with explicit sequence
+     * headers [MCP_CHUNK x/y hash=...] to prevent carrier truncation and ensure reliable async delivery.
+     */
+    fun buildChunkedGenesisPrompts(): List<String> {
+        val fullPrompt = buildGenesisSmsPrompt()
+        val hash = computeCatalogHash()
+        val maxChunkSize = 130
+        val rawChunks = fullPrompt.chunked(maxChunkSize)
+        val total = rawChunks.size
+        val result = ArrayList<String>(total)
+        for (i in rawChunks.indices) {
+            val chunkNo = i + 1
+            val header = "[MCP_CHUNK $chunkNo/$total hash=$hash]\n"
+            result.add(header + rawChunks[i])
+        }
+        return result
     }
 
     /**
@@ -165,6 +185,7 @@ object CellularMcpRegistry {
         root.put("from_version", fromVersion)
         root.put("from_hash", fromHash)
         root.put("to_version", MCP_PROTOCOL_VERSION)
+        root.put("to_build", RELEASE_BUILD_ID)
         root.put("to_hash", computeCatalogHash())
         root.put("registered_widgets_count", CellularSchemaRegistry.getAllSchemas().size)
         root.put("registered_tools_count", clientTools.size)
@@ -173,11 +194,11 @@ object CellularMcpRegistry {
     }
 
     /**
-     * Computes a deterministic 8-character hash of all registered schemas and tools.
+     * Computes a deterministic 8-character hash of all registered schemas, tools, and release build ID.
      */
     fun computeCatalogHash(): String {
         val sb = StringBuilder()
-        sb.append(MCP_PROTOCOL_VERSION)
+        sb.append(MCP_PROTOCOL_VERSION).append("|").append(RELEASE_BUILD_ID)
         CellularSchemaRegistry.getAllSchemas().forEach {
             sb.append("|").append(it.schemaId).append(":").append(it.version)
         }

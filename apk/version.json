@@ -1,7 +1,7 @@
 {
-  "versionCode": 25,
-  "versionName": "4.7",
-  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v25.apk",
-  "releaseNotes": "Version 4.7 (Release v25): High-Leverage Cellular & State Guardians. Features FuzzyStreamDemuxer self-repairing JSON stream recovery, LocalHealerAgent on-device math and formula sanitization, GSM-7 Wire Tariff Normalizer and real-time PDU byte badge, AtomicStateMutex with LMK SQLite checkpointing across process lifecycle, and RDP VectorCurveDecimator for 85% canvas stroke optimization."
+  "versionCode": 26,
+  "versionName": "4.8",
+  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v26.apk",
+  "releaseNotes": "Version 4.8 (Release v26): Adaptive Offline Resilience & Production Stability. Features comprehensive High-Leverage Cellular Guardians (FuzzyStreamDemuxer JSON self-repair, LocalHealerAgent syntax sanitizer, GSM-7 Wire Tariff Normalizer with live PDU byte badge, AtomicStateMutex with onPause LMK checkpointing, and RDP VectorCurveDecimator 85% stroke optimization) with optimized ARM64 binary packaging."
 }
  

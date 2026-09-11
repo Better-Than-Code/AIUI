@@ -122,22 +122,26 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
     fun pushGenesisMcpManifest() {
         val app = getApplication<Application>()
         val hash = CellularMcpRegistry.computeCatalogHash()
-        val genesisPrompt = CellularMcpRegistry.buildGenesisSmsPrompt()
+        val chunks = CellularMcpRegistry.buildChunkedGenesisPrompts()
 
         viewModelScope.launch(Dispatchers.IO) {
+            val totalBytes = chunks.sumOf { it.toByteArray(Charsets.UTF_8).size }
             val userMsg = com.cellular.rpc.engine.ChatMessage(
                 sender = com.cellular.rpc.engine.MessageSender.USER,
-                text = "⚡ [MCP Genesis Sync] Pushed ${CellularSchemaRegistry.getAllSchemas().size} native widget schemas and ${CellularMcpRegistry.getRegisteredTools().size} executable tools to AI persistent memory (Hash: $hash).",
-                byteSize = genesisPrompt.toByteArray(Charsets.UTF_8).size,
-                pduCount = ((genesisPrompt.toByteArray(Charsets.UTF_8).size + 139) / 140).coerceAtLeast(1)
+                text = "⚡ [MCP Genesis Sync v=${CellularMcpRegistry.MCP_PROTOCOL_VERSION}, build=${CellularMcpRegistry.RELEASE_BUILD_ID}] Pushed ${CellularSchemaRegistry.getAllSchemas().size} schemas & ${CellularMcpRegistry.getRegisteredTools().size} tools across ${chunks.size} carrier-safe chunks (Hash: $hash). Awaiting AI ACK.",
+                byteSize = totalBytes,
+                pduCount = chunks.size
             )
             chatRepository.saveMessage(userMsg)
 
-            queueEngine.enqueuePayload(
-                sessionId = 0x1A2F,
-                pktType = Frame.PKT_RPC_REQ,
-                payload = genesisPrompt.toByteArray(Charsets.UTF_8)
-            )
+            for ((index, chunk) in chunks.withIndex()) {
+                queueEngine.enqueuePayload(
+                    sessionId = 0x1A2F,
+                    pktType = Frame.PKT_RPC_REQ,
+                    payload = chunk.toByteArray(Charsets.UTF_8)
+                )
+                kotlinx.coroutines.delay(250) // Carrier safety delay between chunk segments
+            }
 
             WidgetPreferences.setMcpSyncedHash(app, hash)
             refreshMcpState()

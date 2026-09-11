@@ -743,9 +743,9 @@ class CarrierSafeQueueEngine(
                 ackBits = 0L
             )
             receiveInbound(resFrame)
-        } else if (queryStr.contains("MCP_GENESIS_SYNC") || queryStr.contains("MCP_INIT")) {
-            // Simulated AI Gateway acknowledging Single-Push Genesis Manifest Ingestion
-            val ackText = "AI Assistant: Ingested MCP Genesis Manifest (v=2.1.0). Registered 10 native schemas & 4 actionable tools. Saved to persistent gateway memory."
+        } else if (queryStr.contains("MCP_GENESIS_SYNC") || queryStr.contains("MCP_CHUNK") || queryStr.contains("MCP_INIT")) {
+            // Simulated AI Gateway acknowledging Single-Push Genesis Manifest Ingestion & multi-chunk assembly
+            val ackText = "AI Assistant: Ingested MCP Genesis Manifest & Chunks (v=2.1.0, build=${com.cellular.rpc.domain.mcp.CellularMcpRegistry.RELEASE_BUILD_ID}). Registered 10 native schemas & 4 actionable tools. ACK:MCP_GENESIS_OK status=VERIFIED. Saved to persistent gateway memory."
             val chatResponse = WidgetData.ChatText(text = ackText)
             val jsonBytes = chatResponse.toJson().let { CellularBpeTokenizer.compress(it) }
             val resFrame = Frame(

@@ -18,9 +18,11 @@ local.properties
 debug.keystore
 *.apk
 /apk/releases/*.apk
-!/apk/releases/v27_part_*
+!/apk/releases/pallyai-v27.apk
+!/apk/releases/pallyai-latest.apk
 /releases/
 /.build-outputs/
+
 
 
 

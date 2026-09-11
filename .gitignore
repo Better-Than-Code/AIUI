@@ -18,6 +18,7 @@ local.properties
 debug.keystore
 *.apk
 /apk/releases/*.apk
+!/apk/releases/v27_part_*
 /releases/
 /.build-outputs/
 

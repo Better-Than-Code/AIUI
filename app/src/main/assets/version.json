@@ -1,7 +1,7 @@
 {
-  "versionCode": 22,
-  "versionName": "4.2",
-  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v22.apk",
-  "releaseNotes": "Version 4.2: Cellular Voice MMS Pipeline & Transmission Hardening. Features adaptive AMR-WB voice note compression for cellular transport, hardware-level SMS_SENT and SMS_DELIVERED PendingIntent telemetry, resilient Room outbox in-flight confirmation with automatic retry on radio drops, and 3-stage adaptive MMSC inbox polling."
+  "versionCode": 27,
+  "versionName": "4.9",
+  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v27.apk",
+  "releaseNotes": "Version 4.9 (Release v27): Enhanced Genesis Payload Sync & Robust Reverse-MCP Async Protocol. Features multi-chunk carrier-safe Genesis manifest segmentation, release-aware dynamic catalog hashing (REL-2026-09-11-v4), explicit AI receipt acknowledgement and verification, and resilient in-app update management."
 }
  

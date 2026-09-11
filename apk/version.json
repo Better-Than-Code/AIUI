@@ -1,7 +1,7 @@
 {
-  "versionCode": 26,
-  "versionName": "4.8",
-  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v26.apk",
-  "releaseNotes": "Version 4.8 (Release v26): Adaptive Offline Resilience & Production Stability. Features comprehensive High-Leverage Cellular Guardians (FuzzyStreamDemuxer JSON self-repair, LocalHealerAgent syntax sanitizer, GSM-7 Wire Tariff Normalizer with live PDU byte badge, AtomicStateMutex with onPause LMK checkpointing, and RDP VectorCurveDecimator 85% stroke optimization) with optimized ARM64 binary packaging."
+  "versionCode": 27,
+  "versionName": "4.9",
+  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v27.apk",
+  "releaseNotes": "Version 4.9 (Release v27): Enhanced Genesis Payload Sync & Robust Reverse-MCP Async Protocol. Features multi-chunk carrier-safe Genesis manifest segmentation, release-aware dynamic catalog hashing (REL-2026-09-11-v4), explicit AI receipt acknowledgement and verification, and resilient in-app update management."
 }
  

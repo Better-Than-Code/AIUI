@@ -1,5 +1,12 @@
 [
   {
+    "versionCode": 27,
+    "versionName": "4.9",
+    "fileName": "pallyai-v27.apk",
+    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v27.apk",
+    "releaseNotes": "Release v27 - Version 4.9: Enhanced Genesis Payload Sync & Robust Reverse-MCP Async Protocol. Features multi-chunk carrier-safe Genesis manifest segmentation, release-aware dynamic catalog hashing (REL-2026-09-11-v4), explicit AI receipt acknowledgement and verification, and resilient in-app update management."
+  },
+  {
     "versionCode": 25,
     "versionName": "4.7",
     "fileName": "pallyai-v25.apk",

@@ -212,6 +212,9 @@ fun FullNativeChatInputBar(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 when (att.type) {
+                                    AttachmentType.VISUAL_ANCHOR -> {
+                                        // Internal transport anchor
+                                    }
                                     AttachmentType.IMAGE -> {
                                         AsyncImage(
                                             model = att.uri,

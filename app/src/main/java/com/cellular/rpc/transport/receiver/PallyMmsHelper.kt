@@ -17,6 +17,7 @@ import com.cellular.rpc.engine.MessageAttachment
 import com.cellular.rpc.transport.handler.CellularMessageDispatcher
 import com.cellular.rpc.transport.handler.CellularTransportType
 import com.cellular.rpc.transport.handler.InboundCellularMessage
+import com.cellular.rpc.transport.service.HardenedMmsParser
 import kotlinx.coroutines.*
 import java.io.File
 import java.io.FileOutputStream
@@ -116,6 +117,27 @@ class PallyMmsHelper(
                     break
                 }
             }
+        }
+
+        /**
+         * Dispatches a carrier MMS failover bundle promoting large payloads (>256B)
+         * with the carrier-compliant 32x32 visual anchor and strictly encapsulated payload body.
+         * Companion SMS preamble is prohibited.
+         */
+        fun dispatchCarrierMmsBundle(
+            context: Context,
+            destinationNumber: String,
+            text: String,
+            anchorUri: Uri? = null
+        ) {
+            val resolvedAnchorUri = anchorUri ?: com.cellular.rpc.transport.failover.TransportFailoverEngine.getVisualAnchorUri(context)
+            dispatchCarrierMms(
+                context = context,
+                destinationNumber = destinationNumber,
+                text = text,
+                attachmentUri = resolvedAnchorUri,
+                mimeType = "image/png"
+            )
         }
 
         /**
@@ -247,83 +269,8 @@ class PallyMmsHelper(
         }
 
         private fun extractMmsParts(context: Context, mmsId: Long): Pair<String, MessageAttachment?> {
-            var textBody = ""
-            var attachment: MessageAttachment? = null
-
-            val partUri = Uri.parse("content://mms/$mmsId/part")
-            try {
-                val cursor = context.contentResolver.query(
-                    partUri,
-                    arrayOf(Telephony.Mms.Part._ID, Telephony.Mms.Part.CONTENT_TYPE, Telephony.Mms.Part.NAME, Telephony.Mms.Part.TEXT),
-                    null,
-                    null,
-                    null
-                )
-
-                cursor?.use {
-                    while (it.moveToNext()) {
-                        val partId = it.getLong(0)
-                        val contentType = it.getString(1) ?: ""
-                        val name = it.getString(2) ?: "mms_media_$partId"
-                        val text = it.getString(3)
-
-                        if (contentType == "text/plain") {
-                            if (!text.isNullOrBlank()) {
-                                textBody = text
-                            } else {
-                                // Try reading from stream
-                                val streamUri = Uri.parse("content://mms/part/$partId")
-                                try {
-                                    val streamText = context.contentResolver.openInputStream(streamUri)?.bufferedReader()?.use { r -> r.readText() }
-                                    if (!streamText.isNullOrBlank()) {
-                                        textBody = streamText
-                                    }
-                                } catch (ignored: Exception) {}
-                            }
-                        } else if (contentType.startsWith("image/") || contentType.startsWith("video/") || contentType.startsWith("audio/")) {
-                            // Copy part to cache file so Coil / UI can read it reliably
-                            val mediaUri = Uri.parse("content://mms/part/$partId")
-                            val ext = when {
-                                contentType.contains("png") -> "png"
-                                contentType.contains("gif") -> "gif"
-                                contentType.contains("audio") || contentType.contains("amr") -> "amr"
-                                else -> "jpg"
-                            }
-                            val cacheDir = File(context.cacheDir, "mms_media").apply { mkdirs() }
-                            val targetFile = File(cacheDir, "mms_${mmsId}_$partId.$ext")
-
-                            try {
-                                context.contentResolver.openInputStream(mediaUri)?.use { input ->
-                                    FileOutputStream(targetFile).use { output ->
-                                        input.copyTo(output)
-                                    }
-                                }
-
-                                val attType = when {
-                                    contentType.startsWith("audio/") -> AttachmentType.VOICE_NOTE
-                                    contentType.startsWith("image/") -> AttachmentType.IMAGE
-                                    else -> AttachmentType.FILE
-                                }
-
-                                attachment = MessageAttachment(
-                                    id = "mms_${mmsId}_$partId",
-                                    type = attType,
-                                    uri = Uri.fromFile(targetFile).toString(),
-                                    fileName = name.ifBlank { targetFile.name },
-                                    fileSizeBytes = targetFile.length(),
-                                    mimeType = contentType
-                                )
-                            } catch (e: Exception) {
-                                Log.w(TAG, "Failed to copy MMS media part: ${e.message}")
-                            }
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Error extracting MMS parts: ${e.message}")
-            }
-
-            return Pair(textBody, attachment)
+            val detailed = HardenedMmsParser.extractPartsDetailed(context, mmsId)
+            return Pair(detailed.textBody, detailed.attachment)
         }
     }
 

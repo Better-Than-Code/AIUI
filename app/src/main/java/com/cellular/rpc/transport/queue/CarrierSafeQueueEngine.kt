@@ -39,6 +39,7 @@ import kotlin.random.Random
  * 4. Room Outbox persistence and retry policies.
  */
 import com.cellular.rpc.transport.service.NetworkConnectivityObserver
+import com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 
@@ -186,6 +187,8 @@ class CarrierSafeQueueEngine(
 
     var loopbackEnabled: Boolean = com.cellular.rpc.widget.WidgetPreferences.isLoopbackSimulationEnabled(context)
 
+    val circuitBreaker: CarrierCooldownCircuitBreaker = CarrierCooldownCircuitBreaker.getInstance(context)
+
     fun acknowledgeAnyInFlight() {
         val frames = windowController.getInFlightFrames()
         for (f in frames) {
@@ -306,6 +309,18 @@ class CarrierSafeQueueEngine(
     private suspend fun queueLoop() {
         while (_isEngineRunning.value) {
             try {
+                // Epic 4: 15-Minute Carrier Cooldown Circuit Breaker Check
+                if (!loopbackEnabled && !circuitBreaker.canTransmit()) {
+                    val remainingMs = circuitBreaker.getCooldownRemainingMs()
+                    if (remainingMs > 0L) {
+                        _nextAllowedTxMs.value = System.currentTimeMillis() + remainingMs
+                        delay(1000L)
+                        continue
+                    } else {
+                        circuitBreaker.refreshState()
+                    }
+                }
+
                 if (windowController.canTransmit()) {
                     val pending = outboxDao.getPendingFrames(limit = 1)
                     if (pending.isNotEmpty()) {
@@ -328,6 +343,12 @@ class CarrierSafeQueueEngine(
     private suspend fun retryLoop() {
         while (_isEngineRunning.value) {
             try {
+                // Epic 4: When circuit breaker is OPEN, pause watchdog recovery to prevent thrashing
+                if (!loopbackEnabled && circuitBreaker.state.value == CarrierCooldownCircuitBreaker.CircuitState.OPEN) {
+                    delay(3500)
+                    continue
+                }
+
                 val now = System.currentTimeMillis()
                 // Autonomous background recovery for stalled IN_FLIGHT packets (35s watchdog threshold)
                 val staleThreshold = now - 35000L
@@ -353,6 +374,13 @@ class CarrierSafeQueueEngine(
     }
 
     private suspend fun transmitFrame(entity: OutboxEntity) {
+        // Epic 4: Guard against dispatch if circuit breaker tripped
+        if (!loopbackEnabled && !circuitBreaker.canTransmit()) {
+            val remainingSecs = circuitBreaker.getCooldownRemainingMs() / 1000
+            Log.w(TAG, "Carrier circuit breaker is OPEN ($remainingSecs s remaining). Postponing transmission for Outbox ID ${entity.id}.")
+            return
+        }
+
         val tierLog = when (entity.retries) {
             0 -> "Tier 1 (Direct RCS/SMS)"
             1 -> "Tier 2 (MMS Binary Container Fallback)"
@@ -504,6 +532,36 @@ class CarrierSafeQueueEngine(
 
         if (textToSend.isBlank()) {
             Log.w(TAG, "Skipping empty text transmission.")
+            return
+        }
+
+        // Epic 4: Guard cellular radio against transmission if circuit breaker is OPEN
+        if (!circuitBreaker.canTransmit()) {
+            val remainingSecs = circuitBreaker.getCooldownRemainingMs() / 1000
+            Log.w(TAG, "Carrier circuit breaker is OPEN ($remainingSecs s remaining). Suppressing physical radio transmission.")
+            return
+        }
+
+        // Epic 2: Inbound Transport Failover Protocol
+        // Enforce strict 256-byte ceiling for plain SMS delivery (<= 2 segments)
+        // Automatic promotion of payloads > 256B to single-container MMS bundle with 32x32 visual anchor.
+        val payloadByteSize = textToSend.toByteArray(Charsets.UTF_8).size
+        if (com.cellular.rpc.transport.failover.TransportFailoverEngine.shouldPromoteToMms(payloadByteSize)) {
+            Log.i(TAG, "Payload size ($payloadByteSize bytes) exceeds safe 256B SMS ceiling. Applying Epic 2 Inbound Transport Failover: promoting to single-container MMS bundle with 32x32 visual anchor.")
+            val anchorUri = com.cellular.rpc.transport.failover.TransportFailoverEngine.getVisualAnchorUri(context)
+            com.cellular.rpc.transport.receiver.PallyMmsHelper.dispatchCarrierMmsBundle(
+                context = context,
+                destinationNumber = cleanNumber,
+                text = textToSend,
+                anchorUri = anchorUri
+            )
+            scope.launch {
+                if (outboxId > 0L) {
+                    outboxDao.markAcknowledgedById(outboxId)
+                } else {
+                    outboxDao.markAcknowledged(frame.sessionId, frame.seqNo)
+                }
+            }
             return
         }
 
@@ -844,17 +902,37 @@ class CarrierSafeQueueEngine(
                     }
                 }
 
+                // Epic 2: Inbound Transport Failover Protocol
+                // Payloads > 256B are promoted to MMS containers with 32x32 visual anchor
+                val payloadBytes = payloadStr.toByteArray(Charsets.UTF_8).size
+                val (transportType, attachment) = if (com.cellular.rpc.transport.failover.TransportFailoverEngine.shouldPromoteToMms(payloadBytes)) {
+                    Log.i(TAG, "Simulation: Inbound payload ($payloadBytes bytes) exceeds 256B SMS ceiling. Promoted to MMS WAP-Push container with 32x32 visual anchor.")
+                    val anchorFile = com.cellular.rpc.transport.failover.TransportFailoverEngine.getOrCreateVisualAnchorFile(context)
+                    val anchorAttachment = com.cellular.rpc.engine.MessageAttachment(
+                        id = "anchor_${System.currentTimeMillis()}",
+                        type = com.cellular.rpc.engine.AttachmentType.VISUAL_ANCHOR,
+                        uri = android.net.Uri.fromFile(anchorFile).toString(),
+                        fileName = com.cellular.rpc.transport.failover.TransportFailoverEngine.VISUAL_ANCHOR_NAME,
+                        fileSizeBytes = anchorFile.length(),
+                        mimeType = "image/png"
+                    )
+                    Pair(com.cellular.rpc.transport.handler.CellularTransportType.MMS_WAP_PUSH, anchorAttachment)
+                } else {
+                    Pair(com.cellular.rpc.transport.handler.CellularTransportType.LOOPBACK_SIMULATION, null)
+                }
+
                 // Dispatch into unified CellularMessageDispatcher for persistent Room storage & UI update
                 try {
                     com.cellular.rpc.transport.handler.CellularMessageDispatcher.dispatchInbound(
                         context,
                         com.cellular.rpc.transport.handler.InboundCellularMessage(
-                            transportType = com.cellular.rpc.transport.handler.CellularTransportType.LOOPBACK_SIMULATION,
+                            transportType = transportType,
                             senderAddress = "AI_GATEWAY",
                             rawText = payloadStr,
                             rawBytes = frame.payload,
                             frame = frame,
-                            timestampMs = System.currentTimeMillis()
+                            timestampMs = System.currentTimeMillis(),
+                            attachment = attachment
                         )
                     )
                 } catch (e: Exception) {

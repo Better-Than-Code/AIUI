@@ -40,6 +40,9 @@ fun MessageAttachmentBubble(
     modifier: Modifier = Modifier
 ) {
     when (attachment.type) {
+        AttachmentType.VISUAL_ANCHOR -> {
+            // Visual anchor is an internal carrier transport vehicle; do not display as a user media attachment
+        }
         AttachmentType.IMAGE -> {
             Surface(
                 shape = RoundedCornerShape(14.dp),

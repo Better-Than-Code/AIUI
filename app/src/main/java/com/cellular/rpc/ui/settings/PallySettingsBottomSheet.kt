@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cellular.rpc.data.local.PacketLogEntity
 import com.cellular.rpc.data.local.WidgetCacheEntity
 import com.cellular.rpc.domain.service.CellularServiceProfile
@@ -536,6 +537,144 @@ fun PallySettingsBottomSheet(
                                         checked = isAdminApproval,
                                         onCheckedChange = { onToggleAdminApproval() }
                                     )
+                                }
+                            }
+
+                            // Epic 4: Carrier 15-Minute Cooldown Circuit Breaker Card
+                            val circuitBreaker = remember { com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.getInstance(context) }
+                            val cbState by circuitBreaker.state.collectAsStateWithLifecycle()
+                            val cbRemainingMs by circuitBreaker.cooldownRemainingMs.collectAsStateWithLifecycle()
+                            val cbFailures by circuitBreaker.consecutiveFailures.collectAsStateWithLifecycle()
+                            val cbReason by circuitBreaker.lastFailureReason.collectAsStateWithLifecycle()
+
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = when (cbState) {
+                                        com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.OPEN ->
+                                            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f)
+                                        com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.HALF_OPEN ->
+                                            SignalAmber.copy(alpha = 0.2f)
+                                        com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.CLOSED ->
+                                            MaterialTheme.colorScheme.surfaceVariant
+                                    }
+                                ),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.Security,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp),
+                                                tint = when (cbState) {
+                                                    com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.OPEN -> MaterialTheme.colorScheme.error
+                                                    com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.HALF_OPEN -> SignalAmber
+                                                    com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.CLOSED -> SignalGreen
+                                                }
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "Carrier Circuit Breaker",
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = when (cbState) {
+                                                com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.OPEN -> MaterialTheme.colorScheme.error
+                                                com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.HALF_OPEN -> SignalAmber
+                                                com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.CLOSED -> SignalGreen.copy(alpha = 0.2f)
+                                            }
+                                        ) {
+                                            Text(
+                                                text = cbState.name,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (cbState == com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.OPEN)
+                                                    MaterialTheme.colorScheme.onError
+                                                else if (cbState == com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.HALF_OPEN)
+                                                    Color.Black
+                                                else SignalGreen
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    if (cbState == com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.OPEN) {
+                                        val totalSecs = cbRemainingMs / 1000
+                                        val mins = totalSecs / 60
+                                        val secs = totalSecs % 60
+                                        Text(
+                                            text = "15-min cooldown active to protect SIM. Resumes in ${String.format("%02d:%02d", mins, secs)}.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onErrorContainer
+                                        )
+                                        if (!cbReason.isNullOrBlank()) {
+                                            Text(
+                                                text = "Reason: $cbReason",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                                            )
+                                        }
+                                    } else if (cbState == com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.HALF_OPEN) {
+                                        Text(
+                                            text = "Cooldown elapsed. Line clearance canary probe active (1 test message permitted).",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "Normal operation. Outbound cellular transmissions live (Failures: $cbFailures/3).",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        if (cbState != com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.CLOSED) {
+                                            OutlinedButton(
+                                                onClick = { circuitBreaker.forceReset() },
+                                                modifier = Modifier.weight(1f),
+                                                shape = RoundedCornerShape(8.dp),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                            ) {
+                                                Text("Reset Breaker", style = MaterialTheme.typography.labelMedium)
+                                            }
+                                        }
+                                        if (cbState == com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.OPEN) {
+                                            OutlinedButton(
+                                                onClick = { circuitBreaker.forceProbe() },
+                                                modifier = Modifier.weight(1f),
+                                                shape = RoundedCornerShape(8.dp),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                            ) {
+                                                Text("Probe Canary", style = MaterialTheme.typography.labelMedium)
+                                            }
+                                        } else if (cbState == com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.CLOSED) {
+                                            OutlinedButton(
+                                                onClick = { circuitBreaker.tripBreaker("Manual Test Trip", resultCode = 5) },
+                                                modifier = Modifier.weight(1f),
+                                                shape = RoundedCornerShape(8.dp),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                            ) {
+                                                Text("Test 15m Trip", style = MaterialTheme.typography.labelMedium)
+                                            }
+                                        }
+                                    }
                                 }
                             }
                             OutlinedButton(

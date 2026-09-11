@@ -126,8 +126,8 @@ fun NextGenChatMessageItem(
                     }
                 }
 
-                // Render Attachment if present
-                if (message.attachment != null) {
+                // Render Attachment if present (ignore VISUAL_ANCHOR carrier vehicles)
+                if (message.attachment != null && message.attachment.type != com.cellular.rpc.engine.AttachmentType.VISUAL_ANCHOR) {
                     MessageAttachmentBubble(
                         attachment = message.attachment,
                         isUser = isUser,

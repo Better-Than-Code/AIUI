@@ -118,6 +118,70 @@ fun CellularChatTab(
             onOpenHistoryClick = onOpenHistoryClick
         )
 
+        // Epic 4: 15-Minute Carrier Cooldown Circuit Breaker Banner
+        val circuitBreaker = remember { com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.getInstance(context) }
+        val circuitState by circuitBreaker.state.collectAsState()
+        val cooldownRemainingMs by circuitBreaker.cooldownRemainingMs.collectAsState()
+
+        if (circuitState == com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.OPEN) {
+            val totalSecs = cooldownRemainingMs / 1000
+            val mins = totalSecs / 60
+            val secs = totalSecs % 60
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.errorContainer,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Security,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "Carrier Cooldown Active (15m)",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            Text(
+                                text = "Outbound cellular paused to prevent spam lock. Resumes in ${String.format("%02d:%02d", mins, secs)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f)
+                            )
+                        }
+                    }
+                    TextButton(
+                        onClick = { circuitBreaker.forceReset() },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "RESET",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+        }
+
         // Chat Stream (iMessage/RCS Asymmetric bubbles with Markdown, Attachments & Widget Cards)
         LazyColumn(
             state = listState,

@@ -718,6 +718,280 @@ class ExampleRobolectricTest {
       fail("dispatchCarrierMms must not throw exception: ${e.message}")
     }
   }
+
+  /**
+   * Epic 1 Telephony Observer Verification:
+   * 1. Monotonic Checkpointing in TelephonyCheckpointStore.
+   * 2. Proximity-based multi-part SMS clustering (<= 5000ms) with dual-key sorting (date ASC, id ASC).
+   */
+  @Test
+  fun `telephony checkpoint store tracks monotonic row ids and survives resets`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    com.cellular.rpc.transport.service.TelephonyCheckpointStore.resetCheckpoints(context)
+
+    assertEquals(-1L, com.cellular.rpc.transport.service.TelephonyCheckpointStore.getLastSeenSmsId(context))
+    assertEquals(-1L, com.cellular.rpc.transport.service.TelephonyCheckpointStore.getLastSeenMmsId(context))
+
+    // Set initial checkpoint
+    com.cellular.rpc.transport.service.TelephonyCheckpointStore.setLastSeenSmsId(context, 1050L)
+    com.cellular.rpc.transport.service.TelephonyCheckpointStore.setLastSeenMmsId(context, 2040L)
+
+    assertEquals(1050L, com.cellular.rpc.transport.service.TelephonyCheckpointStore.getLastSeenSmsId(context))
+    assertEquals(2040L, com.cellular.rpc.transport.service.TelephonyCheckpointStore.getLastSeenMmsId(context))
+
+    // Monotonic invariant: Older or equal IDs must NOT overwrite newer checkpoint
+    com.cellular.rpc.transport.service.TelephonyCheckpointStore.setLastSeenSmsId(context, 1040L)
+    com.cellular.rpc.transport.service.TelephonyCheckpointStore.setLastSeenMmsId(context, 2040L)
+    assertEquals(1050L, com.cellular.rpc.transport.service.TelephonyCheckpointStore.getLastSeenSmsId(context))
+    assertEquals(2040L, com.cellular.rpc.transport.service.TelephonyCheckpointStore.getLastSeenMmsId(context))
+
+    // Monotonic invariant: Newer IDs advance checkpoint
+    com.cellular.rpc.transport.service.TelephonyCheckpointStore.setLastSeenSmsId(context, 1065L)
+    com.cellular.rpc.transport.service.TelephonyCheckpointStore.setLastSeenMmsId(context, 2055L)
+    assertEquals(1065L, com.cellular.rpc.transport.service.TelephonyCheckpointStore.getLastSeenSmsId(context))
+    assertEquals(2055L, com.cellular.rpc.transport.service.TelephonyCheckpointStore.getLastSeenMmsId(context))
+  }
+
+  @Test
+  fun `telephony multi-part SMS clustering reorders out of order bursts correctly`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+
+    // Simulate 3 multi-part SMS fragments of an inbound message arriving interleaved and out of order
+    val rows = listOf(
+        com.cellular.rpc.transport.service.SmsRow(id = 103, address = "+18005550199", body = "Part 3.", date = 1700000200L),
+        com.cellular.rpc.transport.service.SmsRow(id = 101, address = "+18005550199", body = "Part 1, ", date = 1700000000L),
+        com.cellular.rpc.transport.service.SmsRow(id = 102, address = "+18005550199", body = "Part 2, ", date = 1700000100L)
+    )
+
+    // Verify clustering and sequential reconstruction
+    com.cellular.rpc.transport.service.HardenedTelephonyObserverService.processSmsRows(context, rows)
+
+    val db = com.cellular.rpc.data.local.AppDatabase.getInstance(context)
+    val msgs = db.chatMessageDao().getAllMessagesList()
+    val lastMsg = msgs.firstOrNull { it.text.contains("Part 1") }
+    assertNotNull("Reconstructed message must be persisted in Room", lastMsg)
+    assertEquals("Part 1, Part 2, Part 3.", lastMsg!!.text)
+  }
+
+  /**
+   * Epic 2: Test 256-byte payload ceiling on SMS and automatic promotion to MMS container.
+   */
+  @Test
+  fun `inbound transport failover protocol enforces 256B ceiling and promotes large payloads to MMS`() {
+    val shortPayload = "Short message under ceiling"
+    val shortDecision = com.cellular.rpc.transport.failover.TransportFailoverEngine.evaluateTransport(shortPayload)
+    assertTrue("Payload <= 256B must travel over plain SMS", shortDecision is com.cellular.rpc.transport.failover.TransportFailoverEngine.TransportDecision.PlainSms)
+
+    val exactly256Payload = "A".repeat(256)
+    val exactly256Decision = com.cellular.rpc.transport.failover.TransportFailoverEngine.evaluateTransport(exactly256Payload)
+    assertTrue("Payload of exactly 256B must travel over plain SMS", exactly256Decision is com.cellular.rpc.transport.failover.TransportFailoverEngine.TransportDecision.PlainSms)
+
+    val largePayload = "A".repeat(257)
+    val largeDecision = com.cellular.rpc.transport.failover.TransportFailoverEngine.evaluateTransport(largePayload)
+    assertTrue("Payload > 256B must be promoted to MMS container", largeDecision is com.cellular.rpc.transport.failover.TransportFailoverEngine.TransportDecision.PromoteToMms)
+    val promote = largeDecision as com.cellular.rpc.transport.failover.TransportFailoverEngine.TransportDecision.PromoteToMms
+    assertEquals(257, promote.byteCount)
+    assertTrue(promote.reason.contains("256"))
+  }
+
+  /**
+   * Epic 2: Test 32x32 Visual Anchor generation and URI resolution.
+   */
+  @Test
+  fun `visual anchor generator produces valid 32x32 PNG file and URI`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val anchorFile = com.cellular.rpc.transport.failover.TransportFailoverEngine.getOrCreateVisualAnchorFile(context)
+
+    assertTrue("Anchor file must exist", anchorFile.exists())
+    assertTrue("Anchor file size must be non-zero", anchorFile.length() > 0)
+    assertEquals(com.cellular.rpc.transport.failover.TransportFailoverEngine.VISUAL_ANCHOR_NAME, anchorFile.name)
+
+    // Verify URI resolution
+    val uri = com.cellular.rpc.transport.failover.TransportFailoverEngine.getVisualAnchorUri(context)
+    assertNotNull(uri)
+
+    // Verify attachment recognition
+    val attachment = com.cellular.rpc.engine.MessageAttachment(
+      id = "att_anchor",
+      type = com.cellular.rpc.engine.AttachmentType.VISUAL_ANCHOR,
+      uri = uri.toString(),
+      fileName = com.cellular.rpc.transport.failover.TransportFailoverEngine.VISUAL_ANCHOR_NAME,
+      fileSizeBytes = anchorFile.length(),
+      mimeType = "image/png"
+    )
+    assertTrue(com.cellular.rpc.transport.failover.TransportFailoverEngine.isVisualAnchor(attachment))
+  }
+
+  /**
+   * Epic 2: Test single-container SMIL markup encapsulation without companion SMS preamble.
+   */
+  @Test
+  fun `single container SMIL markup encapsulates payload text and visual anchor`() {
+    val smil = com.cellular.rpc.transport.failover.TransportFailoverEngine.generateSingleContainerSmil(
+      textPartName = "payload_content.txt",
+      imagePartName = "aiui_mms_anchor.png"
+    )
+
+    assertTrue("SMIL must declare root-layout", smil.contains("<root-layout width=\"32\" height=\"32\"/>"))
+    assertTrue("SMIL must declare Image region", smil.contains("<region id=\"Image\""))
+    assertTrue("SMIL must declare Text region", smil.contains("<region id=\"Text\""))
+    assertTrue("SMIL must include anchor image tag", smil.contains("<img src=\"aiui_mms_anchor.png\" region=\"Image\"/>"))
+    assertTrue("SMIL must include text payload tag", smil.contains("<text src=\"payload_content.txt\" region=\"Text\"/>"))
+
+    // Verify SMIL text extraction in HardenedMmsParser
+    val inlineSmil = "<smil><body><par><img src=\"aiui_mms_anchor.png\"/><text src=\"text.txt\">{\"type\":\"weather\",\"temp\":72}</text></par></body></smil>"
+    val extracted = com.cellular.rpc.transport.service.HardenedMmsParser.extractTextFromSmil(inlineSmil)
+    assertEquals("{\"type\":\"weather\",\"temp\":72}", extracted)
+  }
+
+  /**
+   * Epic 3: Test MMS Part Table Latency Retry & SMIL Body Accumulator with entity unescaping.
+   */
+  @Test
+  fun `epic 3 SMIL body accumulator handles multi-tag sequential text and unescapes entities`() {
+    val multiTagSmil = """
+      <smil xmlns="http://www.w3.org/2000/SMIL20/CR/Language">
+        <head>
+          <layout>
+            <root-layout width="32" height="32"/>
+            <region id="TextRegion" top="0" left="0"/>
+          </layout>
+        </head>
+        <body>
+          <par dur="3000ms">
+            <text src="header.txt" region="TextRegion">&quot;status&quot;: &amp;quot;OK&amp;quot;</text>
+          </par>
+          <par dur="3000ms">
+            <text src="body.txt" region="TextRegion">{&quot;summary&quot;: &quot;Clear &amp; Sunny &lt;75&#39;F&gt;&quot;}</text>
+          </par>
+        </body>
+      </smil>
+    """.trimIndent()
+
+    val extracted = com.cellular.rpc.transport.service.HardenedMmsParser.extractTextFromSmil(multiTagSmil)
+    assertTrue("Extracted text must contain header fragment", extracted.contains("\"status\": \"OK\""))
+    assertTrue("Extracted text must unescape &amp; to &", extracted.contains("Clear & Sunny"))
+    assertTrue("Extracted text must unescape &lt; and &gt;", extracted.contains("<75'F>"))
+    assertTrue("Extracted text must unescape &#39; to single quote", extracted.contains("75'F"))
+
+    // Verify 4-stage backoff delay intervals
+    assertEquals(4, com.cellular.rpc.transport.service.HardenedMmsParser.RETRY_BACKOFF_MS.size)
+    assertEquals(0L, com.cellular.rpc.transport.service.HardenedMmsParser.RETRY_BACKOFF_MS[0])
+    assertEquals(1200L, com.cellular.rpc.transport.service.HardenedMmsParser.RETRY_BACKOFF_MS[1])
+    assertEquals(2500L, com.cellular.rpc.transport.service.HardenedMmsParser.RETRY_BACKOFF_MS[2])
+    assertEquals(4500L, com.cellular.rpc.transport.service.HardenedMmsParser.RETRY_BACKOFF_MS[3])
+  }
+
+  @Test
+  fun `epic 3 SMIL body accumulator extracts text and alt attributes when text tag is self-closing`() {
+    val altSmil = """
+      <smil>
+        <body>
+          <par>
+            <img src="aiui_mms_anchor.png" alt="Fallback Payload &amp; Status"/>
+            <text src="payload.txt" text="{&quot;action&quot;: &quot;navigate&quot;}"/>
+          </par>
+        </body>
+      </smil>
+    """.trimIndent()
+
+    val extracted = com.cellular.rpc.transport.service.HardenedMmsParser.extractTextFromSmil(altSmil)
+    assertTrue("Must extract alt attribute with unescaping", extracted.contains("Fallback Payload & Status"))
+    assertTrue("Must extract text attribute with unescaping", extracted.contains("{\"action\": \"navigate\"}"))
+  }
+
+  /**
+   * Epic 4: 15-Minute Carrier Cooldown Circuit Breaker Tests
+   */
+  @Test
+  fun `epic 4 circuit breaker starts closed and trips to open on 3 consecutive radio failures`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val cb = com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.getInstance(context)
+    cb.forceReset()
+
+    assertEquals(com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.CLOSED, cb.state.value)
+    assertTrue("Circuit must allow transmission when CLOSED", cb.canTransmit())
+    assertEquals(0, cb.consecutiveFailures.value)
+
+    // Failure 1
+    cb.recordFailure(1, "Radio failure 1")
+    assertEquals(com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.CLOSED, cb.state.value)
+    assertEquals(1, cb.consecutiveFailures.value)
+    assertTrue(cb.canTransmit())
+
+    // Failure 2
+    cb.recordFailure(2, "Radio failure 2")
+    assertEquals(com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.CLOSED, cb.state.value)
+    assertEquals(2, cb.consecutiveFailures.value)
+    assertTrue(cb.canTransmit())
+
+    // Failure 3 -> Must trip to OPEN
+    cb.recordFailure(3, "Radio failure 3")
+    assertEquals(com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.OPEN, cb.state.value)
+    assertEquals(3, cb.consecutiveFailures.value)
+    assertFalse("Circuit must suppress transmission when OPEN", cb.canTransmit())
+    assertTrue("Remaining cooldown must be > 0", cb.getCooldownRemainingMs() > 0L)
+    assertTrue("Remaining cooldown must be <= 15 minutes", cb.getCooldownRemainingMs() <= 15 * 60 * 1000L)
+
+    // Force reset cleans up
+    cb.forceReset()
+    assertEquals(com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.CLOSED, cb.state.value)
+    assertEquals(0, cb.consecutiveFailures.value)
+    assertTrue(cb.canTransmit())
+  }
+
+  @Test
+  fun `epic 4 circuit breaker trips immediately on carrier rate limit exceeded error code 5`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val cb = com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.getInstance(context)
+    cb.forceReset()
+
+    assertEquals(com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.CLOSED, cb.state.value)
+
+    // Send RESULT_ERROR_LIMIT_EXCEEDED (code 5)
+    cb.recordFailure(android.telephony.SmsManager.RESULT_ERROR_LIMIT_EXCEEDED, "Carrier rate limit exceeded")
+
+    // Must immediately trip to OPEN on 1st error
+    assertEquals(com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.OPEN, cb.state.value)
+    assertFalse("Must suppress transmission", cb.canTransmit())
+    assertTrue(cb.lastFailureReason.value!!.contains("limit", ignoreCase = true))
+
+    cb.forceReset()
+  }
+
+  @Test
+  fun `epic 4 circuit breaker canary probe in half open recovers on success and re-trips on failure`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val cb = com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.getInstance(context)
+    cb.forceReset()
+
+    // Manually trip with custom short duration
+    cb.tripBreaker("Simulation trip", resultCode = 1, customDurationMs = 50L)
+    assertEquals(com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.OPEN, cb.state.value)
+    assertFalse(cb.canTransmit())
+
+    // Wait for duration to elapse
+    Thread.sleep(60L)
+    cb.refreshState()
+
+    // Must advance to HALF_OPEN
+    assertEquals(com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.HALF_OPEN, cb.state.value)
+    assertTrue("Must allow canary probe message in HALF_OPEN", cb.canTransmit())
+
+    // Case A: Canary succeeds -> Returns to CLOSED
+    cb.recordSuccess()
+    assertEquals(com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.CLOSED, cb.state.value)
+    assertEquals(0, cb.consecutiveFailures.value)
+
+    // Case B: Canary fails -> Re-trips to OPEN for another 15 minutes
+    cb.transitionToHalfOpen()
+    assertEquals(com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.HALF_OPEN, cb.state.value)
+    cb.recordFailure(1, "Canary probe bounced by MMSC")
+    assertEquals(com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.OPEN, cb.state.value)
+    assertFalse(cb.canTransmit())
+
+    cb.forceReset()
+  }
 }
 
 

@@ -24,10 +24,15 @@ import com.cellular.rpc.transport.handler.CellularTransportType
 import com.cellular.rpc.transport.handler.InboundCellularMessage
 import com.cellular.rpc.transport.receiver.PallySmsReceiver
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 
 /**
- * Hardened foreground service hosting reactive ContentObservers for both SMS and MMS,
- * equipped with multi-part concatenation buffering, MMS part verification, and reconciliation.
+ * Hardened foreground service hosting reactive ContentObservers for both SMS and MMS.
+ * Implements Epic 1:
+ * - T-1.1: Persistent Database Checkpoint Store (TelephonyCheckpointStore) surviving OS kills.
+ * - T-1.2: Dynamic Row-ID Delta Windowing without hardcoded upper LIMIT truncations.
+ * - T-1.3: Sliding-Window Non-Cancelling Batch Debouncer with dedicated drain channels.
+ * - T-1.4: Dual-Key Monotonic Sorting (DATE ASC, _ID ASC) and proximity-based multi-part reconciliation.
  */
 class HardenedTelephonyObserverService : Service() {
 
@@ -36,15 +41,22 @@ class HardenedTelephonyObserverService : Service() {
     private var smsObserver: SmsContentObserver? = null
     private var mmsObserver: MmsContentObserver? = null
 
+    // Non-cancelling sliding-window batch channels
+    private val smsTriggerChannel = Channel<Unit>(Channel.CONFLATED)
+    private val mmsTriggerChannel = Channel<Unit>(Channel.CONFLATED)
+
     companion object {
         private const val TAG = "TelephonyService"
         const val NOTIFICATION_ID = 8902
         const val CHANNEL_ID = "cellular_telephony_channel"
 
+        // In-memory cache synced with TelephonyCheckpointStore for fast synchronous access
         @Volatile
-        var lastProcessedSmsId = -1L
+        var lastProcessedSmsId: Long = -1L
+            internal set
         @Volatile
-        var lastProcessedMmsId = -1L
+        var lastProcessedMmsId: Long = -1L
+            internal set
 
         fun start(context: Context) {
             try {
@@ -77,20 +89,90 @@ class HardenedTelephonyObserverService : Service() {
             }
         }
 
-        private suspend fun querySmsDelta(context: Context) {
+        internal fun seedInitialIds(context: Context) {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) return
+
+            val savedSmsId = TelephonyCheckpointStore.getLastSeenSmsId(context)
+            if (savedSmsId <= 0L) {
+                try {
+                    context.contentResolver.query(
+                        Telephony.Sms.Inbox.CONTENT_URI,
+                        arrayOf(Telephony.Sms._ID),
+                        null,
+                        null,
+                        "${Telephony.Sms._ID} DESC LIMIT 1"
+                    )?.use {
+                        if (it.moveToFirst()) {
+                            val initialId = it.getLong(0)
+                            TelephonyCheckpointStore.setLastSeenSmsId(context, initialId)
+                            lastProcessedSmsId = initialId
+                            Log.i(TAG, "Seeded initial lastProcessedSmsId=$initialId from provider.")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed seeding initial SMS ID: ${e.message}")
+                }
+            } else {
+                lastProcessedSmsId = savedSmsId
+                Log.i(TAG, "Restored lastProcessedSmsId=$savedSmsId from checkpoint store.")
+            }
+
+            val savedMmsId = TelephonyCheckpointStore.getLastSeenMmsId(context)
+            if (savedMmsId <= 0L) {
+                try {
+                    context.contentResolver.query(
+                        Telephony.Mms.Inbox.CONTENT_URI,
+                        arrayOf(Telephony.Mms._ID),
+                        null,
+                        null,
+                        "${Telephony.Mms._ID} DESC LIMIT 1"
+                    )?.use {
+                        if (it.moveToFirst()) {
+                            val initialId = it.getLong(0)
+                            TelephonyCheckpointStore.setLastSeenMmsId(context, initialId)
+                            lastProcessedMmsId = initialId
+                            Log.i(TAG, "Seeded initial lastProcessedMmsId=$initialId from provider.")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed seeding initial MMS ID: ${e.message}")
+                }
+            } else {
+                lastProcessedMmsId = savedMmsId
+                Log.i(TAG, "Restored lastProcessedMmsId=$savedMmsId from checkpoint store.")
+            }
+        }
+
+        /**
+         * Monotonically queries and processes all inbound SMS rows newer than persistent checkpoint.
+         * Handles burst arrivals (>10 msgs/sec) without truncation.
+         */
+        suspend fun querySmsDelta(context: Context) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) return
+
+            val currentCheckpoint = TelephonyCheckpointStore.getLastSeenSmsId(context)
+            if (currentCheckpoint <= 0L) {
+                seedInitialIds(context)
+                return
+            }
+
             try {
+                // T-1.2: Dynamic Row-ID delta query: select all rows newer than checkpoint
+                // T-1.4: Dual-key monotonic sorting: DATE ASC, _ID ASC
                 val cursor = context.contentResolver.query(
                     Telephony.Sms.Inbox.CONTENT_URI,
                     arrayOf(Telephony.Sms._ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE),
-                    null,
-                    null,
-                    "${Telephony.Sms._ID} DESC LIMIT 20"
+                    "${Telephony.Sms._ID} > ?",
+                    arrayOf(currentCheckpoint.toString()),
+                    "${Telephony.Sms.DATE} ASC, ${Telephony.Sms._ID} ASC"
                 )
+
                 cursor?.use {
                     val rows = mutableListOf<SmsRow>()
-                    var maxSeen = lastProcessedSmsId
-                    val activeAiNumber = PallySmsReceiver.normalizePhoneNumber(com.cellular.rpc.domain.service.CellularServiceManager.getActiveService(context).phoneNumber)
+                    var maxSeen = currentCheckpoint
+                    val activeAiNumber = PallySmsReceiver.normalizePhoneNumber(
+                        com.cellular.rpc.domain.service.CellularServiceManager.getActiveService(context).phoneNumber
+                    )
 
                     while (it.moveToNext()) {
                         val id = it.getLong(0)
@@ -100,55 +182,112 @@ class HardenedTelephonyObserverService : Service() {
                         if (id > maxSeen) maxSeen = id
 
                         val normalizedSender = PallySmsReceiver.normalizePhoneNumber(address)
-                        val isRecognized = normalizedSender.isNotBlank() && (activeAiNumber.isBlank() || normalizedSender == activeAiNumber)
+                        val isRecognized = normalizedSender.isNotBlank() &&
+                                (activeAiNumber.isBlank() || normalizedSender == activeAiNumber)
 
-                        if (lastProcessedSmsId != -1L && id > lastProcessedSmsId && isRecognized) {
+                        if (isRecognized) {
                             rows.add(SmsRow(id, address, body, date))
                         }
                     }
-                    if (maxSeen > lastProcessedSmsId) lastProcessedSmsId = maxSeen
-                    processSmsRows(context, rows)
+
+                    if (maxSeen > currentCheckpoint) {
+                        TelephonyCheckpointStore.setLastSeenSmsId(context, maxSeen)
+                        lastProcessedSmsId = maxSeen
+                    }
+
+                    if (rows.isNotEmpty()) {
+                        processSmsRows(context, rows)
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "SMS Reconciliation failed: ${e.message}")
             }
         }
 
-        private suspend fun queryMmsDelta(context: Context) {
+        /**
+         * Monotonically queries and processes all inbound MMS rows newer than persistent checkpoint.
+         */
+        suspend fun queryMmsDelta(context: Context) {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) return
+
+            val currentCheckpoint = TelephonyCheckpointStore.getLastSeenMmsId(context)
+            if (currentCheckpoint <= 0L) {
+                seedInitialIds(context)
+                return
+            }
+
             try {
                 val cursor = context.contentResolver.query(
                     Telephony.Mms.Inbox.CONTENT_URI,
                     arrayOf(Telephony.Mms._ID, Telephony.Mms.DATE, Telephony.Mms.MESSAGE_TYPE),
-                    null,
-                    null,
-                    "${Telephony.Mms._ID} DESC LIMIT 10"
+                    "${Telephony.Mms._ID} > ?",
+                    arrayOf(currentCheckpoint.toString()),
+                    "${Telephony.Mms.DATE} ASC, ${Telephony.Mms._ID} ASC"
                 )
+
                 cursor?.use {
-                    var maxSeen = lastProcessedMmsId
+                    var maxSeen = currentCheckpoint
                     while (it.moveToNext()) {
                         val id = it.getLong(0)
                         val msgType = it.getInt(2)
-                        if (id > maxSeen) maxSeen = id
 
                         // 132 = PduHeaders.MESSAGE_TYPE_RETRIEVE_CONF (Downloaded MMS)
-                        if (lastProcessedMmsId != -1L && id > lastProcessedMmsId && msgType == 132) {
-                            processSingleMms(context, id)
+                        if (msgType == 132) {
+                            val processed = processSingleMms(context, id)
+                            if (processed) {
+                                if (id > maxSeen) maxSeen = id
+                            }
+                        } else if (msgType == 130) {
+                            // 130 = MESSAGE_TYPE_NOTIFICATION_IND (MMSC notified, parts downloading)
+                            Log.d(TAG, "MMS ID $id is notification_ind (130). Awaiting retrieve_conf.")
+                        } else {
+                            if (id > maxSeen) maxSeen = id
                         }
                     }
-                    if (maxSeen > lastProcessedMmsId) lastProcessedMmsId = maxSeen
+
+                    if (maxSeen > currentCheckpoint) {
+                        TelephonyCheckpointStore.setLastSeenMmsId(context, maxSeen)
+                        lastProcessedMmsId = maxSeen
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "MMS Reconciliation failed: ${e.message}")
             }
         }
 
+        /**
+         * Multi-part SMS concatenation with sliding temporal proximity (<= 5000ms)
+         * and dual-key sorting (DATE ASC, _ID ASC) to avoid arbitrary boundary truncations.
+         */
         internal suspend fun processSmsRows(context: Context, rows: List<SmsRow>) {
             if (rows.isEmpty()) return
-            // Group multi-part segments by sender and 4-second time cluster
-            val clusters = rows.groupBy { "${it.address.filter { c -> c.isDigit() || c == '+' }}:${it.date / 4000L}" }
-            for ((_, segments) in clusters) {
-                val sorted = segments.sortedBy { it.id }
+
+            // Sort all rows by normalized sender, then date ASC, then id ASC
+            val sortedRows = rows.sortedWith(compareBy(
+                { it.address.filter { c -> c.isDigit() || c == '+' } },
+                { it.date },
+                { it.id }
+            ))
+
+            // Cluster adjacent rows from same sender arriving within 5000ms
+            val clusters = mutableListOf<MutableList<SmsRow>>()
+            for (row in sortedRows) {
+                val currentCluster = clusters.lastOrNull()
+                val normalizedSender = row.address.filter { c -> c.isDigit() || c == '+' }
+                if (currentCluster != null) {
+                    val lastRow = currentCluster.last()
+                    val lastNormalizedSender = lastRow.address.filter { c -> c.isDigit() || c == '+' }
+                    val timeDiff = Math.abs(row.date - lastRow.date)
+                    if (normalizedSender == lastNormalizedSender && timeDiff <= 5000L) {
+                        currentCluster.add(row)
+                        continue
+                    }
+                }
+                clusters.add(mutableListOf(row))
+            }
+
+            for (segments in clusters) {
+                val sorted = segments.sortedWith(compareBy({ it.date }, { it.id }))
                 val sender = sorted.first().address
                 val fullBody = sorted.joinToString("") { it.body }
                 val date = sorted.first().date
@@ -166,7 +305,7 @@ class HardenedTelephonyObserverService : Service() {
             }
         }
 
-        internal suspend fun processSingleMms(context: Context, mmsId: Long) {
+        internal suspend fun processSingleMms(context: Context, mmsId: Long): Boolean {
             val (sender, body, attachment) = HardenedMmsParser.extractMmsPayloadWithRetry(context, mmsId)
             if (body.isNotBlank() || attachment != null) {
                 Log.i(TAG, "Ingested MMS ID $mmsId from $sender: text='${body.take(50)}', attachment=${attachment?.fileName}")
@@ -179,7 +318,9 @@ class HardenedTelephonyObserverService : Service() {
                         attachment = attachment
                     )
                 )
+                return true
             }
+            return false
         }
     }
 
@@ -187,8 +328,29 @@ class HardenedTelephonyObserverService : Service() {
         super.onCreate()
         acquireWakeLock()
         startForeground(NOTIFICATION_ID, buildNotification())
+        seedInitialIds(this)
+        startDrainWorkers()
         registerObservers()
-        seedInitialIds()
+    }
+
+    private fun startDrainWorkers() {
+        // T-1.3: Non-cancelling sliding-window drain loop for SMS
+        serviceScope.launch {
+            for (trigger in smsTriggerChannel) {
+                // Sliding-window debounce: 350ms to allow multi-part PDUs in flight to land in SQLite
+                delay(350L)
+                querySmsDelta(applicationContext)
+            }
+        }
+
+        // T-1.3: Non-cancelling sliding-window drain loop for MMS
+        serviceScope.launch {
+            for (trigger in mmsTriggerChannel) {
+                // 800ms delay to allow carrier MMSC download to complete
+                delay(800L)
+                queryMmsDelta(applicationContext)
+            }
+        }
     }
 
     private fun registerObservers() {
@@ -199,20 +361,7 @@ class HardenedTelephonyObserverService : Service() {
         mmsObserver = MmsContentObserver(handler).also {
             contentResolver.registerContentObserver(Telephony.Mms.CONTENT_URI, true, it)
         }
-        Log.i(TAG, "Registered Telephony SMS and MMS ContentObservers successfully.")
-    }
-
-    private fun seedInitialIds() {
-        serviceScope.launch {
-            if (ContextCompat.checkSelfPermission(this@HardenedTelephonyObserverService, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED) {
-                contentResolver.query(Telephony.Sms.Inbox.CONTENT_URI, arrayOf(Telephony.Sms._ID), null, null, "${Telephony.Sms._ID} DESC LIMIT 1")?.use {
-                    if (it.moveToFirst()) lastProcessedSmsId = it.getLong(0)
-                }
-                contentResolver.query(Telephony.Mms.Inbox.CONTENT_URI, arrayOf(Telephony.Mms._ID), null, null, "${Telephony.Mms._ID} DESC LIMIT 1")?.use {
-                    if (it.moveToFirst()) lastProcessedMmsId = it.getLong(0)
-                }
-            }
-        }
+        Log.i(TAG, "Registered Telephony SMS and MMS ContentObservers with sliding-window drain.")
     }
 
     private fun acquireWakeLock() {
@@ -250,6 +399,8 @@ class HardenedTelephonyObserverService : Service() {
     override fun onDestroy() {
         smsObserver?.let { contentResolver.unregisterContentObserver(it) }
         mmsObserver?.let { contentResolver.unregisterContentObserver(it) }
+        smsTriggerChannel.close()
+        mmsTriggerChannel.close()
         serviceScope.cancel()
         wakeLock?.let { if (it.isHeld) it.release() }
         super.onDestroy()
@@ -257,27 +408,17 @@ class HardenedTelephonyObserverService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    // Inner Observer for SMS
+    // Inner Observer for SMS: non-cancelling trigger
     private inner class SmsContentObserver(handler: Handler) : ContentObserver(handler) {
-        private var debounceJob: Job? = null
         override fun onChange(selfChange: Boolean, uri: Uri?) {
-            debounceJob?.cancel()
-            debounceJob = serviceScope.launch {
-                delay(1200) // 1.2s debounce to capture all multi-part segments
-                querySmsDelta(applicationContext)
-            }
+            smsTriggerChannel.trySend(Unit)
         }
     }
 
-    // Inner Observer for MMS
+    // Inner Observer for MMS: non-cancelling trigger
     private inner class MmsContentObserver(handler: Handler) : ContentObserver(handler) {
-        private var debounceJob: Job? = null
         override fun onChange(selfChange: Boolean, uri: Uri?) {
-            debounceJob?.cancel()
-            debounceJob = serviceScope.launch {
-                delay(2000) // 2.0s delay to allow carrier MMSC download to complete
-                queryMmsDelta(applicationContext)
-            }
+            mmsTriggerChannel.trySend(Unit)
         }
     }
 }

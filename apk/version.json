@@ -1,7 +1,7 @@
 {
-  "versionCode": 27,
-  "versionName": "4.9",
-  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v27.apk",
-  "releaseNotes": "Version 4.9 (Release v27): Enhanced Genesis Payload Sync & Robust Reverse-MCP Async Protocol. Features multi-chunk carrier-safe Genesis manifest segmentation, release-aware dynamic catalog hashing (REL-2026-09-11-v4), explicit AI receipt acknowledgement and verification, and resilient in-app update management."
+  "versionCode": 28,
+  "versionName": "5.0",
+  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v28.apk",
+  "releaseNotes": "Version 5.0 (Release v28): Carrier Telephony Ingestion & Fault-Tolerant Transport Architecture. Features TelephonyObserverCursor hardening with persistent monotonic row ID checkpoints and dynamic delta windowing, Inbound Transport Failover Protocol enforcing strict 256B SMS ceiling and automatic SMIL MMS promotion with 32x32 carrier-compliant visual anchors, 4-stage adaptive MMS part table latency retry (0ms, 1200ms, 2500ms, 4500ms) with multi-tag SMIL text accumulation and recursive XML entity unescaping, and 15-Minute Carrier Cooldown Circuit Breaker with 3-state FSM (CLOSED, OPEN, HALF_OPEN) preventing SIM spam lockouts with line-clearance canary probing."
 }
  

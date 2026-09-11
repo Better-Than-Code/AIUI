@@ -73,6 +73,25 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
 
     val handshakeStatus = CellularHandshakeEngine.handshakeStatus
     val pendingTransactions = CellularHandshakeEngine.pendingList
+
+    // Epic 4: 15-Minute Carrier Cooldown Circuit Breaker
+    val circuitBreaker = com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.getInstance(application)
+    val circuitState = circuitBreaker.state
+    val circuitCooldownRemainingMs = circuitBreaker.cooldownRemainingMs
+    val circuitConsecutiveFailures = circuitBreaker.consecutiveFailures
+    val circuitLastFailureReason = circuitBreaker.lastFailureReason
+
+    fun resetCircuitBreaker() {
+        circuitBreaker.forceReset()
+    }
+
+    fun probeCircuitBreaker() {
+        circuitBreaker.forceProbe()
+    }
+
+    fun tripCircuitBreakerForTesting(durationMs: Long = 15 * 60 * 1000L) {
+        circuitBreaker.tripBreaker("Manual Test Trip", resultCode = 5, customDurationMs = durationMs)
+    }
     val activeIntervention = CellularHandshakeEngine.activeIntervention
 
     fun probeHandshake() {

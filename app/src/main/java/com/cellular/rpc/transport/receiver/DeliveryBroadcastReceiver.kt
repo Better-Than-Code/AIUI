@@ -37,14 +37,22 @@ class DeliveryBroadcastReceiver : BroadcastReceiver() {
                 try {
                     val db = com.cellular.rpc.data.local.AppDatabase.getInstance(appContext)
                     val queueEngine = CarrierSafeQueueEngine.getInstance(appContext)
+                    val circuitBreaker = com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.getInstance(appContext)
+
                     if (resultCode == Activity.RESULT_OK) {
                         Log.i(TAG, "Physical radio SENT success for msg: $msgId")
+                        // Epic 4: Record success to reset consecutive failure count and close circuit breaker
+                        circuitBreaker.recordSuccess()
+
                         // Mark acknowledged in sliding window and Room
                         queueEngine.windowController.markFrameAcknowledged(seqNo)
                         db.outboxDao().markAcknowledged(sessionId, seqNo)
                         db.outboxDao().clearAcknowledged()
                     } else {
                         Log.w(TAG, "Physical radio SENT failure (code: $resultCode) for msg: $msgId. Marking stalled for retry.")
+                        // Epic 4: Record physical failure in circuit breaker (trips to 15-minute cooldown on 3 failures or limit exceeded)
+                        circuitBreaker.recordFailure(resultCode, "Radio failure (code $resultCode)")
+
                         // Keep in outbox or reset to pending so retry watchdog will resend
                         db.outboxDao().markAttempted(
                             id = intent.getLongExtra("outbox_id", 0L),

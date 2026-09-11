@@ -1,5 +1,12 @@
 [
   {
+    "versionCode": 28,
+    "versionName": "5.0",
+    "fileName": "pallyai-v28.apk",
+    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v28.apk",
+    "releaseNotes": "Release v28 - Version 5.0: Carrier Telephony Ingestion & Fault-Tolerant Transport Architecture. Features TelephonyObserverCursor hardening with persistent monotonic row ID checkpoints and dynamic delta windowing, Inbound Transport Failover Protocol enforcing strict 256B SMS ceiling and automatic SMIL MMS promotion with 32x32 carrier-compliant visual anchors, 4-stage adaptive MMS part table latency retry (0ms, 1200ms, 2500ms, 4500ms) with multi-tag SMIL text accumulation and recursive XML entity unescaping, and 15-Minute Carrier Cooldown Circuit Breaker with 3-state FSM (CLOSED, OPEN, HALF_OPEN) preventing SIM spam lockouts with line-clearance canary probing."
+  },
+  {
     "versionCode": 27,
     "versionName": "4.9",
     "fileName": "pallyai-v27.apk",

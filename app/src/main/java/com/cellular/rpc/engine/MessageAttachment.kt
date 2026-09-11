@@ -3,7 +3,8 @@ package com.cellular.rpc.engine
 enum class AttachmentType {
     IMAGE,
     FILE,
-    VOICE_NOTE
+    VOICE_NOTE,
+    VISUAL_ANCHOR
 }
 
 data class MessageAttachment(

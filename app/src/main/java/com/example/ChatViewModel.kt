@@ -283,6 +283,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             com.cellular.rpc.engine.AttachmentType.IMAGE -> append("[Attached Image: ${mainAttachment.fileName}] ")
                             com.cellular.rpc.engine.AttachmentType.FILE -> append("[Attached File: ${mainAttachment.fileName}] ")
                             com.cellular.rpc.engine.AttachmentType.VOICE_NOTE -> append("[Attached Voice Note: ${mainAttachment.durationMs / 1000}s] ")
+                            com.cellular.rpc.engine.AttachmentType.VISUAL_ANCHOR -> { /* transport anchor */ }
                         }
                     }
                     append(trimmed)

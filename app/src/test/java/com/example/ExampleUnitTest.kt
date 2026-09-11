@@ -1,5 +1,6 @@
 package com.example
 
+import androidx.compose.ui.unit.dp
 import com.cellular.rpc.domain.miniapp.ActionExecutor
 import com.cellular.rpc.domain.miniapp.SimpleMathParser
 import org.junit.Assert.*

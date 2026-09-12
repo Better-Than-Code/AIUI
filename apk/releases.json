@@ -5,48 +5,6 @@
     "fileName": "pallyai-v28.apk",
     "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v28.apk",
     "releaseNotes": "Release v28 - Version 5.0: Carrier Telephony Ingestion & Fault-Tolerant Transport Architecture. Features TelephonyObserverCursor hardening with persistent monotonic row ID checkpoints and dynamic delta windowing, Inbound Transport Failover Protocol enforcing strict 256B SMS ceiling and automatic SMIL MMS promotion with 32x32 carrier-compliant visual anchors, 4-stage adaptive MMS part table latency retry (0ms, 1200ms, 2500ms, 4500ms) with multi-tag SMIL text accumulation and recursive XML entity unescaping, and 15-Minute Carrier Cooldown Circuit Breaker with 3-state FSM (CLOSED, OPEN, HALF_OPEN) preventing SIM spam lockouts with line-clearance canary probing."
-  },
-  {
-    "versionCode": 27,
-    "versionName": "4.9",
-    "fileName": "pallyai-v27.apk",
-    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v27.apk",
-    "releaseNotes": "Release v27 - Version 4.9: Enhanced Genesis Payload Sync & Robust Reverse-MCP Async Protocol. Features multi-chunk carrier-safe Genesis manifest segmentation, release-aware dynamic catalog hashing (REL-2026-09-11-v4), explicit AI receipt acknowledgement and verification, and resilient in-app update management."
-  },
-  {
-    "versionCode": 25,
-    "versionName": "4.7",
-    "fileName": "pallyai-v25.apk",
-    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v25.apk",
-    "releaseNotes": "Release v25 - Version 4.7: High-Leverage Cellular & State Guardians. Features FuzzyStreamDemuxer self-repairing JSON stream recovery, LocalHealerAgent on-device math and formula sanitization, GSM-7 Wire Tariff Normalizer and real-time PDU byte badge, AtomicStateMutex with LMK SQLite checkpointing across process lifecycle, and RDP VectorCurveDecimator for 85% canvas stroke optimization."
-  },
-  {
-    "versionCode": 24,
-    "versionName": "4.6",
-    "fileName": "pallyai-v24.apk",
-    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v24.apk",
-    "releaseNotes": "Release v24 - Version 4.6: Cellular Telephony Ingestion & Hybrid Scripting Engine. HardenedTelephonyObserverService dual reactive SMS/MMS content observers, multi-part segment reassembly with 1200ms debounce, HardenedMmsParser with 3-stage backoff and PduHeaders.FROM resolution, onResume missed-message delta reconciliation, sub-50ms sandboxed JS/arithmetic execution (SimpleMathParser & JavaScriptSandbox), and native SDUI selection components. (Optimized binary 29.9 MB)"
-  },
-  {
-    "versionCode": 23,
-    "versionName": "4.4",
-    "fileName": "pallyai-v23.apk",
-    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v23.apk",
-    "releaseNotes": "Release v23 - Version 4.4: Self-Contained Edge Execution & Zero-Network Canvas Hardening. 100% on-device continuous 120Hz vector canvas drawing with CanvasStrokeStore recomposition memory and offline snapshot saving, carrier-safe unpadded Base64/GZIP cellular decompression in DualResponseParser, automated WCAG 2.2 AA contrast guardian in ChatThemeConfig, and Android 12/13/14 exact alarm permission safety fallbacks. (Optimized binary 29.1 MB)"
-  },
-  {
-    "versionCode": 22,
-    "versionName": "4.2",
-    "fileName": "pallyai-v22.apk",
-    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v22.apk",
-    "releaseNotes": "Release v22 - Version 4.2: Cellular Voice MMS Pipeline & Ingestion/Transmission Hardening. Adaptive AMR-WB voice compression, hardware SMS_SENT and SMS_DELIVERED PendingIntent callbacks, resilient in-flight Room outbox state machine, and 3-stage adaptive MMSC download polling. (Optimized binary 28.5 MB)"
-  },
-  {
-    "versionCode": 19,
-    "versionName": "3.2",
-    "fileName": "pallyai-v19.apk",
-    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v19.apk",
-    "releaseNotes": "Release v19 - Differential Mini-App Patching (OTA Deltas) with RFC 6902 JsonPatchEngine and Transport Fallback Orchestrator."
   }
 ]
  

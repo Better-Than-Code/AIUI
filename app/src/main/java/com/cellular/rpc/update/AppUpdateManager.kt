@@ -29,6 +29,8 @@ object AppUpdateManager {
         "https://github.com/Better-Than-Code/AIUI/tree/main/apk/releases"
     private const val GITHUB_API_CONTENTS_URL =
         "https://api.github.com/repos/Better-Than-Code/AIUI/contents/apk/releases"
+    private const val GITHUB_RAW_LATEST_APK_URL =
+        "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-latest.apk"
 
     data class ReleaseItem(
         val versionCode: Int,
@@ -186,36 +188,49 @@ object AppUpdateManager {
         val apkFile = File(context.getExternalFilesDir(null), "update.apk")
         if (apkFile.exists()) apkFile.delete()
 
+        val urlsToTry = if (apkUrl != GITHUB_RAW_LATEST_APK_URL) {
+            listOf(apkUrl, GITHUB_RAW_LATEST_APK_URL)
+        } else {
+            listOf(apkUrl)
+        }
+
         var success = false
-        try {
-            onProgress(0.1f)
-            val request = Request.Builder().url(apkUrl).build()
-            httpClient.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body
-                    if (body != null) {
-                        val contentLength = body.contentLength()
-                        body.byteStream().use { input ->
-                            FileOutputStream(apkFile).use { output ->
-                                val buffer = ByteArray(8192)
-                                var bytesCopied = 0L
-                                var bytes: Int
-                                while (input.read(buffer).also { bytes = it } >= 0) {
-                                    output.write(buffer, 0, bytes)
-                                    bytesCopied += bytes
-                                    if (contentLength > 0) {
-                                        onProgress(0.1f + 0.8f * (bytesCopied.toFloat() / contentLength.toFloat()))
+        for (targetUrl in urlsToTry) {
+            if (success) break
+            try {
+                onProgress(0.1f)
+                val request = Request.Builder().url(targetUrl).build()
+                httpClient.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val body = response.body
+                        if (body != null) {
+                            val contentLength = body.contentLength()
+                            body.byteStream().use { input ->
+                                FileOutputStream(apkFile).use { output ->
+                                    val buffer = ByteArray(8192)
+                                    var bytesCopied = 0L
+                                    var bytes: Int
+                                    while (input.read(buffer).also { bytes = it } >= 0) {
+                                        output.write(buffer, 0, bytes)
+                                        bytesCopied += bytes
+                                        if (contentLength > 0) {
+                                            onProgress(0.1f + 0.8f * (bytesCopied.toFloat() / contentLength.toFloat()))
+                                        }
                                     }
+                                    output.flush()
                                 }
-                                output.flush()
+                            }
+                            if (apkFile.exists() && apkFile.length() > 1024) {
+                                success = true
                             }
                         }
-                        success = true
+                    } else {
+                        Log.d(TAG, "Download attempt for $targetUrl returned HTTP ${response.code}")
                     }
                 }
+            } catch (e: Exception) {
+                Log.d(TAG, "Remote APK download failed for $targetUrl: ${e.message}")
             }
-        } catch (e: Exception) {
-            Log.d(TAG, "Remote APK download failed, falling back to local source APK: ${e.message}")
         }
 
         // FALLBACK: If remote download failed or returned 404, package source APK or bundle fallback

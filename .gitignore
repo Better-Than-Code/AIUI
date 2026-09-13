@@ -23,3 +23,5 @@ debug.keystore
 !/apk/releases/pallyai-latest.apk
 /releases/
 /.build-outputs/
+!/apk/releases/pallyai-v29.apk
+!/apk/releases/pallyai-v30.apk

@@ -1,6 +1,6 @@
 {
-  "versionCode": 29,
-  "versionName": "5.1",
-  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v29.apk",
-  "releaseNotes": "Release v29 - Version 5.1: Implementation of Epic 13.4 and Epic 13.5. Features Market Ticker Interactive Input & In-Place Reconciliation (keyed in-place mutation, loading shimmer) and Genesis Protocol System Prompt & AI Runtime Contract (preamble injection and compact diagnostic payloads on fresh sessions)."
+  "versionCode": 30,
+  "versionName": "5.2",
+  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v30.apk",
+  "releaseNotes": "Release v30 - Version 5.2: Rollup release for Sprint 3. Finalizes Epic 13.5 and earlier stability patches. Prepares environment for the next roadmap sprint."
 }

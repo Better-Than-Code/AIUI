@@ -1,5 +1,12 @@
 [
   {
+    "versionCode": 30,
+    "versionName": "5.2",
+    "fileName": "pallyai-v30.apk",
+    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v30.apk",
+    "releaseNotes": "Release v30 - Version 5.2: Rollup release for Sprint 3. Finalizes Epic 13.5 and earlier stability patches. Prepares environment for the next roadmap sprint."
+  },
+  {
     "versionCode": 29,
     "versionName": "5.1",
     "fileName": "pallyai-v29.apk",

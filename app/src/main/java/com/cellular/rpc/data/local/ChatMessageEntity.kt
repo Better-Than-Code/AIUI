@@ -57,6 +57,9 @@ interface ChatMessageDao {
     @Query("DELETE FROM chat_messages WHERE threadId = :threadId")
     suspend fun deleteMessagesForThread(threadId: String)
 
+    @Query("DELETE FROM chat_messages WHERE threadId = :threadId AND widgetDataJson LIKE :typePattern")
+    suspend fun deleteMessagesByWidgetType(threadId: String, typePattern: String)
+
     @Query("DELETE FROM chat_messages")
     suspend fun clearAllMessages()
 }

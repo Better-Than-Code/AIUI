@@ -44,7 +44,7 @@ object WatchdogSafeBootManager {
 
         // Check crash counter
         val crashes = prefs?.getInt(KEY_CONSECUTIVE_CRASHES, 0) ?: 0
-        if (crashes >= 3) {
+        if (crashes >= 2) {
             Log.e(TAG, "Consecutive crash count ($crashes) exceeds safety threshold. Activating Emergency Fallback Mode!")
             _isFallbackModeActive.value = true
         }
@@ -83,8 +83,21 @@ object WatchdogSafeBootManager {
             rollbackToStable(context, "Crash intercepted during staged state: ${throwable.message}")
         }
 
-        if (currentCrashes >= 3) {
+        if (currentCrashes > 1) {
+            try {
+                // Exponential backoff to slow down OS restart cycles
+                val backoffMs = Math.pow(2.0, currentCrashes.toDouble()).toLong() * 1000L
+                Thread.sleep(backoffMs)
+            } catch (e: InterruptedException) {
+                // Ignore
+            }
+        }
+
+        if (currentCrashes >= 2) {
             _isFallbackModeActive.value = true
+            // Halt restart loops by exiting the process directly
+            System.exit(1)
+            return
         }
 
         // Forward to default Android handler so OS crash lifecycle is respected

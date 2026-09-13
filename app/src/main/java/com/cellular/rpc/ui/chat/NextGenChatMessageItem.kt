@@ -183,7 +183,12 @@ fun NextGenChatMessageItem(
                                     onRefresh = { onRefreshWidget("weather") }
                                 )
                                 is WidgetData.NewsDigest -> NewsChatCard(news = widget)
-                                is WidgetData.MarketTicker -> MarketChatCard(ticker = widget)
+                                is WidgetData.MarketTicker -> MarketChatCard(
+                                    ticker = widget,
+                                    onQuerySymbol = { sym ->
+                                        onRefreshWidget("market_ticker:$sym")
+                                    }
+                                )
                                 is WidgetData.CellularTransfer -> TransferChatCard(
                                     transfer = widget,
                                     onConfirm = { onConfirmTransfer(widget.id) }
@@ -196,6 +201,7 @@ fun NextGenChatMessageItem(
                                 is WidgetData.CalendarEvent -> CalendarChatCard(event = widget)
                                 is WidgetData.TaskChecklist -> TaskChecklistChatCard(checklist = widget)
                                 is WidgetData.SystemStatus -> SystemStatusChatCard(status = widget)
+                                is WidgetData.Skeleton -> SkeletonChatCard(skeleton = widget)
                                 is WidgetData.MiniAppPreview -> {
                                     val blueprint = com.cellular.rpc.domain.miniapp.MiniAppBlueprint.fromJson(widget.rawBlueprintJson)
                                     if (blueprint != null) {
@@ -285,19 +291,28 @@ fun NextGenChatMessageItem(
                             }
                         }
                     } else {
-                        Icon(
-                            imageVector = if (showWireDetails) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                            contentDescription = "Inspect",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(12.dp)
-                        )
-                        Spacer(modifier = Modifier.width(3.dp))
                         Text(
-                            text = if (message.is304NotModified) "304 ETag Cache Match (0 PDU)" else "${message.byteSize}B SMS • CRC Verified",
+                            text = formattedTime,
+                            style = MaterialTheme.typography.labelSmall,
                             fontSize = 9.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = if (message.is304NotModified) SignalGreen else MaterialTheme.colorScheme.primary
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        if (message.is304NotModified) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "• 304 Cached",
+                                fontSize = 9.sp,
+                                color = SignalGreen
+                            )
+                        } else if (themeConfig.showPduBadge) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "• ${message.byteSize}B (${message.pduCount} PDU)",
+                                fontSize = 9.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
 
@@ -348,6 +363,34 @@ fun NextGenChatMessageItem(
             },
             onDelete = onDelete
         )
+    }
+}
+
+@Composable
+fun SkeletonChatCard(skeleton: WidgetData.Skeleton) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                strokeWidth = 2.dp,
+                color = CyanPrimary
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = skeleton.label,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 

@@ -11,6 +11,7 @@ import com.cellular.rpc.domain.payload.CellularResponse
 import com.cellular.rpc.domain.payload.CellularStatusCode
 import com.cellular.rpc.domain.protocol.Frame
 import com.cellular.rpc.domain.schema.CellularSchemaRegistry
+import com.cellular.rpc.engine.DualParsedResponse
 import com.cellular.rpc.engine.DualResponseParser
 import com.cellular.rpc.engine.WidgetData
 import com.cellular.rpc.transport.queue.CarrierSafeQueueEngine
@@ -201,6 +202,10 @@ object CellularMessageDispatcher {
             } catch (e: Exception) {
                 Log.w(TAG, "Frame reassembly error: ${e.message}")
             }
+            if (message.frame.pktType == Frame.PKT_CTL_ACK) {
+                Log.d(TAG, "CellularMessageDispatcher: Intercepted ACK control packet (seq=${message.frame.seqNo}), skipping UI chat hydration.")
+                return CellularResponse(status = 200, schemaId = "ack", payload = "")
+            }
         }
 
         // 2. Extract payload string
@@ -324,7 +329,16 @@ object CellularMessageDispatcher {
             db.conversationThreadDao().updateLastMessage(currentThread, chatMsg.text.take(60), now)
         } else if (payloadStr.isNotBlank() && !isHandshakeHandled) {
             // 5. Parse Dual Response (Conversational Text + Structured Native Widget Data)
-            val dual = DualResponseParser.parse(payloadStr)
+            val dual = try {
+                DualResponseParser.parse(payloadStr)
+            } catch (e: Exception) {
+                Log.e(TAG, "INC-12: Fenced Wire Envelope parser fault, recovering stream...", e)
+                DualParsedResponse(
+                    conversationalText = "⚠️ Payload Parse Error. Raw: ${payloadStr.take(50)}...",
+                    widgetData = null,
+                    threadId = null
+                )
+            }
             val targetThreadId = dual.threadId?.ifBlank { null } ?: activeThreadId.ifBlank { "th_main" }
 
             // Ensure the thread exists in the database
@@ -358,6 +372,36 @@ object CellularMessageDispatcher {
                     "weather" -> CellularWeatherAppWidgetProvider.updateAllWidgets(context)
                     "news_digest" -> CellularNewsAppWidgetProvider.updateAllWidgets(context)
                     else -> CellularCustomAppWidgetProvider.updateAllWidgets(context)
+                }
+
+                // Feed-tail projection: Delete existing widget instances of this type and any skeleton loaders
+                db.chatMessageDao().deleteMessagesByWidgetType(targetThreadId, "%\"type\":\"$widgetType\"%")
+                db.chatMessageDao().deleteMessagesByWidgetType(targetThreadId, "%\"type\":\"skeleton\"%")
+
+                // Epic 14.2: Natural language chat creation inserts into local SQLite
+                if (dual.widgetData is WidgetData.TaskChecklist) {
+                    dual.widgetData.items.forEachIndexed { index, itemText ->
+                        val isDone = dual.widgetData.doneFlags.getOrElse(index) { false }
+                        db.taskDao().insertTask(
+                            com.cellular.rpc.data.local.TaskEntity(
+                                id = "task_${now}_$index",
+                                title = itemText,
+                                listId = "inbox",
+                                isCompleted = isDone
+                            )
+                        )
+                    }
+                } else if (dual.widgetData is WidgetData.CalendarEvent) {
+                    db.calendarEventDao().insertEvent(
+                        com.cellular.rpc.data.local.CalendarEventEntity(
+                            id = dual.widgetData.id,
+                            title = dual.widgetData.title,
+                            description = dual.widgetData.time,
+                            location = dual.widgetData.location,
+                            startTimeMs = now,
+                            endTimeMs = now + 3600000
+                        )
+                    )
                 }
             }
 

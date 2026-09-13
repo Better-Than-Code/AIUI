@@ -206,6 +206,9 @@ class CarrierSafeQueueEngine(
         Log.i(TAG, "Starting CarrierSafeQueueEngine...")
 
         transmissionJob = scope.launch {
+            // INC-10: Reconcile cold-start counter from local Outbox
+            val inFlightDb = outboxDao.countInFlight()
+            _inFlightCount.value = inFlightDb
             queueLoop()
         }
 
@@ -350,11 +353,17 @@ class CarrierSafeQueueEngine(
                 }
 
                 val now = System.currentTimeMillis()
-                // Autonomous background recovery for stalled IN_FLIGHT packets (35s watchdog threshold)
-                val staleThreshold = now - 35000L
+                // Autonomous background recovery for stalled IN_FLIGHT packets (30s watchdog threshold)
+                val staleThreshold = now - 30000L
                 val stalledCount = outboxDao.resetStalledToPending(staleThreshold)
                 if (stalledCount > 0) {
                     Log.w(TAG, "Watchdog: Reset $stalledCount stalled IN_FLIGHT packets back to PENDING for autonomous background recovery.")
+                }
+                
+                // INC-10: Evict stalled permits from memory window to unlock queueLoop
+                val evictedCount = windowController.evictStalledFrames(30000L, now)
+                if (evictedCount > 0) {
+                    Log.w(TAG, "Watchdog: Reclaimed $evictedCount stalled in-flight permits from SlidingWindowController.")
                 }
 
                 // Only run automatic retransmissions in loopback simulation mode.

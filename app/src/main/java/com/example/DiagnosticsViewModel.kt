@@ -182,6 +182,7 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
     fun clearOutbox() {
         viewModelScope.launch(Dispatchers.IO) {
             outboxDao.clearAll()
+            queueEngine.windowController.reset()
         }
     }
 

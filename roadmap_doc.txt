@@ -1,0 +1,559 @@
+﻿AIUI Engineering Workspace: Field Telemetry & AI Studio Directives
+Notice to AI Studio: This document is the authoritative shared engineering bridge between the field testing agent (Pally) and the code generation engine (Google AI Studio) for the Better-Than-Code/AIUI Android companion repository.
+How to use this document:
+1. Context & Baseline: Review Section 1 for the exact hardware environment, carrier transport constraints (TracFone LTE / MMS zero-rated APN), and target repo commit.
+1. Current State: The codebase is now at Build v28 (Version 5.0).
+1. Field Incidents: Section 2 and the Complete Incident Dump detail runtime crashes, carrier shadowbans, and parser faults observed during live hardware field testing.
+1. Your Objective: Execute the backlog in Section 3 in priority order, focusing on Sprint 1 (Build v29 Target) to resolve fatal OS background service crash loops (ForegroundServiceStartNotAllowedException), decouple telephony ingestion to static receivers, and implement the strict command boundary.
+1. Workflow Protocol: Generate code patches against the current baseline commit, stage or commit them to the repository, update the commit hash in this document, and request a fresh field test pass.
+__________________________________________________
+AIUI Bridge: AI Studio & Pally Engineering Workspace
+__________________________________________________
+1. Target Baseline & Build Context
+2. 3. ● Target Repository: Better-Than-Code/AIUI
+4. 5. ● Base Baseline: Build v28 (Version 5.0 - Current active codebase)
+6. 7. ● Active Development Target: Build v29
+8. 9. ● Target Platform: Android 12 – 14 (API 31 – 34)
+10. 11. ● Network & Transport Profile:
+12. 13.   ○ Carrier: TracFone / Verizon LTE
+14. 15.   ○ Payload Transport: Zero-rated MMS APN with 32x32 AIUI logo attachment
+16. 17.   ○ Direct Cellular Port: 8901 (MTU 133B)
+18. 19.   ○ Constraints: Concatenated SMS (>256B) throttled/dropped; companion app only (cannot be set as system default SMS app)
+__________________________________________________
+1. Offline Field Incident Log (Active Diagnostics)
+2. 3. [INC-20260911-01] Fatal Crash & Restart Loop on Background Service Start
+4. 5. ● Severity: P1 (Critical Blocker - App Process Crash)
+6. 7. ● Timestamp Observed: 6:18 PM EDT
+8. 9. ● Target Components: HardenedTelephonyObserverService, WatchdogSafeBootManager
+10. 11. ● Observed Exception:
+12. 13. ●
+14. 15. ● text
+16. 17. ●   android.app.ForegroundServiceStartNotAllowedException: Service.startForeground() not allowed due to mAllowStartForeground false: service com.aistudio.cellularrpc.qxmpz/com.cellular.rpc.transport.service.HardenedTelephonyObserverService
+18. 19. ● Root Cause: App / Watchdog attempts startForegroundService() from the background on Android 12+ (API 31+) without an active UI window or platform exemption.
+20. 21. ● Impact: Process dies immediately; Watchdog restarts the service, creating an infinite crash loop on main.
+22. 23. [INC-20260911-02] Background Telephony Ingestion Blackout (30-Minute Gap)
+24. 25. ● Severity: P1 (Critical - Message Loss / Delivery Stall)
+26. 27. ● Timestamp Window: 6:18 PM – 6:48 PM EDT (30-minute silence)
+28. 29. ● Target Components: Telephony Ingestion Pipeline, PallySmsReceiver
+30. 31. ● Root Cause: Due to INC-01 process death, in-memory ContentObserver died. Inbound SMS/MMS queued on carrier buffers; carrier backed off with exponential retry until manual app foregrounding at 6:48 PM.
+32. 33. ● Architectural Constraint: AIUI must operate as a companion client without becoming the device Default SMS App.
+34. 35. [INC-20260911-03] Market Ticker Key Mismatch & Missing In-Place Mutation
+36. 37. ● Severity: P2 (UI/Data Binding Fault)
+38. 39. ● Target Components: WidgetModels.parse, Market Ticker Composable
+40. 41. ● Observed State: Price ($510.5) and sparkline chart hydrate, but symbol displays N/A, change displays 0.0%, and new inbound payloads do not mutate the existing rendered card in place.
+42. 43. [INC-20260911-04] Accidental Local Command Swallowing
+44. 45. ● Severity: P2 (Router Failure)
+46. 47. ● Target Components: Local Intent Classifier / Command Router
+48. 49. ● Observed State: Conversational messages discussing "offline mode" or UI updates are intercepted and swallowed locally by mock replies without dispatching cellular PDUs.
+__________________________________________________
+1. Sprint & Epic Backlog (AI Studio Directives)
+2. 3. Sprint 1: Telephony Background Survival & Core Stability (Target: Build v29)
+4. 5. ● Epic 13.1: Decouple Telephony from Foreground Service
+6. 7.   ○ Remove HardenedTelephonyObserverService background self-promotion.
+8. 9.   ○ Delegate SMS ingestion to manifest-registered PallySmsReceiver using goAsync() (10–30s execution window) to commit payloads directly to local SQLite.
+10. 11.   ○ Route incoming MMS PDU download tasks via WorkManager with zero-rated APN network constraints.
+12. 13. ● Epic 13.2: Watchdog Crash-Loop Defusal
+14. 15.   ○ Guard all startForegroundService invocations with ProcessLifecycleOwner checks.
+16. 17.   ○ Explicitly catch ForegroundServiceStartNotAllowedException on API 31+.
+18. 19.   ○ Implement exponential backoff in WatchdogSafeBootManager (max 2 retries before halting).
+20. 21. ● Epic 13.3: Strict Slash-Command Parser (/)
+22. 23.   ○ Enforce strict prefix matching: /theme [elem] [val], /widget [type] [action], /net [action], /safe [action].
+24. 25.   ○ Route all non-prefixed text strictly as conversational chat data across cellular transport.
+26. 27. Sprint 2: Widget Interactivity & Dynamic State Reconciliation (Target: Build v30)
+28. 29. ● Epic 13.4: Market Ticker Interactive Input & In-Place Reconciliation
+30. 31.   ○ Align schema keys for symbol and change_percent in WidgetModels.parse.
+32. 33.   ○ Add inline "tap, type ticker, hit enter" text field to the market card.
+34. 35.   ○ Implement in-place state mutation keyed by widget_id with shimmer loading during cellular roundtrips.
+36. 37. ● Epic 14.1: Runtime Declarative Layout Blueprints (Zero-APK Healing)
+38. 39.   ○ Wire MiniAppDocumentDao and BlueprintLinter to dynamically render card ASTs from SQLite.
+40. 41.   ○ Enable cellular MMS payload hot-patching of composable layouts without APK rebuilds.
+42. 43. Sprint 3: Local Productivity Suite & Offline Architecture
+44. 45. ● Epic 14.2: Zero-Sign-In Unified Tasks & Calendar Hub
+46. 47.   [X] Implement local SQLite agenda engine combining TickTick-depth task management (lists, priority, subtasks) with offline calendar grid.
+48. 49.   [X] Optional read/write bridge to Android's CalendarProvider when accounts exist.
+__________________________________________________
+1. Collaboration Cycle & Verification Protocol
+2. AI Studio Implementation: Pick the top unassigned Epic from Sprint 1 -> Generate code -> Stage commit to repo -> Note commit hash in Section 1.
+3. Offline Hardware Test: Deploy build -> Run field test on TracFone LTE -> Append any new stack traces or anomalies to Section 2.
+4. Pally Review & Critique: Pally reviews diff, validates edge cases, updates Epic status, and queues the next priority.
+__________________________________________________
+Complete Unresolved Technical Incident Dump
+Baseline Codebase: Better-Than-Code/AIUI @ Build v28 (Version 5.0)
+Target Environment: Android 12–14 (APIs 31–34), TracFone / Verizon LTE Carrier Stack, Non-Default Secondary Companion Role, Port 8901 Data SMS, Zero-Rated MMS APN.
+__________________________________________________
+Category 1: Telephony Lifecycle, Background Execution & OS Crash Loops (P1 Blockers)
+[X] INC-01: ForegroundServiceStartNotAllowedException on Main Thread
+● Component: HardenedTelephonyObserverService / WatchdogSafeBootManager
+● Trigger: Android 12+ (API 31+) / Android 14 (API 34) background execution restrictions (mAllowStartForeground = false).
+● Stack Trace / Error:
+●
+● text
+●   Uncaught Exception in main: Unable to create service com.cellular.rpc.transport.service.HardenedTelephonyObserverService: android.app.ForegroundServiceStartNotAllowedException: Service.startForeground() not allowed due to mAllowStartForeground false: service com.aistudio.cellularrpc.qxmpz/com.cellular.rpc.transport.service.HardenedTelephonyObserverService
+● Failure Analysis: The app invokes startForegroundService() when the app process lacks an active foreground window or qualifying foreground service exemption. On modern Android versions, calling Service.startForeground() without an active UI window or high-priority FCM notification immediately throws a fatal exception directly on the main thread, terminating the process.
+● Watchdog Crash Loop Escalation: WatchdogSafeBootManager intercepts the process crash, flags it as a failure, initiates a safe-boot restart, and attempts to spin up HardenedTelephonyObserverService again while still in the background. This creates an unrecoverable crash loop that drains battery and causes the OS to put the app into restricted app standby.
+● Resolution Spec: Completely decouple telephony ingestion from HardenedTelephonyObserverService. Demote or remove the foreground service entirely. In WatchdogSafeBootManager, implement exponential backoff and a hard retry ceiling (max 2 attempts) before halting restart loops.
+[X] INC-02: 30-Minute Telephony Ingestion Blackout (6:18 PM – 6:48 PM EDT)
+● Component: Inbound Telephony Pipeline / SQLite Message Store
+● Observed Behavior: No incoming messages received or processed between 6:18 PM and 6:48 PM EDT. Messages sent during this window only arrived in a delayed burst after the app was manually brought back into the foreground at 6:48 PM.
+● Root Cause: Directly correlated with the ForegroundServiceStartNotAllowedException crash at 6:18 PM. When the service crashed and the process died, in-memory ContentObserver instances (content://mms-sms and content://sms/inbox) were destroyed. Inbound cellular PDUs remained buffered at the carrier/modem layer or in the system telephony provider until manual activity resurrection triggered a database scan.
+● Resolution Spec: Migrate from dynamic in-memory observers to static manifest-registered BroadcastReceiver components (SMS_RECEIVED, DATA_SMS_RECEIVED) using goAsync(). goAsync() provides an asynchronous execution window of up to 30 seconds on a background thread without requiring a foreground service or persistent notification.
+INC-03: Architectural Rejection of Default SMS Handler Role
+● Component: Telephony Architecture & System Permissions
+● Constraint: AIUI is explicitly prohibited from becoming or requesting to be the system Default SMS App.
+● Implications:
+1. The app will never receive android.provider.Telephony.SMS_DELIVER_ACTION or WAP_PUSH_DELIVER_ACTION (which are reserved exclusively for the default SMS app).
+1. The app must rely on android.provider.Telephony.SMS_RECEIVED and WAP_PUSH_RECEIVED_ACTION.
+1. Because it is a secondary companion app, Android does not grant automatic background execution exemptions. Telephony receivers must handle payloads immediately within onReceive() / goAsync(), write directly to AIUI's Room database, and enqueue long-running work (e.g. MMS network downloads) via WorkManager.
+__________________________________________________
+Category 2: Carrier Telephony, APN Transport & Shadowban Failover
+INC-04: Carrier Concatenated SMS Throttling & Silent Drop Ceiling (256B–280B)
+● Component: Outbound Cellular Transport / MT Carrier Firewall
+● Observed Behavior: Plain SMS payloads ≤256 bytes (probes 1 through 4) deliver reliably with CRC verification. Plain SMS payloads ≥280 bytes (probes 5A, 5B, 5C up to 512B) are silently dropped or quarantined by the TracFone/Verizon carrier network without delivering to the handset or returning an SMSC error.
+● Carrier Filtering Mechanics: The carrier spam/velocity firewall triggers an automated shadowban cooldown when concatenated multi-segment SMS (>256B / 3+ segments) are detected from the gateway. Handset-to-AI (MO) messages remain unthrottled, while AI-to-Handset (MT) messages are silently suppressed for 15–30 minutes.
+● Resolution Spec: AI Egress transport policy must enforce strict payload tiering:
+  ○ Tier 0: Single-part plain SMS strictly capped at ≤250 bytes.
+  ○ Tier 1: Payloads >250 bytes or containing formatted data/blueprints must be automatically promoted to an MMS bundle.
+INC-05: MMS Zero-Rated APN Transport & 32x32 Logo Attachment Requirement
+● Component: MMS Bearer / Zero-Rated Carrier APN
+● Observed Behavior: MMS messages deliver out-of-band even when mobile data is toggled off and Wi-Fi is disconnected, using the carrier's whitelisted MMS APN (vzwinternet/mms). However:
+1. Sending standalone text via MMS often results in the carrier MMSC stripping the text body or dropping the message entirely.
+1. Bundling a tiny binary media attachment (a 32x32 PNG AIUI logo) forces the MMSC to route the payload through the media gateway, ensuring 100% delivery.
+1. Text payloads must be embedded directly inside the MMS smil caption / subject field rather than a detached text part.
+● MMS Caption Payload Envelope Ceiling: Empirically verified through sizing ladder tests:
+  ○ 600B, 700B, 800B, 1000B, 1229B, 1431B, 1591B, 2032B, 2207B, 2832B, and 2868B wire sizes delivered and verified with CRC.
+  ○ Payloads ≥3000B (Probe 10) are dropped or truncated by the carrier MMSC.
+  ○ Hard upper ceiling for uncompressed MMS caption payloads is established at 2,950 bytes.
+INC-06: Telephony Ingestion Race Condition on MMS Delivery
+● Component: MmsContentObserver / Cursor Watermark Tracker
+● Observed Behavior: MMS Probe 15 (~2990B) delivered successfully to the handset and was visible in Google Messages, but completely failed to appear in AIUI's chat thread.
+● Root Cause: Race condition in cursor polling or watermark tracking within HardenedTelephonyObserverService. When an MMS arrives, the system writes the notification PDU first, then downloads the binary parts asynchronously. The observer polled content://mms before parts were fully written to telephony storage, updated its internal timestamp watermark, and never re-scanned the completed record.
+● Resolution Spec: Replace table cursor polling with a dedicated BroadcastReceiver listening for WAP_PUSH_RECEIVED_ACTION with MIME type application/vnd.wap.mms-message. Enqueue download and ingestion via WorkManager with input data containing the PDU URI to guarantee atomic parsing once parts are assembled.
+__________________________________________________
+Category 3: Client Message Parsing, Command Interception & UI Bleeding
+INC-07: Unintended Local Command Interception & Telephony Bypass
+● Component: OfflineCommandRouter / Intent Classifier
+● Observed Behavior: When typing conversational messages referencing "offline mode", "v27", or UI updates, the internal router falsely intercepted the text as an offline command, generated a mock response ("Pally AI: Local command acknowledged. UI has been updated (Offline Mode)"), marked it "0B SMS • CRC Verified", and never placed any PDU onto the cellular network.
+● Root Cause: Natural-language regex and fuzzy keyword matching running directly on the outgoing text field without an explicit command delimiter.
+● Resolution Spec: Enforce a strict slash-command syntax boundary:
+  ○ Only strings beginning with a leading / (e.g., /theme, /widget, /safe, /net) are eligible for client-side local interception.
+  ○ All other text—regardless of keywords—must be treated strictly as conversational data and dispatched over cellular transport.
+INC-08: Premature UI Hydration & Simulation Mode Message Flood
+● Component: ChatViewModel / Initial State Hydration / Telephony Sync
+● Observed Behavior:
+1. Before runtime telephony permissions are granted, the chat screen hydrates with mock conversation bubbles and an active weather card stub.
+1. The moment runtime SMS permissions are granted, the app immediately scans the device's system SMS inbox and dumps the full unpaginated message history into the chat feed while simulation/loopback mode is active.
+● Resolution Spec:
+  ○ Keep the UI in an uninitialized clean state until onboarding and permission gates are cleared.
+  ○ Completely disable historical system SMS sync while simulation/loopback mode is active.
+  ○ When syncing live device SMS, implement strict pagination (limit initial query to latest 25 messages) and sanitize historical raw code/widget payloads to plain text so they do not overwhelm Compose recomposition.
+__________________________________________________
+Category 4: Widget Rendering, Key Binding & Interactive Affordances
+INC-09: WidgetModels.parse Key Mismatches
+● Component: WidgetModels.parse
+● Observed Behavior:
+  ○ Weather Widget: Failed to bind temperature (0°F) and location (Unknown) when passed temperature and location. Resolved only when payload supplied temp and city.
+  ○ Market Ticker Widget: Bound current price ($510.5) and sparkline history array, but symbol displayed as N/A and change percentage displayed as 0.0%.
+● Root Cause: Deserializer expects rigid, non-standard key names (e.g. temp instead of temperature, ticker instead of symbol, pct_change instead of change).
+● Resolution Spec: Implement alias-tolerant deserialization in WidgetModels.parse using Kotlinx Serialization or Moshi with alternative key annotations, allowing schemas to accept both canonical and compact payload representations.
+INC-10: Market Ticker In-Place State Reconciliation Failure
+● Component: MarketTickerCard Composable / State Hoisting
+● Observed Behavior: When a new market_ticker payload is received for an existing card, the rendered card does not mutate its state in place.
+● Root Cause: Missing widget instance identity (widget_id) in Compose state management. Compose treats each inbound message as an appended immutable item in LazyColumn rather than reconciling an existing card state by unique ID.
+● Resolution Spec: Hoist widget state into a keyed repository (Map). When an incoming payload arrives with a matching widget_id, mutate the existing state object to trigger localized Compose recomposition without scrolling or re-rendering the feed.
+INC-11: Market Ticker Inline Search & Loading Shimmer UX Gap
+● Component: MarketTickerCard Composable
+● Observed Behavior: The market ticker widget lacks any interactive UI affordance for changing symbols (unlike the weather widget which provides refresh/location controls).
+● Resolution Spec: Implement an interactive input chip:
+1. "Tap, type ticker symbol, hit Enter" interaction pattern.
+1. On Enter, immediately transition the card into an animated shimmer/pulse loading state.
+1. Dispatch an outbound cellular request ({"type":"market_ticker","symbol":"$INPUT"}).
+1. Hydrate the card and clear loading state when the replacement payload returns.
+INC-12: Client JSON Parsing Faults & Lack of Self-Healing Loop
+● Component: WidgetModels.parse / Telemetry Recovery
+● Error Example: JSON Parsing Fault: Expected ':' after ... at character 22 of {"type":"weather",...}
+● Observed Behavior: A malformed token or syntax character in an incoming cellular payload throws an unhandled exception, causing the widget to abort hydration and remain stuck as an empty fallback stub.
+● Resolution Spec:
+1. Integrate FuzzyStreamDemuxer (commit ea6c33a) directly into the cellular ingestion pipeline to repair truncated or malformed JSON streams prior to deserialization.
+1. Implement a client-side telemetry ping: if deserialization fails, emit an automated diagnostic resync frame ({"action":"resync","widget_type":"...","widget_id":"..."}) to request a clean replacement payload from the gateway.
+__________________________________________________
+Category 5: Static Compose Limitations & SDUI Blueprint Architecture
+INC-13: Static Compilation Blocks Runtime Self-Healing Without APK Updates
+● Component: Jetpack Compose UI Hierarchy / Application Binary
+● Observed Behavior: Because all widgets in build v27/v28 are statically compiled Kotlin composables, layout modifications, new interactive controls, and schema changes cannot be introduced dynamically over the cellular wire.
+● Resolution Spec: Activate the Server-Driven UI (SDUI) Blueprint Engine already merged under Epics 6, 9, 11, and 12:
+  ○ Store declarative widget component trees in Room v8 (MiniAppDocumentEntity).
+  ○ Validate AST nodes using BlueprintLinter.kt.
+  ○ Apply live, state-preserving AST mutations via BlueprintPatcher.kt (RFC 6902 JSON Patch).
+  ○ Render dynamic layouts via a runtime Compose interpreter mapping JSON blueprint nodes to UI primitives.
+INC-14: In-Feed SDUI Render Cards Fail to Mount Interactive Controls
+● Component: SDUI Chat Feed Renderer
+● Observed Behavior: Payloads delivering SDUI blueprints with interactive: true or action button arrays in footers render strictly as static informational summary cards (displaying an "SDUI" badge) rather than mounting interactive buttons, toggles, or input fields.
+● Root Cause: The feed renderer treats in-feed items strictly as read-only preview cards, requiring a separate full-screen navigation intent to access interactive controls.
+● Resolution Spec: Enable inline interactive composable mounting directly within the chat feed item when the blueprint specifies in-feed interactivity.
+__________________________________________________
+Category 6: Base Suite & Zero-Sign-In Local Productivity Engine
+INC-15: Google Play Services Lock-In for Calendar & Keep
+● Component: Local Productivity Suite
+● Problem Statement: Standard stock Android apps (Google Calendar, Google Keep) require active Google account authentication and network sync. On an air-gapped, cellular-only, or de-Googled device, the user has zero functional scheduling or notes out of the box.
+● Resolution Spec (Unified Tasks & Agenda Hub):
+  ○ Standalone local SQLite storage for all tasks, checklists, and calendar events with zero sign-in requirements.
+  ○ TickTick-style task management: Inbox, Today, Upcoming, Project Lists, subtasks, priorities, tags, and recurrence rules.
+  ○ Unified Agenda Grid: Combines timed calendar events and due tasks into a single chronological timeline and monthly grid.
+  ○ Optional Android CalendarProvider bridge: If accounts/permissions exist, provide two-way sync without forcing in-app sign-in.
+  ○ Natural language chat creation: Prompts in chat (e.g. "remind me to order brake pads tuesday at 10am") automatically parse and insert records into local SQLite.
+INC-16: Core Base Suite Utility Specification
+● Component: Shell Base Suite (Apps vs Widgets)
+● Scope Defined:
+1. Weather: Compact widget card + dedicated app featuring hourly, 7-day, AccuWeather-style MinuteCast 60-minute precipitation timeline, and on-demand MMS radar loops.
+1. News: Headline ticker widget + dedicated reader app with stripped offline article readability.
+1. Market Ticker: Widget-only with sparkline and inline search.
+1. Tasks / Calendar: Dedicated hybrid app + agenda widget.
+1. Daily Utilities: Offline unit/torque/currency converter, Pomodoro/focus timer, and local document/schematic viewer.
+1. Telemetry Dashboard: Real-time cellular radio metrics (RSRP/RSRQ), PDU payload counters, and loopback controls.
+
+
+__________________________________________________
+5. PROJECT ALMANAC Alignment & Backlog Cross-Reference
+Direct Coordination Directive for AI Studio:
+Review against PROJECT_ALMANAC.md in the root of Better-Than-Code/AIUI before introducing any new interfaces, architecture decisions, or sprint tasks.
+The following table coordinates our field incident backlog with existing Almanac Epics and ADRs to eliminate duplicate work and maintain architectural consistency.
+Alignment Matrix
+
+
+
+
+Bridge Focus Area
+	Relevant Almanac ADR / Epic
+	Current Status in Almanac
+	Coordination & Scope Guard
+	Foreground Service Crash Loop (ForegroundServiceStartNotAllowedException)
+	ADR-009: Non-Default Telephony Ingestion & HardenedTelephonyObserverService
+Build 37 (v5.0): Telephony Cursor Hardening
+	HardenedTelephonyObserverService active in v28; background start restriction causes crash loop.
+	DO NOT rewrite cursor logic. Build 37 already landed TelephonyCheckpointStore and monotonic query windows. The task is strictly defusing the background startForegroundService() call and decoupling to static BroadcastReceiver + goAsync().
+	Safe-Boot Watchdog Crash Loop
+	ADR-006: Watchdog Safe-Boot Guard & 5s Probation Window
+Build 31 (v4.3): WatchdogSafeBootManager
+	Active in codebase. Triggers automated rollback, but re-encounters the telephony crash.
+	DO NOT replace WatchdogSafeBootManager. Add lifecycle pre-checks (mAllowStartForeground / API 31+ guards) and exponential backoff retry ceiling (max 2 retries) so it does not loop infinitely.
+	Strict Slash Commands (/) vs Chat Bleed
+	Sprint 6.4: Local Intent Router (TFLite)
+Sprint 5.2: Clean UI Principles
+	Swallowing messages with "offline", "v27" locally.
+	DO NOT retrain or alter TFLite model. Enforce a strict leading slash prefix check (/) in OfflineCommandRouter before passing text to local intent classification.
+	Market Ticker Interactive Search & In-Place State Reconciliation
+	ADR-008: Dynamic Scripting Engine & Native SDUI Selection
+ADR-010: Schemaless Room Store & Dynamic Blueprints
+	Select/Radio primitives and MiniAppDocumentDao are implemented.
+	DO NOT create custom one-off views. Use existing Compose primitives from Epic 9 (DynamicAppHost) and bound state variables ($state.symbol) to power in-place search and card inflation.
+	Cellular Egress & MMS Promotion (256B SMS / 32x32 MMS)
+	ADR-003, ADR-004, ADR-011
+Build 38 & Build 41: Inbound Transport Failover Protocol
+	Merged in v28 (256B ceiling, 32x32 visual anchor MMS promotion).
+	PRESERVED & FROZEN. Egress rules are finalized in PROJECT_ALMANAC.md. No changes needed.
+	15-Minute Carrier Cooldown Circuit Breaker
+	Build 40 & Build 41: 3-State FSM Circuit Breaker
+	Merged in v28 (CarrierCooldownCircuitBreaker).
+	PRESERVED & FROZEN. Outbound throttling is fully handled.
+	
+
+
+
+__________________________________________________
+Section 6: Build 28 Live Field Testing & UI/UX Backlog (Added Sept 11, 2026)
+The following bugs and UI/UX refinements were identified during live device testing on Build 28 (v5.0):
+6.1 Telephony & Ingestion Defects
+* [INC-20260911-05] Voice Note (Audio MMS) Missing from In-App Thread
+   * Observed Behavior: Inbound voice note arrived cleanly in Android's default messaging app (Google Messages), but did not appear in the AIUI conversation feed.
+   * Root Cause Analysis: HardenedMmsParser and the MMS part query extractor currently filter specifically for visual image anchors (image/png, image/jpeg) and text captions (text/plain). Binary audio parts (audio/amr, audio/mp4, audio/aac, audio/ogg) are not being extracted from content://mms/part or inserted into the Room message store as audio message entities.
+   * Required Fix: Update HardenedMmsParser to query and persist audio MIME types; bind extracted audio URIs to the dynamic audio bubble player in the chat feed.
+6.2 Chat Thread Layout & State Management
+* [INC-20260911-06] Chat Thread Top-to-Bottom Reflow on Tab Re-Entry
+   * Observed Behavior: Switching away from the Chat tab and returning causes the entire message thread to visibly re-render and scroll down from the top item to the latest message.
+   * Root Cause Analysis: The LazyColumn or RecyclerView scroll state is being recreated on navigation re-entry rather than preserved across tab destinations. rememberLazyListState() is either scoped inside a destroyed Composable or the list items are losing stable keys (items(items, key = { it.id })), triggering a full remeasure and layout cascade.
+   * Required Fix: Hoist LazyListState to the screen ViewModel or navigation graph scope; provide stable unique ID keys to every message item; disable entrance animations on cached items during tab swaps.
+6.3 UI/UX Simplification & Decluttering (Sprint 2 / Build 29)
+* [FEAT-20260911-01] Strip Raw Bit Count and "CRC Verified" Metadata
+   * Directive: Remove raw wire diagnostics (0B SMS • CRC Verified) from user-facing message bubbles. These internal validation details should be logged to logcat / diagnostic drawer only, leaving bubbles clean and conversational.
+* [FEAT-20260911-02] Standardize Character / PDU Counter (Google Messages Style)
+   * Directive: Replace the raw GSM-7 PDU counter badge with the standard messaging convention: display the remaining character count with a slash indicator showing the current segment allocation (e.g. 140/1, 16/2), only appearing once character usage approaches segment limits.
+* [FEAT-20260911-03] Remove Redundant Cellular Gateway Badge
+   * Directive: Remove the top-level / header "Cellular Gateway" badge. Transport across cellular/SMS is foundational and already understood; the header space should remain minimal.
+* [FEAT-20260911-04] Carrier Throttle & Cooldown Status Indicator
+   * Directive: Introduce a subtle UI status indicator reflecting the underlying CarrierCooldownCircuitBreaker state:
+      * Idle / Normal: No distracting badges.
+      * In Flight / Transmitting: Subtle pulse/sync indicator.
+      * Cooling Down (Half-Open / Open): Clear, friendly non-technical status (e.g. "Cooling down carrier queue • Resuming in Xm") sourced directly from the telemetry settings manager.
+
+
+[INC-07] Outbound MMS Promotion Triggers Android App Chooser & Exposes Anchor Logo
+* Severity / Priority: P2 (Functional / UX Leak)
+* Component: OutboundMmsDispatcher / EgressTierManager
+* Trigger: Composing and sending a multi-PDU (6 PDU) message in the AIUI chat composer.
+* Observed Behavior:
+1. Tapping send inside AIUI did not transmit in the background; instead, it launched the Android system intent chooser (Intent.createChooser or implicit ACTION_SEND / ACTION_SENDTO).
+2. Selecting Google Messages populated the draft with the 6-PDU text body alongside the internal 32x32 visual anchor (bluish square with blue circle inside).
+3. User had to manually delete the image attachment inside Google Messages to send plain concatenated SMS.
+* Root Cause Analysis:
+   * Because AIUI runs as a non-default companion app, direct background MMS transmission (SmsManager.sendMultimediaMessage) requires either carrier APN access or elevated telephony carrier permissions. If sendMultimediaMessage is unconfigured or hits an exception, the fallback path delegates to Intent.ACTION_SEND (image/* + text) rather than silently handling cellular radio queuing.
+   * The internal 32x32 visual anchor (required for carrier zero-rated APN routing) was exposed in the user-visible intent bundle.
+* Required AI Studio Fix:
+1. Direct MMS Dispatch: Ensure SmsManager.sendMultimediaMessage() or carrier APN socket is attempted directly without delegating to external UI intents.
+2. Fallback Guard: If direct dispatch fails or requires system delegation, do not dump the raw media anchor into user-facing intent pickers without a clear in-app dispatch state.
+
+
+Deep Dive: Outbound Multi-PDU MMS Promotion & Google Messages Intent Fallback
+* Root Cause: When the outgoing message exceeded 256 bytes (6 PDUs), EgressTierManager promoted it from plain SMS to MMS to avoid carrier multi-part text drops. However, instead of dispatching the MMS PDU directly via SmsManager.sendMultimediaMessage() with a content URI to a generated PDU buffer, the client fell back to an Android system ACTION_SEND intent with type = "image/png" and the message text as EXTRA_TEXT.
+* The Failure Cascade:
+1. Android intercepted the implicit intent and popped the system app chooser.
+2. Selecting Google Messages populated the draft with the text plus the internal 32x32 blue anchor logo attachment.
+3. This required manual user intervention to delete the graphic and tap send manually, breaking the seamless in-app chat loop.
+* Architecture Directive for AI Studio (Build 29):
+   * Option A (Background MMS Dispatch): Wire SmsManager.sendMultimediaMessage(context, contentUri, null, null, sentIntent). Non-default apps can use sendMultimediaMessage on Android 10+ if granted SEND_SMS, provided the MMS PDU is constructed via com.google.android.mms.pdu (or a local builder) and stored in a temporary cache FileProvider URI.
+   * Option B (Carrier-Safe Chunked Multi-Part SMS): If direct background MMS dispatch is blocked by carrier APN/permission constraints without default handler role, provide a fallback setting to split long messages into sequenced plain SMS chunks under 250 bytes with monotonic sequencing headers ([1/3], [2/3]), or configure a pacing delay (e.g. 1.5s between PDUs) rather than throwing to ACTION_SEND.
+   * Critical Guard: Under zero circumstances should ACTION_SEND or external UI intent pickers be used for automatic background egress.
+
+
+[INC-08] Outbox Persistence Queue Stalled on Sliding Window ACK Deadlock (RX: 0 pkts)
+* Date/Time: 2026-09-11 21:22 EDT
+* Observed UI State:
+   * Status Pill: WINDOW: 68/4 IN-FLIGHT | READY (2.2s+Jitter) | TX: 4 pkts | RX: 0 pkts
+   * Outbox Persistence Queue: Shows RPC_REQ items 2 through 10 stuck in PENDING state with Base85 payloads.
+   * Chat Thread: Displayed outbound HELLO:2.1.0:5B212384, [MCP_CHUNK 1/67], and [MCP_CHUNK 2/67]. Displayed inbound gray bubble: ack chunks 1-2 of 67 (hash 5b212384). receiving stream.
+* Root Cause Breakdown:
+1. Sliding Window Blocked: The sender transmitter has an in-flight window cap (configured window size 4), but transmission halted after chunk 2 because it was awaiting a protocol-level ACK to advance the window sequence.
+2. RX Packet Accounting Failure (RX: 0 pkts): Although the cellular modem and Google Messages received the inbound ACK message, the app's internal telephony ingestion pipeline failed to increment RX packet count or route the ACK payload into the transport state machine (RX: 0 pkts).
+3. Deadlock State: Because RX remained 0, the sliding window never received confirmation to release in-flight slots or dispatch queue items 3 through 67. The outbox queue is left permanently PENDING.
+* Action Directive for AI Studio (Build 29):
+   * In CellularRpcTransport / OutboxQueueManager:
+1. Ensure inbound SMS observer / BroadcastReceiver actively parses inbound ACK tokens (ack chunks X-Y... or raw protocol ACKs) and notifies the sliding window controller.
+2. Add ACK timeout retransmit or window stall recovery timer (e.g. if no ACK received within 15s, re-probe or advance if configured for optimistic egress).
+3. Verify RX telemetry counter increments upon ingestion of inbound cellular packets.
+
+
+[INC-09] In-Feed Rendering Failures: Raw JSON Leak & Generic Schema Stub Cards (Build 28)
+* Observed At: 2026-09-11 21:30 EDT (Build 28 / v5.0 Live Test)
+* Evidence: Handset screenshots (image000000.png, image000001.png)
+* Breakdown:
+1. News Digest Unparsed Text Dump:
+* Inbound news_digest payload was delivered as plain text inside the chat bubble rather than triggering the SDUI parser/inflater.
+* Root Cause: Stream demuxer failed to detect the ---CELLULAR_DATA--- boundary delimiter or the payload arrived over fragmented SMS without reassembly, bypassing DynamicAppHost entirely and falling back to default text bubble rendering.
+1. Market Ticker & Mini App Empty Stub Cards:
+      * Inbound payloads for market_ticker and mini_app_blueprint triggered card creation, but rendered only a generic header card reading "Cellular Schema • SDUI • Version 2.1.0".
+      * Root Cause: DynamicAppHost recognizes the schema wrapper envelope, but child component resolvers for "widget" and "app" failed to inflate inner layouts (sparkline, entry_layout.children), resulting in empty placeholder cards with no interactive elements or content.
+* Directive for AI Studio:
+   * In DynamicAppHost.kt / BlueprintRenderer.kt, ensure widget and app keys trigger their respective composable view factories (MarketTickerCard, BlueprintPreviewCard) rather than falling back to the generic container stub.
+   * In FuzzyStreamDemuxer.kt, ensure ---CELLULAR_DATA--- delimiters are stripped and routed directly to the SDUI parser regardless of whether the message arrived via plain SMS or MMS.
+
+
+__________________________________________________
+[FEAT-05] Inline Widget / Mini App Loading Skeleton & Shimmer Outline
+* Component: DynamicAppHost / ChatFeedScreen / CellularWidgetHost
+* Observed Need: When an app or widget is requested inline (such as launching from the + apps menu or tapping an action chip), there is a latency gap before the incoming schema payload arrives over the cellular wire or local store. Currently, nothing appears in the feed until the full envelope inflates, leaving the user uncertain if the action registered.
+* Proposed UX:
+   * Render an immediate placeholder card outline in the chat feed upon request.
+   * Card displays an animated shimmer/pulse skeleton (header, content box, action button contours) matching the target container bounds.
+   * Status label on card: e.g. "Loading Blueprint..." or a subtle glowing border.
+   * Seamless cross-fade / in-place mutation once the ---CELLULAR_DATA--- payload or Room blueprint entity resolves, replacing the skeleton without re-scrolling the feed.
+
+
+[FEAT-05 Refinement] Named Loading Skeleton Label
+* UX Directive: When a user selects a widget or mini app from the + action menu, the placeholder card must dynamically display the specific item name being loaded (e.g., Loading Market Ticker..., Loading Margin Calc..., Loading News Wire...) rather than a generic fallback string.
+* Component: DynamicAppHost / ChatFeedScreen
+* Implementation Details:
+   * Pass the launcher item label/metadata directly into the skeleton composable state on click.
+   * Render an animated pulsing/shimmer text label alongside the glowing container outline: "Loading [ItemName]...".
+   * Ensure the transition to the received blueprint payload preserves this title block without visual jump or reflow.
+
+
+[FEAT-06] Inline Card Iteration: Feed-Tail Re-anchoring / "Pull Down" on Update
+* Target Component: ChatFeedScreen / DynamicAppHost / MessageRepository
+* User Pain Point: When iteratively modifying an app or widget via chat prompts (e.g. tweaking layouts, styles, or logic), the updated payload currently mutates the historical message card far up in the LazyColumn. The user is forced to scroll back up through the chat history to verify changes, breaking the natural build/chat flow.
+* Desired UX / Architectural Solution:
+1. Feed-Tail Projection: When an incoming cellular SDUI payload carries an update or patch for an existing blueprint/widget ID (app_id / widget_id), the client should instantiate/project the refreshed card at the bottom (tail) of the chat feed corresponding to the current update timestamp.
+2. Visual Continuity ("Pull Down" Animation): Provide a subtle transition or callout indicating this is an updated revision of the existing app/widget (e.g., subtle pill badge v1.1 • Updated from previous revision), giving the feel that the card was pulled down and redrawn with the latest state.
+3. Historical State De-emphasis: Optionally collapse or mark the older upstream card as a superseded revision so interactive focus naturally stays at the bottom of the feed where the user is actively working.
+
+
+__________________________________________________
+[INC-10] Outbound Telephony Hard Lock Following Genesis Push Failure
+* Date / Build Observed: 2026-09-11 (Build v28 / v5.0)
+* Component: OutboxPersistenceQueue / SlidingWindowFlowController / CarrierCooldownCircuitBreaker / SmsEgressManager
+* Trigger Event: Interrupted MCP_GENESIS_SYNC (67-chunk Base85 stream) where chunks 1–2 transmitted, RX stayed 0, and chunks 3–67 stalled in PENDING.
+* Observed Failure:
+   * Handset completely stopped transmitting all outgoing SMS/MMS messages from the app.
+   * Clearing the Room-backed Outbox Persistence Queue (trash icon) did not restore transmission.
+   * Force closing / restarting the app did not clear the lock; newly composed messages fail to dispatch over the cellular gateway.
+* Root Cause Analysis:
+1. Persisted In-Flight Counter Deadlock: SlidingWindowFlowController tracks in-flight packets (e.g. WINDOW: 68/4 IN-FLIGHT). If the in-flight counter or active lease IDs are persisted in Room/DataStore or if unacknowledged leases are not cleared when outbox rows are deleted, the controller continues to report in_flight >= max_window (4), permanently blocking any new enqueue from acquiring a send slot.
+2. Orphaned Circuit Breaker State: CarrierCooldownCircuitBreaker may have transitioned to OPEN (carrier shadowban protection) due to unacknowledged packet bursts, with no UI exposure of the cooldown timer or manual override.
+3. Transmitter Coroutine / Mutex Lockup: Clearing the DB rows while SmsEgressWorker or a background mutex is awaiting a CountDownLatch / CompletableDeferred for chunks 1–2 leaves the worker thread blocked or in a zombie loop.
+* Required Fix Directives for AI Studio (Sprint 1 / Build v29):
+   * Outbox Purge Hook: In OutboxPersistenceQueueDao.clearAll(), trigger an explicit reset of SlidingWindowFlowController.resetInFlight() and clear all pending window reservations.
+   * Startup State Reconciliation: On app cold start / Application.onCreate(), reconcile in-flight count against actual active pending outbox rows: if outbox is empty, force in_flight = 0.
+   * ACK Timeout & Lease Eviction: Implement a hard timeout (e.g. 30s) per packet lease in SlidingWindowFlowController so that missing RX packets auto-release in-flight slots instead of locking the queue indefinitely.
+   * Circuit Breaker UI & Auto-Recovery: Ensure CarrierCooldownCircuitBreaker logs its status to telemetry and provides an automatic fallback to HALF_OPEN probe after cooldown expires.
+
+
+Telemetry Correction & Root-Cause Pin (INC-10)
+* Telemetry Verification: Field testing on Build v28 confirms CarrierCooldownCircuitBreaker did NOT trip (state remained CLOSED/idle).
+* Definitive Root Cause: Outbound transmission lockup is isolated 100% to an internal lease/semaphore leak in SlidingWindowFlowController.
+* Mechanism: When Chunks 1-2 went out, the controller allocated 4 in-flight permits (WINDOW: 68/4 IN-FLIGHT). Because inbound ACKs were not ingested to trigger onPacketAcked(), the in-flight permits were never returned.
+* Persistence Bug: Trashing the outbox Room database rows (clearAll()) purged the table but did not invoke flowController.reset(), and cold app launches did not reconcile the in-memory permit counter against the database state. Thus, all future outbound sends are permanently blocked waiting for non-existent permits.
+* Refined Build v29 Directives:
+1. Add flowController.resetInFlight() hook to the outbox database purge action.
+2. Implement cold-start counter reconciliation (inFlightCount = db.outboxDao().countInFlight()) on app launch.
+3. Add a strict packet lease auto-eviction / watchdog timeout (30 seconds) that releases stalled permits automatically.
+
+
+__________________________________________________
+[INC-11] Inbound ACK Inflates SDUI Card in Feed But Bypasses Transport Flow Controller (RX 0 / Window Locked)
+* Observed Behavior:
+   * Pally sent the raw inbound ACK packet:
+* * ```text
+* * ACK:2.1.0:5B212384:1,2
+* * [MCP_ACK 1/67 hash=5B212384]
+* * [MCP_ACK 2/67 hash=5B212384]
+* * ---CELLULAR_DATA---
+* * {"version":"2.1.0","rpc":{"type":"ack","hash":"5B212384","chunks":[1,2],"status":"OK"}}
+``
+- **Chat Feed Outcome**: The UI intercepted the---CELLULAR_DATA---delimiter and rendered aCellular Schema • SDUI • Version 2.1.0stub card into the chat thread.
+- **Transport Layer Outcome**: The top status panel stayed deadlocked at:WINDOW: 1/4 IN-FLIGHT | READY (2.2s+Jitter) | TX: 4 pkts | RX: 0 pkts`
+* Root Cause & Architectural Decoupling:
+   * The incoming SMS content is parsed exclusively by the UI / Chat ViewModel renderer (CellularSchemaParser / DynamicAppHost).
+   * The background telephony ingestion pipeline (PallySmsReceiver / SlidingWindowFlowController) never inspects incoming SMS payloads for RPC ACKs (ACK:2.1.0:... or type: ack).
+   * As a result, the UI displays the ACK as a visual card, while the transport layer's RX count remains at 0 pkts, the 4 in-flight permits are never released, and the transmission queue remains stalled.
+* Sprint Directive for AI Studio (Build 29):
+1. Dual-Path Ingestion Interceptor: In PallySmsReceiver (or the static telephony broadcast listener), inspect all incoming SMS text before passing to the Room chat store. If the body matches ACK:2.1.0: or contains an RPC ACK schema:
+* Immediately invoke SlidingWindowFlowController.onAckReceived(hash, chunkIds).
+* Decrement inFlightCount, increment rxPacketCount, and trigger processNextPendingOutboxItem().
+1. Suppress ACK Bubble Inflation: ACKs are transport-level protocol control frames; do not inflate a Cellular Schema SDUI card in the user's visible chat feed for raw transport ACKs unless specifically running in a debug/diagnostic view.
+__________________________________________________
+
+
+[INC-12] Schema Parser: Unterminated Array at Character 198 in WidgetModels.parse
+* Trigger Event: Ingestion of multipart incoming cellular news widget (news_digest payload).
+* Observed Fault: FAULT: WidgetModels.parse | JSON Parsing Fault: Unterminated array at character 198 of {"version": "2.1.0", "widget": {"type": "news_digest", "id": "w_news_01", ...
+* Root Cause: Inbound multipart SMS segmentation delivered packet 1 (~198 chars) to WidgetModels.parse prior to complete multi-PDU reassembly in SQLite or without piping through FuzzyStreamDemuxer to heal truncated JSON streams. The raw parser encountered an open "items": [ without a terminating ] and threw an unhandled parse fault.
+* Architecture Directive for AI Studio (Build 29):
+1. Strict Reassembly Gate: Do not route incoming segmented cellular messages to WidgetModels.parse or DynamicAppHost until PduReassemblyBuffer confirms all parts of the multi-PDU sequence have arrived.
+2. Fuzzy Stream Demuxer Integration: Pipe all raw cellular schema string candidates through FuzzyStreamDemuxer.repairTruncatedJson() before passing to WidgetModels.parse so partial streams degrade gracefully into skeleton states rather than crashing the parser.
+3. Exception Boundary: Wrap WidgetModels.parse in a try/catch boundary that falls back to a neutral WidgetParseErrorCard rather than failing the message ingestion loop.
+
+
+__________________________________________________
+7. Epic 13.5: Genesis Protocol System Prompt & AI Runtime Contract
+7.1 The Problem & Architectural Gap
+When the client initiates connection via HELLO:2.1.0:<hash> or pushes diagnostic telemetry (FAULT: WidgetModels.parse ...), an arbitrary LLM / AI endpoint has zero inherent context on:
+1. Who/What it is communicating with: A cellular/SMS-constrained Android micro-app runtime.
+2. The Wire Grammar: The dual-format convention (Natural Language + \n---CELLULAR_DATA---\n + JSON Payload).
+3. The Schema Catalog: The exact JSON schemas for widgets (market_ticker, news_digest, weather), mini-apps (mini_app_blueprint), and RPC frames (ack, patch_response).
+4. The Diagnostic Loop: That receiving a FAULT event requires replying with a structured patch_response containing action, demuxer, and the repaired payload.
+Expecting an LLM to guess protocol semantics from raw hashes or unprompted JSON strings leads to hallucinations, conversational chatter where structured data is required, and broken handshakes.
+7.2 The Solution: Genesis System Instruction Bootstrap
+The client must store and transmit an immutable, self-contained Genesis System Instruction (or inject it as the system preamble for any connected AI provider). This defines the protocol rules once so every subsequent exchange is understood deterministically.
+Bootstrap Specification to Implement in Client:
+1. Preamble Injection: The client app must prepend or provide the following contract in the system role during initial pairing or include it in the Genesis manifest:
+2. 3.    ```text
+4. 5.    SYSTEM PROTOCOL DIRECTIVE: AIUI CELLULAR GATEWAY v2.1.0
+6. 7.    You are the backend AI engine for AIUI, an offline/cellular-first Android micro-app platform operating over SMS/MMS transport.
+8. TRANSMISSION GRAMMAR:
+* Always respond using Dual-Format: User-facing text first, followed by the delimiter '\n---CELLULAR_DATA---\n', followed by raw JSON schema.
+* Never wrap the JSON inside markdown codeblocks (no ```json).
+1. SCHEMA DEFINITIONS:
+* Widgets: "widget": {"type": "market_ticker" | "news_digest" | "weather", "id": "...", ...}
+* Mini Apps: "app": {"type": "mini_app_blueprint", "id": "...", "name": "...", "entry_layout": {...}}
+* Control Frames: "rpc": {"type": "ack" | "patch_response", "hash": "...", "status": "OK"}
+1. DIAGNOSTIC & FAULT PROTOCOL:
+   * When input matches FAULT: <component> | <details>, immediately generate an RPC response:
+* *     {"rpc": {"type": "patch_response", "target_id": "", "status": "RESOLVED", "patch": {...}, "": {...}}}
+* *    ```
+1. Compact Diagnostic Payloads: If the session is fresh and uninitialized, inbound diagnostic events should carry a compact trigger hint (e.g. RPC_FAULT_REQ v=2.1.0 expect=patch_response) rather than bare raw stack dumps.
+2. Session Cache: Once the Genesis handshake is confirmed (ACK:2.1.0:<hash>), both client and server lock protocol grammar into persistent session state.
+
+
+__________________________________________________
+8. Section 8: Universal SDUI Engine & Dynamic Primitive Expansion (Epic 14: "Build Anything")
+8.1 Architectural Principle: Native Jetpack Compose vs. CMP
+* Core Truth: On Android, Compose Multiplatform compiles down to the identical Jetpack Compose runtime, layout system, and Skia/Canvas renderer. CMP offers no additional UI capabilities, widgets, or flexibility over native Jetpack Compose.
+* The Real Capability Ceiling: The ability for an AI or user to create arbitrary apps and widgets offline is strictly governed by three engineering pillars:
+1. Schema Vocabulary: The catalog of UI primitives recognized and inflated by DynamicAppHost.
+2. Client-Side Reactive State & Expression Evaluation: The ability to bind state variables ($state.<key>), evaluate math/logic locally without carrier round-trips, and mutate the UI in real time.
+3. Cellular Wire Density: Compact blueprint encoding that fits complex multi-component layouts into SMS segments (<=256B) or compressed MMS payloads.
+__________________________________________________
+8.2 Architectural Blueprint for AI Studio (Build v29+)
+Pillar 1: Primitive Catalog Expansion (DynamicAppHost)
+AI Studio must expand the component registry in DynamicAppHost.kt beyond simple forms to support arbitrary mini-apps and rich widgets:
+* Layout Containers:
+    * column, row, box (with alignment, padding, spacing, wrap).
+    * grid: 2-column or dynamic responsive grid for dashboards and calculators.
+    * card / surface: rounded elevated containers with customizable background tints.
+    * accordion: expandable/collapsible disclosure sections to conserve chat vertical space.
+* Interactive Controls:
+    * input: text, numeric, password, multiline with validation patterns.
+    * button: primary, secondary, tonal, icon-only, destructive; supports disabled state bindings ($state.is_valid).
+    * slider & stepper: continuous or stepped numeric adjustments (e.g., margins, percentages, quantities).
+    * toggle / switch & checkbox: binary state switches.
+    * segmented_control & tabs: inline view/category switching without leaving the card.
+    * chips: selectable tag filters.
+* Data & Analytics Visualizations:
+    * metric_stat: large value display with label, trend indicator (+/- delta), and color coding.
+    * progress_bar: determinate and indeterminate linear indicators.
+    * sparkline & bar_mini: lightweight vector line/bar charts rendered via native Compose Canvas from numeric arrays ([10, 25, 18, 30]).
+    * key_value_list: clean two-column ledger/summary rows (e.g., invoices, spec sheets).
+* Media & Iconography:
+    * icon: mapped to standard Material Symbols vector identifiers (calculate, trending_up, settings, check, warning, info).
+__________________________________________________
+Pillar 2: Reactive State Machine & Local Expression Engine
+To eliminate carrier latency for standard app interactions, DynamicAppHost must operate as a self-contained reactive runtime:
+1. Local State Store (MiniAppLocalState):
+        * Scoped to each rendered instance in memory and persisted in Room (mini_app_state).
+        * Initialized from default values in the blueprint layout.
+        * Two-way data binding: inputs bind directly to $state.<field_id>.
+2. Local Expression Evaluator (SimpleMathParser v2):
+        * Support real-time computed text and properties: e.g., "text": "Total: $$($state.cost * $state.markup + $state.labor)".
+        * Support conditional visibility and styling: "visible": "$state.is_custom == true".
+        * Support basic logical operators: +, -, *, /, >, <, ==, !=, and ternary condition ? a : b.
+__________________________________________________
+Pillar 3: Action Dispatch & Cellular Egress
+When user interactions require backend AI intervention or system actions:
+* Action Types:
+    * set_state: updates local state variables instantly (e.g., reset form, toggle tab).
+    * eval_quote / submit_rpc: serializes current $state into a compressed delta payload and queues an RPC_REQ frame in the Outbox to request AI recomputation.
+    * copy_clipboard: copies formatted output text to Android clipboard with a toast.
+    * save_to_notes: exports output text directly to local device storage.
+    * dismiss: collapses or closes the interactive card.
+__________________________________________________
+Pillar 4: High-Density Wire Optimization for SMS/MMS
+To prevent payload bloat over cellular:
+* JSON Minification & Key Aliasing:
+    * Support shorthand keys during inflation: t = type, c = children, id = id, v = value, l = label.
+* Differential Updates (RFC 6902 JSON Patch):
+    * When updating an existing app or widget in chat, send only the diff/patch ({"op": "replace", "path": "/children/2/default", "value": "75"}) rather than re-transmitting the entire blueprint.
+* Base Blueprint Inheritance:
+    * Support referencing pre-installed base schemas (extends: "calc_base") so outgoing payloads only deliver custom field overrides.
+
+
+__________________________________________________
+9. Section 9: Fenced Wire Envelope & Command Encapsulation Protocol (Epic 15)
+9.1 Background & Motivation
+In Build 28, raw JSON and control frames leaked into visible chat bubbles ([INC-09]), and transport-level ACKs inflated as empty SDUI cards instead of being ingested by SlidingWindowFlowController ([INC-11]). Encapsulating all non-conversational payloads in an explicit fenced envelope separates human chat prose from machine protocol frames.
+9.2 Wire Envelope Grammar
+The AI output uses a dedicated Markdown fence identifier (aiui):
+
+
+AIUI
+{
+  "type": "sdui" | "rpc" | "theme",
+  "version": "2.1.0",
+  "payload": { ... }
+}
+
+
+9.3 Client-Side Ingestion Pipeline
+1. Markdown Stream Interception: ChatFeedScreen and the message parser treat ``aiui as a first-class block token. Conversational text renders as standard chat bubbles, and theaiui` block is completely stripped from prose.
+2. Typed Payload Dispatcher:
+* type: "rpc": Consumed immediately and silently by SlidingWindowFlowController.onControlPacketReceived(). ACKs increment RX, decrement IN-FLIGHT permits, and slide the transmission window without creating visible feed artifacts.
+* type: "sdui": Deserialized into WidgetBlueprint and inflated inline via DynamicAppHost.
+* type: "theme": Dispatched to ThemeManager to update UI styling tokens dynamically.
+1. Fuzzy Stream & Chunk Healing: Explicit boundary fences allow FuzzyStreamDemuxer to reliably detect chunk boundaries across multi-part SMS/MMS segments, preventing parser crashes on partial chunks ([INC-12]).

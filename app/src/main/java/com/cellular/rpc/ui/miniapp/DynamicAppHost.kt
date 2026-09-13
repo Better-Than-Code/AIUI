@@ -672,7 +672,177 @@ private fun RenderNode(
             }
         }
 
-        "progress", "progressbar" -> {
+        "grid" -> {
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = (node.padding / 2).dp),
+                horizontalArrangement = Arrangement.spacedBy(node.spacing.dp.coerceAtLeast(8.dp)),
+                verticalArrangement = Arrangement.spacedBy(node.spacing.dp.coerceAtLeast(8.dp))
+            ) {
+                node.children.forEach { child ->
+                    RenderNode(
+                        node = child,
+                        appState = appState,
+                        itemContext = itemContext,
+                        isPreviewMode = isPreviewMode,
+                        onPerformAction = onPerformAction,
+                        onDirectStateMutation = onDirectStateMutation,
+                        onInstallToDeck = onInstallToDeck,
+                        onDiscardPreview = onDiscardPreview
+                    )
+                }
+            }
+        }
+
+        "accordion" -> {
+            var expanded by remember { mutableStateOf(false) }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = (node.padding / 2).dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { expanded = !expanded }
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = node.text.ifBlank { "Expand" },
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (expanded) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(node.spacing.dp)
+                    ) {
+                        node.children.forEach { child ->
+                            RenderNode(
+                                node = child,
+                                appState = appState,
+                                itemContext = itemContext,
+                                isPreviewMode = isPreviewMode,
+                                onPerformAction = onPerformAction,
+                                onDirectStateMutation = onDirectStateMutation,
+                                onInstallToDeck = onInstallToDeck,
+                                onDiscardPreview = onDiscardPreview
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        "slider" -> {
+            val bindKey = node.bindValue.ifBlank { node.bind }
+            val currentVal = (appState[bindKey] as? Number)?.toFloat() ?: 0f
+            val min = (node.modifier["min"] as? Number)?.toFloat() ?: 0f
+            val max = (node.modifier["max"] as? Number)?.toFloat() ?: 100f
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = (node.padding / 2).dp)
+            ) {
+                if (node.text.isNotBlank()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(node.text, style = MaterialTheme.typography.labelMedium)
+                        Text(currentVal.toInt().toString(), style = MaterialTheme.typography.labelMedium, color = CyanPrimary)
+                    }
+                }
+                Slider(
+                    value = currentVal,
+                    onValueChange = { newVal ->
+                        if (bindKey.isNotBlank()) {
+                            onDirectStateMutation(bindKey, newVal)
+                        }
+                    },
+                    onValueChangeFinished = {
+                        if (node.onSelect != null) {
+                            onPerformAction(node.onSelect, itemContext)
+                        }
+                    },
+                    valueRange = min..max,
+                    colors = SliderDefaults.colors(
+                        thumbColor = CyanPrimary,
+                        activeTrackColor = CyanPrimary
+                    )
+                )
+            }
+        }
+
+        "stepper" -> {
+            val bindKey = node.bindValue.ifBlank { node.bind }
+            val currentVal = (appState[bindKey] as? Number)?.toInt() ?: 0
+            val step = (node.modifier["step"] as? Number)?.toInt() ?: 1
+            val min = (node.modifier["min"] as? Number)?.toInt() ?: 0
+            val max = (node.modifier["max"] as? Number)?.toInt() ?: 100
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = (node.padding / 2).dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (node.text.isNotBlank()) {
+                    Text(node.text, style = MaterialTheme.typography.bodyMedium)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = {
+                            val newVal = (currentVal - step).coerceAtLeast(min)
+                            if (bindKey.isNotBlank()) onDirectStateMutation(bindKey, newVal)
+                            if (node.onSelect != null) onPerformAction(node.onSelect, itemContext)
+                        },
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                            .size(32.dp)
+                    ) {
+                        Icon(Icons.Default.Remove, contentDescription = "Decrease", tint = CyanPrimary, modifier = Modifier.size(16.dp))
+                    }
+                    Text(
+                        text = currentVal.toString(),
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                    IconButton(
+                        onClick = {
+                            val newVal = (currentVal + step).coerceAtMost(max)
+                            if (bindKey.isNotBlank()) onDirectStateMutation(bindKey, newVal)
+                            if (node.onSelect != null) onPerformAction(node.onSelect, itemContext)
+                        },
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                            .size(32.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Increase", tint = CyanPrimary, modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+        }
+
+        "progress_bar", "progress", "progressbar" -> {
             val progressVal = when {
                 node.bindValue.isNotBlank() -> (appState[node.bindValue] as? Number)?.toFloat() ?: 0f
                 node.bind.isNotBlank() -> (appState[node.bind] as? Number)?.toFloat() ?: 0f
@@ -712,6 +882,76 @@ private fun RenderNode(
                     color = CyanPrimary,
                     trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
                 )
+            }
+        }
+
+        "metric_stat", "metric", "stat" -> {
+            val label = node.hint.ifBlank { node.text }
+            val value = formatAndInterpolateText(
+                textTemplate = "",
+                bindExpr = node.bind.ifBlank { node.bindValue },
+                format = node.format,
+                style = node.style,
+                modifier = node.modifier,
+                appState = appState,
+                itemContext = itemContext
+            ).ifBlank { "0" }
+
+            Column(
+                modifier = Modifier
+                    .padding(vertical = (node.padding / 2).dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                    .padding(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                if (label.isNotBlank()) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = CyanPrimary
+                )
+            }
+        }
+
+        "key_value_list", "kvlist" -> {
+            val itemsList = (appState[node.bindItems.ifBlank { node.bind }] as? List<*>) ?: emptyList<Any>()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = (node.padding / 2).dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                itemsList.forEach { item ->
+                    val itemMap = item as? Map<*, *> ?: emptyMap<Any, Any>()
+                    val key = itemMap["key"]?.toString() ?: itemMap["label"]?.toString() ?: ""
+                    val value = itemMap["value"]?.toString() ?: ""
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = key,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = value,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+                }
             }
         }
 

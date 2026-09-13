@@ -88,6 +88,24 @@ class SlidingWindowController(
     }
 
     @Synchronized
+    fun evictStalledFrames(timeoutMs: Long, currentTimeMs: Long): Int {
+        val stalledSeqs = unacknowledgedFrames.entries
+            .filter { (currentTimeMs - it.value.timestampMs) >= timeoutMs }
+            .map { it.key }
+        
+        for (seq in stalledSeqs) {
+            unacknowledgedFrames.remove(seq)
+        }
+
+        // Advance baseSequence past any missing (evicted) frames to free the permits
+        while (baseSequence != nextSequence && !unacknowledgedFrames.containsKey(baseSequence)) {
+            baseSequence = (baseSequence + 1) % maxSequence
+        }
+
+        return stalledSeqs.size
+    }
+
+    @Synchronized
     fun processInbound(frame: Frame): InboundResult {
         val seq = frame.seqNo and 0xFFFF
         

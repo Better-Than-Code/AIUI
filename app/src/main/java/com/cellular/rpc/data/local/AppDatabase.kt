@@ -16,9 +16,11 @@ import androidx.room.RoomDatabase
         CustomActionEntity::class,
         AppBlueprintEntity::class,
         MutationLogEntity::class,
-        MiniAppDocumentEntity::class
+        MiniAppDocumentEntity::class,
+        TaskEntity::class,
+        CalendarEventEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -33,6 +35,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun appBlueprintDao(): AppBlueprintDao
     abstract fun mutationLogDao(): MutationLogDao
     abstract fun miniAppDocumentDao(): MiniAppDocumentDao
+    abstract fun taskDao(): TaskDao
+    abstract fun calendarEventDao(): CalendarEventDao
 
     companion object {
         @Volatile

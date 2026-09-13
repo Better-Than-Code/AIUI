@@ -527,32 +527,84 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
      * Dispatches an RPC query for a widget type (e.g. "weather", "news_digest", "market_ticker").
      */
     fun queryWidget(type: String) {
-        lastQueriedType = type
         val currentTid = _activeThreadId.value.ifBlank { "th_main" }
-        val rawQueryPrompt = when (type.lowercase()) {
-            "weather" -> "Please provide the current weather in JSON format: {\"type\":\"weather\",\"city\":\"San Francisco\",\"temp\":72,\"cond\":\"Sunny\"}"
-            "news_digest", "news" -> "Please provide top news headlines in JSON format: {\"type\":\"news_digest\",\"headlines\":[{\"title\":\"Top News\",\"source\":\"Global\",\"summary\":\"Summary of events\"}]}"
-            "market_ticker", "market" -> "Please provide current market prices in JSON format: {\"type\":\"market_ticker\",\"symbols\":[{\"symbol\":\"SPY\",\"price\":510.50,\"changePercent\":0.75}]}"
-            "task_checklist", "tasks" -> "Please provide a task checklist in JSON format: {\"type\":\"task_checklist\",\"title\":\"Tasks\",\"items\":[{\"id\":\"1\",\"text\":\"Review report\",\"completed\":false}]}"
-            "calendar_event", "calendar" -> "Please provide upcoming calendar events in JSON format: {\"type\":\"calendar_event\",\"title\":\"Meeting\",\"time\":\"2:00 PM\",\"location\":\"Office\"}"
-            "system_status", "system" -> "Please provide system status in JSON format: {\"type\":\"system_status\",\"status\":\"ONLINE\",\"latencyMs\":45}"
-            "poll" -> "Please provide a community poll in JSON format: {\"type\":\"poll\",\"question\":\"Preferred option?\",\"options\":[\"Option A\",\"Option B\"]}"
-            else -> "Please provide $type in JSON format: {\"type\":\"$type\"}"
+        val rawQueryPrompt = when {
+            type.startsWith("market_ticker:") -> {
+                val symbol = type.removePrefix("market_ticker:").trim().uppercase()
+                lastQueriedType = "market_ticker"
+                "Please provide current price for $symbol in JSON format: {\"type\":\"market_ticker\",\"symbol\":\"$symbol\",\"price\":100.00,\"changePercent\":0.00}"
+            }
+            type.lowercase() == "weather" -> {
+                lastQueriedType = "weather"
+                "Please provide the current weather in JSON format: {\"type\":\"weather\",\"city\":\"San Francisco\",\"temp\":72,\"cond\":\"Sunny\"}"
+            }
+            type.lowercase() == "news_digest" || type.lowercase() == "news" -> {
+                lastQueriedType = "news_digest"
+                "Please provide top news headlines in JSON format: {\"type\":\"news_digest\",\"headlines\":[{\"title\":\"Top News\",\"source\":\"Global\",\"summary\":\"Summary of events\"}]}"
+            }
+            type.lowercase() == "market_ticker" || type.lowercase() == "market" -> {
+                lastQueriedType = "market_ticker"
+                "Please provide current market prices in JSON format: {\"type\":\"market_ticker\",\"symbols\":[{\"symbol\":\"SPY\",\"price\":510.50,\"changePercent\":0.75}]}"
+            }
+            type.lowercase() == "task_checklist" || type.lowercase() == "tasks" -> {
+                lastQueriedType = "task_checklist"
+                "Please provide a task checklist in JSON format: {\"type\":\"task_checklist\",\"title\":\"Tasks\",\"items\":[{\"id\":\"1\",\"text\":\"Review report\",\"completed\":false}]}"
+            }
+            type.lowercase() == "calendar_event" || type.lowercase() == "calendar" -> {
+                lastQueriedType = "calendar_event"
+                "Please provide upcoming calendar events in JSON format: {\"type\":\"calendar_event\",\"title\":\"Meeting\",\"time\":\"2:00 PM\",\"location\":\"Office\"}"
+            }
+            type.lowercase() == "system_status" || type.lowercase() == "system" -> {
+                lastQueriedType = "system_status"
+                "Please provide system status in JSON format: {\"type\":\"system_status\",\"status\":\"ONLINE\",\"latencyMs\":45}"
+            }
+            type.lowercase() == "poll" -> {
+                lastQueriedType = "poll"
+                "Please provide a community poll in JSON format: {\"type\":\"poll\",\"question\":\"Preferred option?\",\"options\":[\"Option A\",\"Option B\"]}"
+            }
+            else -> {
+                lastQueriedType = type
+                "Please provide $type in JSON format: {\"type\":\"$type\"}"
+            }
         }
 
         val queryPrompt = if (currentTid != "th_main") "[TID:$currentTid] $rawQueryPrompt" else rawQueryPrompt
+        val displayRequestText = if (type.startsWith("market_ticker:")) {
+            val sym = type.removePrefix("market_ticker:").trim().uppercase()
+            "Request: $sym Price update"
+        } else {
+            "Request: $type update"
+        }
+        
+        val skeletonLabel = if (type.startsWith("market_ticker:")) {
+            val sym = type.removePrefix("market_ticker:").trim().uppercase()
+            "Loading $sym Market Ticker..."
+        } else if (type.lowercase() == "news_digest" || type.lowercase() == "news") {
+            "Loading News Wire..."
+        } else {
+            "Loading ${type.capitalize()}..."
+        }
 
         val userMessage = com.cellular.rpc.engine.ChatMessage(
             threadId = currentTid,
             sender = com.cellular.rpc.engine.MessageSender.USER,
-            text = "Request: $type update",
+            text = displayRequestText,
             byteSize = queryPrompt.length,
             pduCount = 1
         )
 
+        val skeletonMessage = com.cellular.rpc.engine.ChatMessage(
+            threadId = currentTid,
+            sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
+            text = "",
+            widgetData = WidgetData.Skeleton(skeletonLabel),
+            deliveryStatus = com.cellular.rpc.engine.MessageDeliveryStatus.IN_FLIGHT
+        )
+
         viewModelScope.launch(Dispatchers.IO) {
             chatRepository.saveMessage(userMessage)
-            conversationThreadDao.updateLastMessage(currentTid, "Request: $type update", System.currentTimeMillis())
+            chatRepository.saveMessage(skeletonMessage)
+            conversationThreadDao.updateLastMessage(currentTid, displayRequestText, System.currentTimeMillis())
             queueEngine.enqueuePayload(
                 sessionId = activeSessionId,
                 pktType = Frame.PKT_RPC_REQ,

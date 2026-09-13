@@ -92,10 +92,60 @@ sealed class WidgetData(val type: String) {
                 if (sparklineList.isEmpty()) {
                     sparklineList.addAll(listOf(90.2f, 91.0f, 90.5f, 91.8f, 91.42f))
                 }
+
+                // Support both short keys ("sym", "chg") and standard JSON schema keys ("symbol", "change_percent", "changePercent", "change")
+                val symbol = when {
+                    json.has("sym") -> json.optString("sym")
+                    json.has("symbol") -> json.optString("symbol")
+                    json.has("ticker") -> json.optString("ticker")
+                    json.has("symbols") -> {
+                        val symbolsArr = json.optJSONArray("symbols")
+                        if (symbolsArr != null && symbolsArr.length() > 0) {
+                            val firstObj = symbolsArr.optJSONObject(0)
+                            firstObj?.optString("symbol") ?: firstObj?.optString("sym") ?: "SPY"
+                        } else "SPY"
+                    }
+                    else -> "SPY"
+                }
+
+                val priceVal = when {
+                    json.has("price") -> {
+                        val raw = json.opt("price")
+                        if (raw is Number) "$%.2f".format(raw.toDouble()) else raw.toString()
+                    }
+                    json.has("symbols") -> {
+                        val symbolsArr = json.optJSONArray("symbols")
+                        val firstObj = symbolsArr?.optJSONObject(0)
+                        val p = firstObj?.opt("price")
+                        if (p is Number) "$%.2f".format(p.toDouble()) else p?.toString() ?: "$510.50"
+                    }
+                    else -> "$510.50"
+                }
+
+                val changeVal = when {
+                    json.has("chg") -> json.optString("chg")
+                    json.has("change") -> json.optString("change")
+                    json.has("change_percent") -> {
+                        val cp = json.opt("change_percent")
+                        if (cp is Number) "${if (cp.toDouble() >= 0) "+" else ""}%.2f%%".format(cp.toDouble()) else cp.toString()
+                    }
+                    json.has("changePercent") -> {
+                        val cp = json.opt("changePercent")
+                        if (cp is Number) "${if (cp.toDouble() >= 0) "+" else ""}%.2f%%".format(cp.toDouble()) else cp.toString()
+                    }
+                    json.has("symbols") -> {
+                        val symbolsArr = json.optJSONArray("symbols")
+                        val firstObj = symbolsArr?.optJSONObject(0)
+                        val cp = firstObj?.opt("changePercent") ?: firstObj?.opt("change_percent") ?: firstObj?.opt("chg")
+                        if (cp is Number) "${if (cp.toDouble() >= 0) "+" else ""}%.2f%%".format(cp.toDouble()) else cp?.toString() ?: "+0.75%"
+                    }
+                    else -> "+0.75%"
+                }
+
                 return MarketTicker(
-                    sym = json.optString("sym", "N/A"),
-                    price = json.optString("price", "$0.00"),
-                    chg = json.optString("chg", "0.0%"),
+                    sym = symbol,
+                    price = priceVal,
+                    chg = changeVal,
                     sparkline = sparklineList
                 )
             }
@@ -368,6 +418,18 @@ sealed class WidgetData(val type: String) {
         }
     }
 
+    data class Skeleton(val label: String) : WidgetData("skeleton") {
+        override fun toJson(): String {
+            return """{"type":"skeleton","label":"$label"}"""
+        }
+        override fun computeContentHash(): String = hashString(toJson())
+        companion object {
+            fun fromJson(json: JSONObject): Skeleton {
+                return Skeleton(json.optString("label", "Loading..."))
+            }
+        }
+    }
+
     data class DynamicBlueprint(
         val id: String,
         val title: String,
@@ -546,6 +608,22 @@ sealed class WidgetData(val type: String) {
                 trimmed = trimmed.replace(tidRegex, "").trim()
             }
 
+            // INC-12: Support the dedicated `aiui` fenced code block protocol
+            if (trimmed.contains("---CELLULAR_DATA---")) {
+                val parts = trimmed.split("---CELLULAR_DATA---")
+                if (parts.size >= 2) {
+                    trimmed = parts.last().trim()
+                }
+            } else if (trimmed.contains("```aiui")) {
+                val start = trimmed.indexOf("```aiui")
+                val end = trimmed.indexOf("```", start + 7)
+                if (end > start) {
+                    trimmed = trimmed.substring(start + 7, end).trim()
+                } else {
+                    trimmed = trimmed.substring(start + 7).trim()
+                }
+            }
+
             // 0. Demux using balanced-brace JSON stream demuxer if multiple objects exist
             val demuxed = JsonStreamDemuxer.extractJsonObjects(trimmed)
             if (demuxed.isNotEmpty()) {
@@ -570,7 +648,8 @@ sealed class WidgetData(val type: String) {
 
         private fun parseJsonInternal(jsonString: String): WidgetData? {
             return try {
-                val obj = JSONObject(jsonString)
+                // INC-12: Fuzzy Stream Demuxer repair
+                val obj = FuzzyStreamDemuxer.repairAndParse(jsonString) ?: return null
                 val type = obj.optString("type")
                 when (type) {
                     "weather" -> Weather.fromJson(obj)
@@ -584,6 +663,7 @@ sealed class WidgetData(val type: String) {
                     "task_checklist" -> TaskChecklist.fromJson(obj)
                     "mini_app_blueprint", "mini_app", "miniapp", "draw_canvas", "canvas_app", "sketch_app" -> MiniAppPreview.fromJson(obj)
                     "system_status" -> SystemStatus.fromJson(obj)
+                    "skeleton" -> Skeleton.fromJson(obj)
                     "blueprint", "sdui", "dynamic", "custom", "layout", "screen", "widget" -> DynamicBlueprint.fromJson(obj)
                     else -> {
                         if (obj.has("appId") || obj.has("ui") || obj.has("initialState")) {

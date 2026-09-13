@@ -20,7 +20,7 @@ data class ChatThemeConfig(
     val bubbleBorderColorHex: String = "#334155",
     val fontScaleMultiplier: Float = 1.0f,
     val animationStyle: String = "slide", // "slide", "fade", "pop"
-    val showPduBadge: Boolean = true
+    val showPduBadge: Boolean = false
 ) {
     val incomingBubbleColor: Color
         get() = parseHexColor(incomingBubbleColorHex, Color(0xFF1E293B))
@@ -76,7 +76,7 @@ data class ChatThemeConfig(
                     bubbleBorderColorHex = obj.optString("bubbleBorderColorHex", "#334155"),
                     fontScaleMultiplier = obj.optDouble("fontScaleMultiplier", 1.0).toFloat(),
                     animationStyle = obj.optString("animationStyle", "slide"),
-                    showPduBadge = obj.optBoolean("showPduBadge", true)
+                    showPduBadge = obj.optBoolean("showPduBadge", false)
                 )
             } catch (e: Exception) {
                 DEFAULT

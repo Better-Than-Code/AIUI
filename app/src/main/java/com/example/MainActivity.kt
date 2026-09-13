@@ -80,9 +80,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        // Register SMS and MMS ContentObservers to monitor incoming messages
-        com.cellular.rpc.transport.receiver.PallySmsObserver.register(applicationContext)
-        com.cellular.rpc.transport.service.HardenedTelephonyObserverService.start(applicationContext)
+        // Initialize MMS Helper ID on startup
+        com.cellular.rpc.transport.receiver.PallyMmsHelper.initializeLatestMmsId(applicationContext)
         setContent {
             var isDarkTheme by remember { mutableStateOf(true) }
             MyApplicationTheme(darkTheme = isDarkTheme) {
@@ -94,8 +93,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         // Epic 10: Delta reconciliation onResume to capture any messages received while in background
-        com.cellular.rpc.transport.service.HardenedTelephonyObserverService.reconcileMissedMessages(applicationContext)
-        com.cellular.rpc.transport.receiver.PallySmsObserver.checkInboxNow(applicationContext)
+
     }
 
     override fun onPause() {
@@ -125,6 +123,10 @@ fun CellularRpcScreen(
     var showThreadDrawer by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+    val chatListState = rememberLazyListState()
+    val circuitBreaker = remember { com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.getInstance(context) }
+    val circuitState by circuitBreaker.state.collectAsStateWithLifecycle()
+    val cooldownRemainingMs by circuitBreaker.cooldownRemainingMs.collectAsStateWithLifecycle()
     var pendingApprovalLog by remember { mutableStateOf<com.cellular.rpc.data.local.MutationLogEntity?>(null) }
     LaunchedEffect(Unit) {
         com.cellular.rpc.engine.AdminApprovalState.pendingApprovals.collect { log ->
@@ -194,8 +196,7 @@ fun CellularRpcScreen(
                             results[Manifest.permission.RECEIVE_SMS] == true &&
                             results[Manifest.permission.READ_SMS] == true
         if (hasSmsPermissions) {
-            com.cellular.rpc.transport.service.HardenedTelephonyObserverService.start(context)
-            com.cellular.rpc.transport.receiver.PallySmsObserver.checkInboxNow(context)
+
         }
     }
 
@@ -203,15 +204,13 @@ fun CellularRpcScreen(
         if (!hasSmsPermissions) {
             permissionLauncher.launch(requiredPermissions)
         } else {
-            com.cellular.rpc.transport.service.HardenedTelephonyObserverService.start(context)
-            com.cellular.rpc.transport.receiver.PallySmsObserver.checkInboxNow(context)
+
         }
     }
 
     LaunchedEffect(selectedTab) {
         if (hasSmsPermissions) {
-            com.cellular.rpc.transport.service.HardenedTelephonyObserverService.reconcileMissedMessages(context)
-            com.cellular.rpc.transport.receiver.PallySmsObserver.checkInboxNow(context)
+
         }
     }
 
@@ -273,21 +272,46 @@ fun CellularRpcScreen(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(6.dp)
-                                            .clip(CircleShape)
-                                            .background(if (isLoopbackSimulation) SignalAmber else SignalGreen)
-                                    )
-                                    Text(
-                                        text = if (isLoopbackSimulation) "Simulation Mode" else "Cellular Gateway",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                val isCooldownActive = circuitState == com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.CircuitState.OPEN
+                                val totalSecs = cooldownRemainingMs / 1000
+                                val cooldownMins = totalSecs / 60
+                                val cooldownSecs = totalSecs % 60
+
+                                if (isCooldownActive) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .clip(CircleShape)
+                                                .background(SignalRed)
+                                        )
+                                        Text(
+                                            text = "Cooldown (${String.format("%02d:%02d", cooldownMins, cooldownSecs)})",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = SignalRed,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                } else if (isLoopbackSimulation) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .clip(CircleShape)
+                                                .background(SignalAmber)
+                                        )
+                                        Text(
+                                            text = "Simulation Mode",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = SignalAmber
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -443,6 +467,13 @@ fun CellularRpcScreen(
                     label = { Text("Apps") },
                     modifier = Modifier.testTag("nav_dynamic_apps")
                 )
+                NavigationBarItem(
+                    selected = selectedTab == 7,
+                    onClick = { selectedTab = 7 },
+                    icon = { Icon(Icons.Default.DateRange, contentDescription = "Agenda Hub") },
+                    label = { Text("Agenda") },
+                    modifier = Modifier.testTag("nav_agenda")
+                )
             }
         }
     ) { innerPadding ->
@@ -476,7 +507,8 @@ fun CellularRpcScreen(
                     onVote = { pollId, opt -> chatViewModel.castVote(pollId, opt) },
                     onConfirmTransfer = { chatViewModel.confirmTransfer(it) },
                     onRefreshWidget = { chatViewModel.queryWidget(it) },
-                    onDeleteMessage = { chatViewModel.deleteChatMessage(it) }
+                    onDeleteMessage = { chatViewModel.deleteChatMessage(it) },
+                    chatListState = chatListState
                 )
                 1 -> WidgetsAndRpcTab(
                     widgetCache = widgetCache,
@@ -520,6 +552,9 @@ fun CellularRpcScreen(
                 )
                 6 -> com.cellular.rpc.ui.diagnostics.MutationLogTab(
                     viewModel = diagnosticsViewModel
+                )
+                7 -> com.cellular.rpc.ui.agenda.AgendaScreen(
+                    onNavigateBack = { selectedTab = 0 }
                 )
             }
         }

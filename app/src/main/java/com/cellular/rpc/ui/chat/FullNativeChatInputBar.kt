@@ -454,26 +454,20 @@ fun FullNativeChatInputBar(
                             maxLines = 4
                         )
 
-                        // Real-time Tariff & Encoding Badge
+                        // Real-time Character / Segment Counter (Google Messages Style: "chars left / segment")
                         if (tariff != null) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 8.dp, vertical = 2.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
+                                horizontalArrangement = Arrangement.End,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "${tariff.encoding} • ${tariff.pduCount} SMS PDU",
-                                    fontSize = 9.sp,
+                                    text = if (tariff.isSinglePdu) "${tariff.remainingInPdu}" else "${tariff.remainingInPdu} / ${tariff.pduCount}",
+                                    fontSize = 10.sp,
                                     fontFamily = FontFamily.Monospace,
-                                    color = if (tariff.isSinglePdu) SignalGreen else SignalAmber
-                                )
-                                Text(
-                                    text = "${tariff.remainingInPdu} chars left",
-                                    fontSize = 9.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = if (tariff.isSinglePdu) MaterialTheme.colorScheme.onSurfaceVariant else SignalAmber
                                 )
                             }
                         }

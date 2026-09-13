@@ -35,29 +35,24 @@ class CellularIntentRouter(private val context: Context) {
     }
 
     /**
-     * @return true if the intent is strictly a LOCAL action that requires no SMS overhead.
+     * Epic 13.3: Strict Slash-Command Parser (/)
+     * Enforce strict prefix matching (/theme, /widget, /net, /safe, /clear, /reset).
+     * Route all non-prefixed conversational text strictly as chat data across cellular transport.
+     * 
+     * @return true if the intent is strictly a LOCAL slash command that requires no SMS overhead.
      */
     fun isLocalUiIntent(prompt: String): Boolean {
-        if (isMockMode || classifier == null) {
-            return isLocalUiIntentMock(prompt)
+        val trimmed = prompt.trim()
+        if (!trimmed.startsWith("/")) {
+            // Conversational text is NEVER swallowed locally
+            return false
         }
 
-        try {
-            val results = classifier!!.classify(prompt)
-            val localScore = results.firstOrNull { it.label == "LOCAL_UI_CHANGE" }?.score ?: 0f
-            return localScore > 0.85f
-        } catch (e: Exception) {
-            Log.e("CellularIntentRouter", "TFLite classification failed: ${e.message}")
-            return isLocalUiIntentMock(prompt)
+        val parts = trimmed.split(Regex("\\s+"))
+        val command = parts.firstOrNull()?.lowercase() ?: ""
+        return when (command) {
+            "/theme", "/widget", "/net", "/safe", "/clear", "/reset", "/status", "/ping" -> true
+            else -> false
         }
-    }
-
-    private fun isLocalUiIntentMock(prompt: String): Boolean {
-        val lower = prompt.lowercase()
-        return lower.contains("dark mode") || 
-               lower.contains("light mode") || 
-               lower.contains("increase font") || 
-               lower.contains("bigger text") ||
-               lower.contains("clear cache")
     }
 }

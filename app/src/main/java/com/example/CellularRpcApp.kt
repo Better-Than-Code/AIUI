@@ -32,12 +32,7 @@ class CellularRpcApp : Application() {
             android.util.Log.e("CellularRpcApp", "Failed to initialize ChatThemeManager: ${e.message}")
         }
 
-        // Register ContentObserver for robust real-device SMS inbox syncing
-        try {
-            com.cellular.rpc.transport.receiver.PallySmsObserver.register(this)
-        } catch (e: Exception) {
-            android.util.Log.e("CellularRpcApp", "Failed to register SMS observer: ${e.message}")
-        }
+        // Legacy ContentObserver was removed in favor of static broadcast receivers
     }
 
     companion object {

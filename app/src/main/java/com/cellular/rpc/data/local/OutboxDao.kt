@@ -57,6 +57,9 @@ interface OutboxDao {
     @Query("DELETE FROM outbox WHERE status = 'ACKNOWLEDGED'")
     suspend fun clearAcknowledged()
 
+    @Query("SELECT COUNT(*) FROM outbox WHERE status = 'IN_FLIGHT'")
+    suspend fun countInFlight(): Int
+
     @Query("DELETE FROM outbox")
     suspend fun clearAll()
 }

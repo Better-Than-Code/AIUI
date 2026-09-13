@@ -150,9 +150,10 @@ object CellularMcpRegistry {
     fun buildGenesisSmsPrompt(): String {
         val hash = computeCatalogHash()
         val manifestJson = buildGenesisManifestJson()
-        return "SYS:MCP_GENESIS_SYNC v=$MCP_PROTOCOL_VERSION build=$RELEASE_BUILD_ID hash=$hash\n" +
+        return "SYSTEM PROTOCOL DIRECTIVE: AIUI CELLULAR GATEWAY v$MCP_PROTOCOL_VERSION\n" +
+                "SYS:MCP_GENESIS_SYNC build=$RELEASE_BUILD_ID hash=$hash\n" +
                 "I am initializing the Cellular RPC Gateway with my native capabilities.\n" +
-                "Store this manifest in persistent memory. Use these widget schemas and tool signatures for all structured interactions.\n" +
+                "Store this manifest in persistent memory. You MUST format all responses using the dual-format grammar: Conversational Text followed by '\\n---CELLULAR_DATA---\\n' followed by the Schema JSON.\n" +
                 "---CELLULAR_DATA---\n" +
                 manifestJson
     }

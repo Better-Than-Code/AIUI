@@ -9,6 +9,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -82,7 +83,8 @@ fun CellularChatTab(
     onVote: (String, Int) -> Unit,
     onConfirmTransfer: (String) -> Unit,
     onRefreshWidget: (String) -> Unit,
-    onDeleteMessage: (String) -> Unit = {}
+    onDeleteMessage: (String) -> Unit = {},
+    chatListState: LazyListState = rememberLazyListState()
 ) {
     var inputText by remember { mutableStateOf("") }
     var replyingToMessage by remember { mutableStateOf<ChatMessage?>(null) }
@@ -96,7 +98,7 @@ fun CellularChatTab(
         }
     }
 
-    val listState = rememberLazyListState()
+    val listState = chatListState
     val coroutineScope = rememberCoroutineScope()
 
     // Auto-scroll to latest message on receive
@@ -618,9 +620,14 @@ fun NewsChatCard(news: WidgetData.NewsDigest) {
  * Renders cryptocurrency/stock price, delta chip, and a custom native Canvas sparkline!
  */
 @Composable
-fun MarketChatCard(ticker: WidgetData.MarketTicker) {
+fun MarketChatCard(
+    ticker: WidgetData.MarketTicker,
+    onQuerySymbol: ((String) -> Unit)? = null
+) {
     val isPositive = ticker.chg.startsWith("+")
     val trendColor = if (isPositive) SignalGreen else SignalRed
+    var isEditingSymbol by remember { mutableStateOf(false) }
+    var inputSymbol by remember { mutableStateOf("") }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -635,6 +642,12 @@ fun MarketChatCard(ticker: WidgetData.MarketTicker) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    val iconSymbol = when (ticker.sym.uppercase()) {
+                        "BTC", "BITCOIN" -> "₿"
+                        "ETH", "ETHEREUM" -> "Ξ"
+                        "SOL", "SOLANA" -> "◎"
+                        else -> "$"
+                    }
                     Box(
                         modifier = Modifier
                             .size(24.dp)
@@ -642,7 +655,7 @@ fun MarketChatCard(ticker: WidgetData.MarketTicker) {
                             .background(MaterialTheme.colorScheme.primaryContainer),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("₿", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = CyanPrimary)
+                        Text(iconSymbol, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = CyanPrimary)
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
@@ -650,6 +663,23 @@ fun MarketChatCard(ticker: WidgetData.MarketTicker) {
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
+                    if (onQuerySymbol != null) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        IconButton(
+                            onClick = {
+                                inputSymbol = ""
+                                isEditingSymbol = !isEditingSymbol
+                            },
+                            modifier = Modifier.size(20.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isEditingSymbol) Icons.Default.Close else Icons.Default.Search,
+                                contentDescription = "Change Ticker",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
                 }
 
                 Surface(
@@ -662,6 +692,57 @@ fun MarketChatCard(ticker: WidgetData.MarketTicker) {
                         fontWeight = FontWeight.Bold,
                         color = trendColor,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            AnimatedVisibility(visible = isEditingSymbol) {
+                Column(modifier = Modifier.padding(top = 8.dp)) {
+                    OutlinedTextField(
+                        value = inputSymbol,
+                        onValueChange = { inputSymbol = it.uppercase() },
+                        placeholder = { Text("Ticker (e.g. BTC, NVDA, SOL)", fontSize = 12.sp) },
+                        singleLine = true,
+                        trailingIcon = {
+                            if (inputSymbol.isNotBlank()) {
+                                IconButton(
+                                    onClick = {
+                                        val sym = inputSymbol.trim()
+                                        if (sym.isNotEmpty()) {
+                                            onQuerySymbol?.invoke(sym)
+                                            isEditingSymbol = false
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Send,
+                                        contentDescription = "Search Ticker",
+                                        tint = CyanPrimary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        },
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            imeAction = androidx.compose.ui.text.input.ImeAction.Search
+                        ),
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                            onSearch = {
+                                val sym = inputSymbol.trim()
+                                if (sym.isNotEmpty()) {
+                                    onQuerySymbol?.invoke(sym)
+                                    isEditingSymbol = false
+                                }
+                            }
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = CyanPrimary,
+                            unfocusedBorderColor = DarkNavyBorder
+                        )
                     )
                 }
             }

@@ -6,6 +6,7 @@ import android.content.Intent
 import android.telephony.SmsMessage
 import android.util.Log
 import com.cellular.rpc.data.local.AppDatabase
+import com.cellular.rpc.data.local.PacketLogEntity
 import com.cellular.rpc.data.local.WidgetCacheEntity
 import com.cellular.rpc.domain.protocol.Frame
 import com.cellular.rpc.domain.protocol.FrameTokenizer
@@ -145,11 +146,30 @@ class PallySmsReceiver : BroadcastReceiver() {
         textBody: String,
         sender: String
     ) {
+        val now = System.currentTimeMillis()
+
+        // Helper to handle control / ACK packets without creating UI chat bubbles
+        suspend fun handleControlFrame(frame: Frame, rawBytes: ByteArray?, rawText: String, transportType: CellularTransportType): Boolean {
+            if (frame.pktType == Frame.PKT_CTL_ACK) {
+                Log.d(TAG, "Intercepted pure ACK control frame (session=${frame.sessionId}, seq=${frame.seqNo}, ackBits=${String.format("%08X", frame.ackBits)}) -> routing to QueueEngine")
+                try {
+                    CarrierSafeQueueEngine.getInstance(context).submitInboundPacket(frame)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed submitting inbound ACK to queue engine: ${e.message}")
+                }
+                return true
+            }
+            return false
+        }
+
         // 1. Try binary frame parsing from User Data
         val userData = sms.userData
         val binaryFrame = userData?.let { Frame.fromBinary(it) }
 
         if (binaryFrame != null) {
+            if (handleControlFrame(binaryFrame, userData, textBody, CellularTransportType.SMS_DATA_PORT_8901)) {
+                return
+            }
             val inboundMessage = InboundCellularMessage(
                 transportType = CellularTransportType.SMS_DATA_PORT_8901,
                 senderAddress = sender,
@@ -165,6 +185,9 @@ class PallySmsReceiver : BroadcastReceiver() {
         val tokenizeResult = FrameTokenizer.tokenize(textBody)
         if (tokenizeResult.frames.isNotEmpty()) {
             for (frame in tokenizeResult.frames) {
+                if (handleControlFrame(frame, userData, textBody, CellularTransportType.SMS_TEXT_WIRE)) {
+                    continue
+                }
                 val inboundMessage = InboundCellularMessage(
                     transportType = CellularTransportType.SMS_TEXT_WIRE,
                     senderAddress = sender,
@@ -177,6 +200,9 @@ class PallySmsReceiver : BroadcastReceiver() {
         } else {
             // Fallback unencapsulated message
             val fallbackFrame = Frame.fromAsciiWire(textBody)
+            if (fallbackFrame != null && handleControlFrame(fallbackFrame, userData, textBody, CellularTransportType.SMS_TEXT_WIRE)) {
+                return
+            }
             val inboundMessage = InboundCellularMessage(
                 transportType = CellularTransportType.SMS_TEXT_WIRE,
                 senderAddress = sender,

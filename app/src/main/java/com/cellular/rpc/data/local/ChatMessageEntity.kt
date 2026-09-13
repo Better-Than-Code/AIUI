@@ -60,6 +60,10 @@ interface ChatMessageDao {
     @Query("DELETE FROM chat_messages WHERE threadId = :threadId AND widgetDataJson LIKE :typePattern")
     suspend fun deleteMessagesByWidgetType(threadId: String, typePattern: String)
 
+    @Query("UPDATE chat_messages SET widgetDataJson = :newJson, timestampMs = :now, deliveryStatus = \"DELIVERED\" WHERE threadId = :threadId AND widgetDataJson LIKE :idPattern")
+    suspend fun updateWidgetDataById(threadId: String, idPattern: String, newJson: String, now: Long): Int
+
+
     @Query("DELETE FROM chat_messages")
     suspend fun clearAllMessages()
 }

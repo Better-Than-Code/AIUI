@@ -184,9 +184,10 @@ fun NextGenChatMessageItem(
                                 )
                                 is WidgetData.NewsDigest -> NewsChatCard(news = widget)
                                 is WidgetData.MarketTicker -> MarketChatCard(
+                                    isRefreshing = message.deliveryStatus == com.cellular.rpc.engine.MessageDeliveryStatus.IN_FLIGHT || message.deliveryStatus == com.cellular.rpc.engine.MessageDeliveryStatus.QUEUED,
                                     ticker = widget,
                                     onQuerySymbol = { sym ->
-                                        onRefreshWidget("market_ticker:$sym")
+                                        onRefreshWidget("market_ticker:${widget.widgetId}:$sym")
                                     }
                                 )
                                 is WidgetData.CellularTransfer -> TransferChatCard(

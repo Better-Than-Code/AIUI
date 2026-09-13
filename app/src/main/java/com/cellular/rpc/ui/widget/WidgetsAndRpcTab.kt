@@ -208,7 +208,7 @@ fun WidgetsAndRpcTab(
                         ) {
                             Column {
                                 Text(
-                                    text = parsedMarket.sym,
+                                    text = parsedMarket.symbol,
                                     style = MaterialTheme.typography.titleLarge,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -226,10 +226,10 @@ fun WidgetsAndRpcTab(
                                     fontFamily = FontFamily.Monospace
                                 )
                                 Text(
-                                    text = parsedMarket.chg,
+                                    text = parsedMarket.change_percent,
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (parsedMarket.chg.startsWith("+")) SignalGreen else SignalRed
+                                    color = if (parsedMarket.change_percent.startsWith("+")) SignalGreen else SignalRed
                                 )
                             }
                         }

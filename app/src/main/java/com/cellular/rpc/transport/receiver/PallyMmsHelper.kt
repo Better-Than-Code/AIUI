@@ -68,7 +68,7 @@ object PallyMmsHelper {
      * Polls the MMS inbox across multiple backoff intervals (1.5s, 3.5s, 6s)
      * to guarantee complete part retrieval even under sluggish carrier MMSC transaction latencies.
      */
-    private suspend fun pollMmsInboxWithRetry(context: Context, maxAttempts: Int = 3) {
+    suspend fun pollMmsInboxWithRetry(context: Context, maxAttempts: Int = 3) {
         val delays = listOf(1500L, 3500L, 6000L)
         for (attempt in 0 until maxAttempts) {
             val delayTime = delays.getOrElse(attempt) { 4000L }

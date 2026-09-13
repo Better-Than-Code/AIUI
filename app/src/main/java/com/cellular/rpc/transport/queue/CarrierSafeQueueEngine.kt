@@ -87,9 +87,10 @@ class CarrierSafeQueueEngine(
             source = "Cellular Net"
         ),
         "market_ticker" to WidgetData.MarketTicker(
-            sym = "BTC/USD",
+            widgetId = "ticker_btc",
+            symbol = "BTC/USD",
             price = "$91,420",
-            chg = "+3.4%",
+            change_percent = "+3.4%",
             sparkline = listOf(90.2f, 91.0f, 90.5f, 91.8f, 91.42f)
         ),
         "transfer" to WidgetData.CellularTransfer(
@@ -197,6 +198,13 @@ class CarrierSafeQueueEngine(
                 outboxDao.markAcknowledged(f.sessionId, f.seqNo)
             }
         }
+    }
+
+    fun onControlPacketReceived(hash: String) {
+        // Find if this hash matches any in-flight frame or broadly acknowledge.
+        // The spec says: ACKs increment RX, decrement IN-FLIGHT permits, and slide the transmission window.
+        Log.i(TAG, "Received RPC Control Packet (hash=$hash). Acknowledging in-flight frames.")
+        acknowledgeAnyInFlight()
     }
 
     @Synchronized

@@ -25,7 +25,20 @@ class CellularRpcForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         acquireWakeLock()
-        startForeground(NOTIFICATION_ID, buildForegroundNotification())
+        
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                try {
+                    startForeground(NOTIFICATION_ID, buildForegroundNotification())
+                } catch (e: android.app.ForegroundServiceStartNotAllowedException) {
+                    android.util.Log.e("CellularRpcService", "Background startForeground denied on API 31+: ${e.message}")
+                }
+            } else {
+                startForeground(NOTIFICATION_ID, buildForegroundNotification())
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("CellularRpcService", "Failed to startForeground: ${e.message}")
+        }
 
         val db = AppDatabase.getInstance(applicationContext)
         queueEngine = CarrierSafeQueueEngine(

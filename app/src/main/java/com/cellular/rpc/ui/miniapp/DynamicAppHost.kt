@@ -110,6 +110,42 @@ fun DynamicAppHost(
         }
     }
 
+    // Dynamically observe all SQLite collections required by this blueprint
+    LaunchedEffect(blueprint.appId) {
+        val collectionsToObserve = mutableSetOf<String>()
+        fun traverse(n: MiniAppUiNode) {
+            if (n.type == "document_list" && n.collection.isNotEmpty()) {
+                collectionsToObserve.add(n.collection)
+            }
+            n.children.forEach { traverse(it) }
+        }
+        traverse(blueprint.uiRoot)
+
+        val dao = com.cellular.rpc.data.local.AppDatabase.getInstance(context).miniAppDocumentDao()
+        collectionsToObserve.forEach { collectionName ->
+            launch {
+                dao.observeCollection(blueprint.appId, collectionName).collect { docs ->
+                    val docsAsMap = docs.map { doc ->
+                        val jsonMap = mutableMapOf<String, Any?>("id" to doc.docId)
+                        try {
+                            val json = org.json.JSONObject(doc.jsonPayload)
+                            json.keys().forEach { k -> jsonMap[k] = json.opt(k) }
+                        } catch (e: Exception) {}
+                        // Check if payload is an AST
+                        if (jsonMap.containsKey("type") && jsonMap["type"] is String) {
+                            jsonMap["_is_ast"] = true
+                            jsonMap["_raw_json"] = doc.jsonPayload
+                        }
+                        jsonMap
+                    }
+                    val updated = appState.toMutableMap()
+                    updated[collectionName] = docsAsMap
+                    appState = updated
+                }
+            }
+        }
+    }
+
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -535,6 +571,61 @@ private fun RenderNode(
                     contentDescription = null,
                     tint = CyanPrimary
                 )
+            }
+        }
+
+        "document_list" -> {
+            val itemsList = (appState[node.collection] as? List<*>) ?: emptyList<Any>()
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                itemsList.forEach { item ->
+                    val itemMap = item as? Map<String, Any?> ?: emptyMap()
+                    if (itemMap["_is_ast"] == true) {
+                        val rawJson = itemMap["_raw_json"] as? String ?: "{}"
+                        val astNode = com.cellular.rpc.domain.miniapp.MiniAppBlueprint.parseUiNode(org.json.JSONObject(rawJson))
+                        // Lint AST before rendering
+                        val lintResult = com.cellular.rpc.domain.miniapp.BlueprintLinter.lint(
+                            com.cellular.rpc.domain.miniapp.MiniAppBlueprint(
+                                appId = "temp",
+                                metadata = com.cellular.rpc.domain.miniapp.MiniAppMetadata(title = "Temp"),
+                                initialState = emptyMap(),
+                                uiRoot = astNode
+                            )
+                        )
+                        if (lintResult.isValid) {
+                            RenderNode(
+                                node = astNode,
+                                appState = appState,
+                                itemContext = itemMap,
+                                isPreviewMode = isPreviewMode,
+                                onPerformAction = onPerformAction,
+                                onDirectStateMutation = onDirectStateMutation,
+                                onInstallToDeck = onInstallToDeck,
+                                onDiscardPreview = onDiscardPreview
+                            )
+                        } else {
+                            Text("Invalid AST Document", color = Color.Red, fontSize = 12.sp)
+                        }
+                    } else {
+                        val template = node.itemTemplate
+                        if (template != null) {
+                            RenderNode(
+                                node = template,
+                                appState = appState,
+                                itemContext = itemMap,
+                                isPreviewMode = isPreviewMode,
+                                onPerformAction = onPerformAction,
+                                onDirectStateMutation = onDirectStateMutation,
+                                onInstallToDeck = onInstallToDeck,
+                                onDiscardPreview = onDiscardPreview
+                            )
+                        } else {
+                            Text(text = "Document: ${itemMap["id"]}", color = Color.White)
+                        }
+                    }
+                }
             }
         }
 

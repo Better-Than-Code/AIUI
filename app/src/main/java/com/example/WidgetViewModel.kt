@@ -59,7 +59,7 @@ class WidgetViewModel(application: Application) : AndroidViewModel(application) 
                     )
                 )
 
-                val defaultMarkets = WidgetData.MarketTicker("BTC/USD", "$91,420", "+3.4%")
+                val defaultMarkets = WidgetData.MarketTicker("ticker_btc", "BTC/USD", "$91,420", "+3.4%")
                 widgetCacheDao.insertOrUpdate(
                     WidgetCacheEntity(
                         widgetType = "market_ticker",
@@ -160,7 +160,7 @@ class WidgetViewModel(application: Application) : AndroidViewModel(application) 
             "market_ticker" -> {
                 val price = "$" + String.format("%,d", Random.nextInt(89000, 96000))
                 val chg = (if (Random.nextBoolean()) "+" else "-") + String.format("%.1f%%", Random.nextDouble(0.5, 6.0))
-                val newTicker = WidgetData.MarketTicker("BTC/USD", price, chg)
+                val newTicker = WidgetData.MarketTicker("ticker_btc", "BTC/USD", price, chg)
                 queueEngine.updateServerWidgetData("market_ticker", newTicker)
             }
             "calendar_event" -> {

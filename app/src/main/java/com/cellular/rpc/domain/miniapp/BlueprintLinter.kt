@@ -17,7 +17,7 @@ object BlueprintLinter {
         "checkbox", "switch", "badge", "progress", "slider", "select", "segmented",
         "radio", "tabs", "chips", "canvas", "canvas_view", "draw_canvas", "chart",
         "linechart", "barchart", "piechart", "list", "lazycolumn", "spacer", "divider",
-        "icon", "image"
+        "icon", "image", "document_list"
     )
 
     fun lint(blueprint: MiniAppBlueprint): LintResult {

@@ -17,8 +17,8 @@ android {
         applicationId = "com.aistudio.cellularrpc.qxmpz"
         minSdk = 24
         targetSdk = 36
-        versionCode = 28
-        versionName = "5.0"
+        versionCode = 29
+        versionName = "5.1"
 
         ndk {
             abiFilters.addAll(listOf("arm64-v8a"))
@@ -104,10 +104,12 @@ dependencies {
   // implementation(libs.androidx.datastore.preferences)
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.runtime.ktx)
+  implementation("androidx.lifecycle:lifecycle-process:2.8.7")
   implementation(libs.androidx.lifecycle.viewmodel.compose)
   // implementation(libs.androidx.navigation.compose)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
+  implementation(libs.androidx.work.runtime.ktx)
   implementation(libs.androidx.javascriptengine)
   implementation(libs.androidx.media3.exoplayer)
   implementation(libs.androidx.media3.common)

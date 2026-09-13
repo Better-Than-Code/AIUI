@@ -62,7 +62,12 @@ object CellularMedic {
                 val queueEngine = CarrierSafeQueueEngine.getInstance(context)
                 
                 // Construct the highly compressed diagnostic request
-                val diagnosticPayload = "[DIAGNOSTIC_PING|TGT:$componentName|ERR:$faultDescription]"
+                val handshakeStatus = com.cellular.rpc.domain.handshake.CellularHandshakeEngine.handshakeStatus.value
+                val diagnosticPayload = if (handshakeStatus != com.cellular.rpc.domain.handshake.HandshakeStatus.SESSION_READY) {
+                    "RPC_FAULT_REQ v=${com.cellular.rpc.domain.mcp.CellularMcpRegistry.MCP_PROTOCOL_VERSION} expect=patch_response"
+                } else {
+                    "[DIAGNOSTIC_PING|TGT:$componentName|ERR:$faultDescription]"
+                }
                 
                 // Enqueue as a standard RPC Request (It will be BPE compressed automatically)
                 queueEngine.enqueuePayload(

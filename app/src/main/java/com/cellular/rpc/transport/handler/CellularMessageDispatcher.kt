@@ -340,6 +340,7 @@ object CellularMessageDispatcher {
                 )
             }
             val targetThreadId = dual.threadId?.ifBlank { null } ?: activeThreadId.ifBlank { "th_main" }
+            var isSilent = false
 
             // Ensure the thread exists in the database
             val existingThread = db.conversationThreadDao().getThreadById(targetThreadId)
@@ -374,9 +375,20 @@ object CellularMessageDispatcher {
                     else -> CellularCustomAppWidgetProvider.updateAllWidgets(context)
                 }
 
-                // Feed-tail projection: Delete existing widget instances of this type and any skeleton loaders
-                db.chatMessageDao().deleteMessagesByWidgetType(targetThreadId, "%\"type\":\"$widgetType\"%")
-                db.chatMessageDao().deleteMessagesByWidgetType(targetThreadId, "%\"type\":\"skeleton\"%")
+                val wid = dual.widgetData.widgetId
+                if (wid != null && wid.isNotBlank()) {
+                    val updated = db.chatMessageDao().updateWidgetDataById(targetThreadId, "%\"id\":\"$wid\"%", dual.widgetData.toJson(), now)
+                    if (updated > 0) {
+                        isSilent = true
+                    } else {
+                        db.chatMessageDao().deleteMessagesByWidgetType(targetThreadId, "%\"type\":\"$widgetType\"%")
+                        db.chatMessageDao().deleteMessagesByWidgetType(targetThreadId, "%\"type\":\"skeleton\"%")
+                    }
+                } else {
+                    // Feed-tail projection: Delete existing widget instances of this type and any skeleton loaders
+                    db.chatMessageDao().deleteMessagesByWidgetType(targetThreadId, "%\"type\":\"$widgetType\"%")
+                    db.chatMessageDao().deleteMessagesByWidgetType(targetThreadId, "%\"type\":\"skeleton\"%")
+                }
 
                 // Epic 14.2: Natural language chat creation inserts into local SQLite
                 if (dual.widgetData is WidgetData.TaskChecklist) {
@@ -402,6 +414,32 @@ object CellularMessageDispatcher {
                             endTimeMs = now + 3600000
                         )
                     )
+                } else if (dual.widgetData is WidgetData.MiniAppPatch) {
+                    val app = db.appBlueprintDao().getAppById(dual.widgetData.appId)
+                    if (app != null) {
+                        val currentBlueprint = com.cellular.rpc.domain.miniapp.MiniAppBlueprint.fromJson(app.rawBlueprintJson)
+                        if (currentBlueprint != null) {
+                            val patchResult = com.cellular.rpc.domain.miniapp.BlueprintPatcher.applyDeltaPatch(
+                                currentBlueprint,
+                                emptyMap(),
+                                dual.widgetData.patchJsonStr
+                            )
+                            if (patchResult.success && patchResult.patchedBlueprint != null) {
+                                val patchedApp = app.copy(
+                                    rawBlueprintJson = patchResult.patchedBlueprint.rawJson,
+                                    lastUpdated = now
+                                )
+                                db.appBlueprintDao().installOrUpdate(patchedApp)
+                                android.util.Log.i(TAG, "Successfully hot-patched mini app: ${app.appId}")
+                            } else {
+                                android.util.Log.e(TAG, "Hot-patching failed for ${app.appId}: ${patchResult.errorMessage}")
+                            }
+                        }
+                    }
+                } else if (dual.widgetData is WidgetData.RpcControlFrame) {
+                    val hash = dual.widgetData.hash
+                    CarrierSafeQueueEngine.getInstance(context).onControlPacketReceived(hash)
+                    isSilent = true
                 }
             }
 
@@ -410,7 +448,7 @@ object CellularMessageDispatcher {
                 if (dual.widgetData != null) "" else payloadStr
             }
 
-            if (displayText.isNotEmpty() || dual.widgetData != null || message.attachment != null) {
+            if (!isSilent && (displayText.isNotEmpty() || dual.widgetData != null || message.attachment != null)) {
                 val chatMsg = ChatMessageEntity(
                     id = "msg_${now}_${(1000..9999).random()}",
                     threadId = targetThreadId,

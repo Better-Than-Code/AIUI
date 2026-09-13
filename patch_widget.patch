@@ -1,0 +1,37 @@
+--- app/src/main/java/com/cellular/rpc/engine/WidgetModels.kt
++++ app/src/main/java/com/cellular/rpc/engine/WidgetModels.kt
+@@ -567,6 +567,31 @@
+         }
+     }
+ 
++    data class MiniAppPatch(
++        val appId: String,
++        val patchJsonStr: String
++    ) : WidgetData("mini_app_patch") {
++        override fun toJson(): String {
++            return """{"type":"mini_app_patch","appId":"$appId","patch":$patchJsonStr}"""
++        }
++        override fun computeContentHash(): String = hashString(toJson())
++
++        companion object {
++            fun fromJson(json: JSONObject): MiniAppPatch {
++                val appId = json.optString("appId")
++                val patch = json.optJSONArray("patch") ?: json.optJSONObject("patch")
++                val patchStr = patch?.toString() ?: "[]"
++                return MiniAppPatch(
++                    appId = appId,
++                    patchJsonStr = patchStr
++                )
++            }
++        }
++    }
++
+     data class SystemStatus(
+         val batteryPct: Int,
+         val signalDbm: Int,
+@@ -668,6 +693,7 @@
+                     "mini_app_blueprint", "mini_app", "miniapp", "draw_canvas", "canvas_app", "sketch_app" -> MiniAppPreview.fromJson(obj)
++                    "mini_app_patch", "blueprint_patch", "hot_patch" -> MiniAppPatch.fromJson(obj)
+                     "system_status", "diagnostics" -> SystemStatus.fromJson(obj)
+                     else -> {
+                         if (obj.has("rootNode") || obj.has("root")) {

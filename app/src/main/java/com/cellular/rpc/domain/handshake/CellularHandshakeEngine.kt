@@ -123,7 +123,7 @@ object CellularHandshakeEngine {
         val trimmed = text.trim()
 
         // 1. AI indicates it has schema in persistent memory
-        if (trimmed.contains("READY") || trimmed.contains("ACK:READY") || trimmed.contains("MCP:READY")) {
+        if (trimmed.contains("READY") || trimmed.contains("ACK:READY") || trimmed.contains("MCP:READY") || trimmed.contains("ACK:${CellularMcpRegistry.MCP_PROTOCOL_VERSION}:")) {
             Log.i(TAG, "AI confirmed schema sync. Handshake complete -> SESSION_READY")
             _handshakeStatus.value = HandshakeStatus.SESSION_READY
             completeTransaction("handshake_probe")

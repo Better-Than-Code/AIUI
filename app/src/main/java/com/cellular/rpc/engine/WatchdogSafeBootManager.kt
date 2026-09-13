@@ -44,7 +44,7 @@ object WatchdogSafeBootManager {
 
         // Check crash counter
         val crashes = prefs?.getInt(KEY_CONSECUTIVE_CRASHES, 0) ?: 0
-        if (crashes >= 2) {
+        if (crashes > 2) {
             Log.e(TAG, "Consecutive crash count ($crashes) exceeds safety threshold. Activating Emergency Fallback Mode!")
             _isFallbackModeActive.value = true
         }
@@ -93,7 +93,7 @@ object WatchdogSafeBootManager {
             }
         }
 
-        if (currentCrashes >= 2) {
+        if (currentCrashes > 2) {
             _isFallbackModeActive.value = true
             // Halt restart loops by exiting the process directly
             System.exit(1)

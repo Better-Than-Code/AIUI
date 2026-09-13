@@ -5,8 +5,30 @@ import org.json.JSONObject
 import java.security.MessageDigest
 
 sealed class WidgetData(val type: String) {
+    open val widgetId: String? = null
     abstract fun toJson(): String
     abstract fun computeContentHash(): String
+
+    data class RpcControlFrame(
+        val rpcType: String,
+        val hash: String,
+        val status: String
+    ) : WidgetData("rpc") {
+        override fun toJson(): String {
+            return """{"type":"$rpcType","hash":"$hash","status":"$status"}"""
+        }
+        override fun computeContentHash(): String = hashString(toJson())
+
+        companion object {
+            fun fromJson(json: JSONObject): RpcControlFrame {
+                return RpcControlFrame(
+                    rpcType = json.optString("type", "ack"),
+                    hash = json.optString("hash", ""),
+                    status = json.optString("status", "OK")
+                )
+            }
+        }
+    }
 
     data class Weather(
         val temp: Int,
@@ -66,20 +88,20 @@ sealed class WidgetData(val type: String) {
     }
 
     data class MarketTicker(
-        val sym: String,
+        override val widgetId: String,
+        val symbol: String,
         val price: String,
-        val chg: String,
+        val change_percent: String,
         val sparkline: List<Float> = listOf(90.2f, 91.0f, 90.5f, 91.8f, 91.42f)
     ) : WidgetData("market_ticker") {
         override fun toJson(): String {
             val sparklineStr = sparkline.joinToString(",") { "%.2f".format(it) }
-            return """{"type":"market_ticker","sym":"$sym","price":"$price","chg":"$chg","sparkline":[$sparklineStr]}"""
+            val safeId = widgetId.replace("\"", "\\\"")
+            return """{"type":"market_ticker","id":"$safeId","symbol":"$symbol","price":"$price","change_percent":"$change_percent","sparkline":[$sparklineStr]}"""
         }
-
         override fun computeContentHash(): String {
             return hashString(toJson())
         }
-
         companion object {
             fun fromJson(json: JSONObject): MarketTicker {
                 val sparklineList = mutableListOf<Float>()
@@ -92,20 +114,21 @@ sealed class WidgetData(val type: String) {
                 if (sparklineList.isEmpty()) {
                     sparklineList.addAll(listOf(90.2f, 91.0f, 90.5f, 91.8f, 91.42f))
                 }
+                
+                val wId = json.optString("id", "ticker_default")
 
-                // Support both short keys ("sym", "chg") and standard JSON schema keys ("symbol", "change_percent", "changePercent", "change")
-                val symbol = when {
-                    json.has("sym") -> json.optString("sym")
+                val symbolVal = when {
                     json.has("symbol") -> json.optString("symbol")
+                    json.has("sym") -> json.optString("sym")
                     json.has("ticker") -> json.optString("ticker")
                     json.has("symbols") -> {
                         val symbolsArr = json.optJSONArray("symbols")
                         if (symbolsArr != null && symbolsArr.length() > 0) {
                             val firstObj = symbolsArr.optJSONObject(0)
-                            firstObj?.optString("symbol") ?: firstObj?.optString("sym") ?: "SPY"
-                        } else "SPY"
+                            firstObj?.optString("symbol") ?: firstObj?.optString("sym") ?: "N/A"
+                        } else "N/A"
                     }
-                    else -> "SPY"
+                    else -> "N/A"
                 }
 
                 val priceVal = when {
@@ -123,8 +146,6 @@ sealed class WidgetData(val type: String) {
                 }
 
                 val changeVal = when {
-                    json.has("chg") -> json.optString("chg")
-                    json.has("change") -> json.optString("change")
                     json.has("change_percent") -> {
                         val cp = json.opt("change_percent")
                         if (cp is Number) "${if (cp.toDouble() >= 0) "+" else ""}%.2f%%".format(cp.toDouble()) else cp.toString()
@@ -133,19 +154,22 @@ sealed class WidgetData(val type: String) {
                         val cp = json.opt("changePercent")
                         if (cp is Number) "${if (cp.toDouble() >= 0) "+" else ""}%.2f%%".format(cp.toDouble()) else cp.toString()
                     }
+                    json.has("change") -> json.optString("change")
+                    json.has("chg") -> json.optString("chg")
                     json.has("symbols") -> {
                         val symbolsArr = json.optJSONArray("symbols")
                         val firstObj = symbolsArr?.optJSONObject(0)
                         val cp = firstObj?.opt("changePercent") ?: firstObj?.opt("change_percent") ?: firstObj?.opt("chg")
-                        if (cp is Number) "${if (cp.toDouble() >= 0) "+" else ""}%.2f%%".format(cp.toDouble()) else cp?.toString() ?: "+0.75%"
+                        if (cp is Number) "${if (cp.toDouble() >= 0) "+" else ""}%.2f%%".format(cp.toDouble()) else cp?.toString() ?: "0.0%"
                     }
-                    else -> "+0.75%"
+                    else -> "0.0%"
                 }
 
                 return MarketTicker(
-                    sym = symbol,
+                    widgetId = wId,
+                    symbol = symbolVal,
                     price = priceVal,
-                    chg = changeVal,
+                    change_percent = changeVal,
                     sparkline = sparklineList
                 )
             }
@@ -559,6 +583,28 @@ sealed class WidgetData(val type: String) {
         }
     }
 
+    data class MiniAppPatch(
+        val appId: String,
+        val patchJsonStr: String
+    ) : WidgetData("mini_app_patch") {
+        override fun toJson(): String {
+            return """{"type":"mini_app_patch","appId":"$appId","patch":$patchJsonStr}"""
+        }
+        override fun computeContentHash(): String = hashString(toJson())
+
+        companion object {
+            fun fromJson(json: JSONObject): MiniAppPatch {
+                val appId = json.optString("appId")
+                val patch = json.optJSONArray("patch") ?: json.optJSONObject("patch") ?: json.optJSONArray("operations") ?: json.optJSONObject("operations")
+                val patchStr = patch?.toString() ?: "[]"
+                return MiniAppPatch(
+                    appId = appId,
+                    patchJsonStr = patchStr
+                )
+            }
+        }
+    }
+
     data class SystemStatus(
         val batteryPct: Int,
         val signalDbm: Int,
@@ -662,6 +708,7 @@ sealed class WidgetData(val type: String) {
                     "calendar_event" -> CalendarEvent.fromJson(obj)
                     "task_checklist" -> TaskChecklist.fromJson(obj)
                     "mini_app_blueprint", "mini_app", "miniapp", "draw_canvas", "canvas_app", "sketch_app" -> MiniAppPreview.fromJson(obj)
+                    "mini_app_patch", "blueprint_patch", "hot_patch", "patch" -> MiniAppPatch.fromJson(obj)
                     "system_status" -> SystemStatus.fromJson(obj)
                     "skeleton" -> Skeleton.fromJson(obj)
                     "blueprint", "sdui", "dynamic", "custom", "layout", "screen", "widget" -> DynamicBlueprint.fromJson(obj)

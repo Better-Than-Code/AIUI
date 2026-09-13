@@ -21,7 +21,7 @@ __________________________________________________
 18. 19.   ○ Constraints: Concatenated SMS (>256B) throttled/dropped; companion app only (cannot be set as system default SMS app)
 __________________________________________________
 1. Offline Field Incident Log (Active Diagnostics)
-2. 3. [INC-20260911-01] Fatal Crash & Restart Loop on Background Service Start
+2. 3. [X] [INC-20260911-01] Fatal Crash & Restart Loop on Background Service Start
 4. 5. ● Severity: P1 (Critical Blocker - App Process Crash)
 6. 7. ● Timestamp Observed: 6:18 PM EDT
 8. 9. ● Target Components: HardenedTelephonyObserverService, WatchdogSafeBootManager
@@ -31,7 +31,7 @@ __________________________________________________
 16. 17. ●   android.app.ForegroundServiceStartNotAllowedException: Service.startForeground() not allowed due to mAllowStartForeground false: service com.aistudio.cellularrpc.qxmpz/com.cellular.rpc.transport.service.HardenedTelephonyObserverService
 18. 19. ● Root Cause: App / Watchdog attempts startForegroundService() from the background on Android 12+ (API 31+) without an active UI window or platform exemption.
 20. 21. ● Impact: Process dies immediately; Watchdog restarts the service, creating an infinite crash loop on main.
-22. 23. [INC-20260911-02] Background Telephony Ingestion Blackout (30-Minute Gap)
+22. 23. [X] [INC-20260911-02] Background Telephony Ingestion Blackout (30-Minute Gap)
 24. 25. ● Severity: P1 (Critical - Message Loss / Delivery Stall)
 26. 27. ● Timestamp Window: 6:18 PM – 6:48 PM EDT (30-minute silence)
 28. 29. ● Target Components: Telephony Ingestion Pipeline, PallySmsReceiver
@@ -41,22 +41,22 @@ __________________________________________________
 36. 37. ● Severity: P2 (UI/Data Binding Fault)
 38. 39. ● Target Components: WidgetModels.parse, Market Ticker Composable
 40. 41. ● Observed State: Price ($510.5) and sparkline chart hydrate, but symbol displays N/A, change displays 0.0%, and new inbound payloads do not mutate the existing rendered card in place.
-42. 43. [INC-20260911-04] Accidental Local Command Swallowing
+42. 43. [X] [INC-20260911-04] Accidental Local Command Swallowing
 44. 45. ● Severity: P2 (Router Failure)
 46. 47. ● Target Components: Local Intent Classifier / Command Router
 48. 49. ● Observed State: Conversational messages discussing "offline mode" or UI updates are intercepted and swallowed locally by mock replies without dispatching cellular PDUs.
 __________________________________________________
 1. Sprint & Epic Backlog (AI Studio Directives)
 2. 3. Sprint 1: Telephony Background Survival & Core Stability (Target: Build v29)
-4. 5. ● Epic 13.1: Decouple Telephony from Foreground Service
+4. 5. ● [X] Epic 13.1: Decouple Telephony from Foreground Service
 6. 7.   ○ Remove HardenedTelephonyObserverService background self-promotion.
 8. 9.   ○ Delegate SMS ingestion to manifest-registered PallySmsReceiver using goAsync() (10–30s execution window) to commit payloads directly to local SQLite.
 10. 11.   ○ Route incoming MMS PDU download tasks via WorkManager with zero-rated APN network constraints.
-12. 13. ● Epic 13.2: Watchdog Crash-Loop Defusal
+12. 13. ● [X] Epic 13.2: Watchdog Crash-Loop Defusal
 14. 15.   ○ Guard all startForegroundService invocations with ProcessLifecycleOwner checks.
 16. 17.   ○ Explicitly catch ForegroundServiceStartNotAllowedException on API 31+.
 18. 19.   ○ Implement exponential backoff in WatchdogSafeBootManager (max 2 retries before halting).
-20. 21. ● Epic 13.3: Strict Slash-Command Parser (/)
+20. 21. ● [X] Epic 13.3: Strict Slash-Command Parser (/)
 22. 23.   ○ Enforce strict prefix matching: /theme [elem] [val], /widget [type] [action], /net [action], /safe [action].
 24. 25.   ○ Route all non-prefixed text strictly as conversational chat data across cellular transport.
 26. 27. Sprint 2: Widget Interactivity & Dynamic State Reconciliation (Target: Build v30)
@@ -64,7 +64,7 @@ __________________________________________________
 30. 31.   ○ Align schema keys for symbol and change_percent in WidgetModels.parse.
 32. 33.   ○ Add inline "tap, type ticker, hit enter" text field to the market card.
 34. 35.   ○ Implement in-place state mutation keyed by widget_id with shimmer loading during cellular roundtrips.
-36. 37. ● Epic 14.1: Runtime Declarative Layout Blueprints (Zero-APK Healing)
+36. 37. [x] Epic 14.1: Runtime Declarative Layout Blueprints (Zero-APK Healing)
 38. 39.   ○ Wire MiniAppDocumentDao and BlueprintLinter to dynamically render card ASTs from SQLite.
 40. 41.   ○ Enable cellular MMS payload hot-patching of composable layouts without APK rebuilds.
 42. 43. Sprint 3: Local Productivity Suite & Offline Architecture
@@ -442,7 +442,7 @@ __________________________________________________
 
 
 __________________________________________________
-7. Epic 13.5: Genesis Protocol System Prompt & AI Runtime Contract
+[x] Epic 13.5: Genesis Protocol System Prompt & AI Runtime Contract
 7.1 The Problem & Architectural Gap
 When the client initiates connection via HELLO:2.1.0:<hash> or pushes diagnostic telemetry (FAULT: WidgetModels.parse ...), an arbitrary LLM / AI endpoint has zero inherent context on:
 1. Who/What it is communicating with: A cellular/SMS-constrained Android micro-app runtime.
@@ -535,7 +535,7 @@ To prevent payload bloat over cellular:
 
 
 __________________________________________________
-9. Section 9: Fenced Wire Envelope & Command Encapsulation Protocol (Epic 15)
+[x] Epic 15: Fenced Wire Envelope 9. Section 9: Fenced Wire Envelope & Command Encapsulation Protocol (Epic 15) Command Encapsulation Protocol
 9.1 Background & Motivation
 In Build 28, raw JSON and control frames leaked into visible chat bubbles ([INC-09]), and transport-level ACKs inflated as empty SDUI cards instead of being ingested by SlidingWindowFlowController ([INC-11]). Encapsulating all non-conversational payloads in an explicit fenced envelope separates human chat prose from machine protocol frames.
 9.2 Wire Envelope Grammar

@@ -81,6 +81,37 @@ object DualResponseParser {
             }
         }
 
+        // 3.5. Search for AIUI fenced envelope (e.g. ```aiui \n { ... } \n ```)
+        val aiuiBlockRegex = Regex("```(?:aiui|AIUI)\\s*\\n?(\\{[\\s\\S]*?\\})\\s*```")
+        val matchAiui = aiuiBlockRegex.find(trimmed)
+        if (matchAiui != null) {
+            val jsonCandidate = matchAiui.groupValues[1]
+            if (extractedThreadId == null) {
+                extractedThreadId = extractTidFromJson(jsonCandidate)
+            }
+
+            val envelope = try {
+                org.json.JSONObject(jsonCandidate)
+            } catch (e: Exception) { null }
+
+            if (envelope != null) {
+                val envelopeType = envelope.optString("type")
+                val payloadObj = envelope.optJSONObject("payload") ?: envelope
+
+                val cleanText = sanitizeConversationalText(trimmed.removeRange(matchAiui.range).trim())
+
+                if (envelopeType == "rpc") {
+                    val rpcWidget = WidgetData.RpcControlFrame.fromJson(payloadObj)
+                    return DualParsedResponse(cleanText, rpcWidget, extractedThreadId)
+                } else if (envelopeType == "sdui" || envelopeType == "theme") {
+                    val widget = WidgetData.parse(payloadObj.toString())
+                    if (widget != null) {
+                        return DualParsedResponse(cleanText, widget, extractedThreadId)
+                    }
+                }
+            }
+        }
+
         // 4. Search for embedded JSON (e.g. ```json ... ``` or { ... })
         val jsonBlockRegex = Regex("```(?:json)?\\s*\\n?(\\{[\\s\\S]*?\\})\\s*```")
         val match = jsonBlockRegex.find(trimmed)

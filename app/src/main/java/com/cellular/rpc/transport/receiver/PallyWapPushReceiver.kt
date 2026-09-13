@@ -42,16 +42,25 @@ class PallyWapPushReceiver : BroadcastReceiver() {
         }
 
         val data = intent.getByteArrayExtra("data") ?: return
+
+        if (mimeType == "application/vnd.wap.mms-message") {
+            Log.i(TAG, "MMS WAP Push notification received (${data.size} bytes). Enqueueing WorkManager task.")
+            val constraints = androidx.work.Constraints.Builder()
+                .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                .build()
+            
+            val workRequest = androidx.work.OneTimeWorkRequestBuilder<MmsDownloadWorker>()
+                .setConstraints(constraints)
+                .build()
+                
+            androidx.work.WorkManager.getInstance(context.applicationContext).enqueue(workRequest)
+            return
+        }
+
         val pendingResult = goAsync()
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                if (mimeType == "application/vnd.wap.mms-message") {
-                    Log.i(TAG, "MMS WAP Push notification received (${data.size} bytes). Triggering adaptive MMS inbox sync.")
-                    // Trigger multi-stage adaptive polling loop in PallyMmsHelper
-                    PallyMmsHelper.checkMmsInboxNow(context.applicationContext)
-                    return@launch
-                }
 
                 // Try parsing proprietary binary Frame directly from WAP Push PDU
                 val frame = Frame.fromBinary(data)

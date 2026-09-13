@@ -1,4 +1,5 @@
 package com.cellular.rpc.ui.chat
+import androidx.compose.ui.draw.alpha
 
 import android.content.Intent
 import androidx.compose.animation.*
@@ -621,10 +622,11 @@ fun NewsChatCard(news: WidgetData.NewsDigest) {
  */
 @Composable
 fun MarketChatCard(
+    isRefreshing: Boolean = false,
     ticker: WidgetData.MarketTicker,
     onQuerySymbol: ((String) -> Unit)? = null
 ) {
-    val isPositive = ticker.chg.startsWith("+")
+    val isPositive = ticker.change_percent.startsWith("+")
     val trendColor = if (isPositive) SignalGreen else SignalRed
     var isEditingSymbol by remember { mutableStateOf(false) }
     var inputSymbol by remember { mutableStateOf("") }
@@ -635,14 +637,14 @@ fun MarketChatCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, DarkNavyBorder)
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
+        Column(modifier = Modifier.padding(14.dp).alpha(if (isRefreshing) 0.5f else 1f)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    val iconSymbol = when (ticker.sym.uppercase()) {
+                    val iconSymbol = when (ticker.symbol.uppercase()) {
                         "BTC", "BITCOIN" -> "₿"
                         "ETH", "ETHEREUM" -> "Ξ"
                         "SOL", "SOLANA" -> "◎"
@@ -659,7 +661,7 @@ fun MarketChatCard(
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = ticker.sym,
+                        text = ticker.symbol,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -687,7 +689,7 @@ fun MarketChatCard(
                     shape = RoundedCornerShape(4.dp)
                 ) {
                     Text(
-                        text = ticker.chg,
+                        text = ticker.change_percent,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = trendColor,

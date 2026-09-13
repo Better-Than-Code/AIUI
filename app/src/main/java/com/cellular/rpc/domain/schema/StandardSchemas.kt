@@ -84,9 +84,10 @@ object MarketTickerSchema : CellularSchema<WidgetData.MarketTicker> {
     override val category: SchemaCategory = SchemaCategory.FINANCIAL
 
     override val fields: List<SchemaFieldDefinition> = listOf(
-        SchemaFieldDefinition("sym", SchemaFieldType.STRING, true, "Asset symbol or ticker", "BTC/USD"),
+        SchemaFieldDefinition("widget_id", SchemaFieldType.STRING, false, "Widget ID for in-place mutation", "ticker_1"),
+        SchemaFieldDefinition("symbol", SchemaFieldType.STRING, true, "Asset symbol or ticker", "BTC/USD"),
         SchemaFieldDefinition("price", SchemaFieldType.STRING, true, "Current asset price", "$64,250"),
-        SchemaFieldDefinition("chg", SchemaFieldType.STRING, true, "Percentage change", "+3.42%"),
+        SchemaFieldDefinition("change_percent", SchemaFieldType.STRING, true, "Percentage change", "+3.42%"),
         SchemaFieldDefinition("sparkline", SchemaFieldType.LIST_FLOAT, false, "Normalized mini chart datapoints", "[90.2, 91.0, 91.8]")
     )
 
@@ -94,7 +95,7 @@ object MarketTickerSchema : CellularSchema<WidgetData.MarketTicker> {
     override fun deserialize(json: JSONObject): WidgetData.MarketTicker = WidgetData.MarketTicker.fromJson(json)
 
     override fun renderFallbackSummary(data: WidgetData.MarketTicker): String {
-        return "${data.sym}: ${data.price} (${data.chg})"
+        return "${data.symbol}: ${data.price} (${data.change_percent})"
     }
 
     override fun sampleJson(): String =

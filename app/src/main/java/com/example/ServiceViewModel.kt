@@ -118,8 +118,16 @@ class ServiceViewModel(application: Application) : AndroidViewModel(application)
             val intent = android.content.Intent(app, CellularRpcForegroundService::class.java).apply {
                 action = CellularRpcForegroundService.ACTION_START
             }
-            androidx.core.content.ContextCompat.startForegroundService(app, intent)
-            _isServiceActive.value = true
+            try {
+                if (androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                    androidx.core.content.ContextCompat.startForegroundService(app, intent)
+                    _isServiceActive.value = true
+                } else {
+                    android.util.Log.e("ServiceViewModel", "App is in background, refusing to start foreground service to prevent ForegroundServiceStartNotAllowedException")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ServiceViewModel", "Failed to start foreground service: ${e.message}")
+            }
         }
     }
 }

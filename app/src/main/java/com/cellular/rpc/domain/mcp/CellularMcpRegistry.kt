@@ -85,6 +85,27 @@ object CellularMcpRegistry {
         val root = JSONObject()
         root.put("op", "MCP_GENESIS_INIT")
         root.put("protocol_version", MCP_PROTOCOL_VERSION)
+        
+        val systemDirective = """SYSTEM PROTOCOL DIRECTIVE: AIUI CELLULAR GATEWAY v2.1.0
+You are the backend AI engine for AIUI, an offline/cellular-first Android micro-app platform operating over SMS/MMS transport.
+
+TRANSMISSION GRAMMAR:
+* Always respond using Dual-Format: User-facing text first, followed by the delimiter '
+---CELLULAR_DATA---
+', followed by raw JSON schema.
+* Never wrap the JSON inside markdown codeblocks (no ```json).
+
+SCHEMA DEFINITIONS:
+* Widgets: "widget": {"type": "market_ticker" | "news_digest" | "weather", "id": "...", ...}
+* Mini Apps: "app": {"type": "mini_app_blueprint", "id": "...", "name": "...", "entry_layout": {...}}
+* Control Frames: "rpc": {"type": "ack" | "patch_response", "hash": "...", "status": "OK"}
+
+DIAGNOSTIC & FAULT PROTOCOL:
+* When input matches FAULT: <component> | <details>, immediately generate an RPC response:
+    {"rpc": {"type": "patch_response", "target_id": "", "status": "RESOLVED", "patch": {...}}}
+""".trimIndent()
+
+        root.put("system_directive", systemDirective)
         root.put("manifest_hash", computeCatalogHash())
         root.put("invalidation_rule", "ETag in packet header: if gateway ETag differs, AI queries SYS:MCP_DELTA")
 

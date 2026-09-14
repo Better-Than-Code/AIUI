@@ -17,8 +17,8 @@ android {
         applicationId = "com.aistudio.cellularrpc.qxmpz"
         minSdk = 24
         targetSdk = 36
-        versionCode = 30
-        versionName = "5.2"
+        versionCode = 31
+        versionName = "5.3"
 
         ndk {
             abiFilters.addAll(listOf("arm64-v8a"))

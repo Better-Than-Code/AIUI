@@ -12,19 +12,29 @@ sealed class WidgetData(val type: String) {
     data class RpcControlFrame(
         val rpcType: String,
         val hash: String,
-        val status: String
+        val status: String,
+        val chunks: List<Int> = emptyList()
     ) : WidgetData("rpc") {
         override fun toJson(): String {
-            return """{"type":"$rpcType","hash":"$hash","status":"$status"}"""
+            val chunksJson = chunks.joinToString(",", "[", "]")
+            return """{"type":"$rpcType","hash":"$hash","status":"$status","chunks":$chunksJson}"""
         }
         override fun computeContentHash(): String = hashString(toJson())
 
         companion object {
             fun fromJson(json: JSONObject): RpcControlFrame {
+                val chunksList = mutableListOf<Int>()
+                val chunksArray = json.optJSONArray("chunks")
+                if (chunksArray != null) {
+                    for (i in 0 until chunksArray.length()) {
+                        chunksList.add(chunksArray.optInt(i))
+                    }
+                }
                 return RpcControlFrame(
                     rpcType = json.optString("type", "ack"),
                     hash = json.optString("hash", ""),
-                    status = json.optString("status", "OK")
+                    status = json.optString("status", "OK"),
+                    chunks = chunksList
                 )
             }
         }
@@ -37,6 +47,7 @@ sealed class WidgetData(val type: String) {
         val high: Int = 76,
         val low: Int = 58
     ) : WidgetData("weather") {
+        override val widgetId: String get() = "weather_${city.lowercase().trim().replace(" ", "_")}"
         override fun toJson(): String {
             return """{"type":"weather","temp":$temp,"city":"$city","cond":"$cond","high":$high,"low":$low}"""
         }
@@ -64,6 +75,7 @@ sealed class WidgetData(val type: String) {
         val summary: String,
         val source: String = "Cellular Net"
     ) : WidgetData("news_digest") {
+        override val widgetId: String get() = if (id.isNotBlank() && id != "0") "news_$id" else "news_digest"
         override fun toJson(): String {
             val safeHeadline = headline.replace("\"", "\\\"")
             val safeSummary = summary.replace("\"", "\\\"")
@@ -183,6 +195,7 @@ sealed class WidgetData(val type: String) {
         val memo: String,
         val status: String
     ) : WidgetData("transfer") {
+        override val widgetId: String get() = id
         override fun toJson(): String {
             val safeTo = to.replace("\"", "\\\"")
             val safeMemo = memo.replace("\"", "\\\"")
@@ -213,6 +226,7 @@ sealed class WidgetData(val type: String) {
         val votes: List<Int>,
         val userVoteIndex: Int = -1
     ) : WidgetData("poll") {
+        override val widgetId: String get() = id
         override fun toJson(): String {
             val safeQ = question.replace("\"", "\\\"")
             val optJson = options.joinToString(",") { "\"${it.replace("\"", "\\\"")}\"" }
@@ -278,6 +292,7 @@ sealed class WidgetData(val type: String) {
         val valueSecondary: String,
         val actionLabel: String = "Compute"
     ) : WidgetData("tool") {
+        override val widgetId: String get() = id
         override fun toJson(): String {
             val sTitle = title.replace("\"", "\\\"")
             val sSub = subtitle.replace("\"", "\\\"")
@@ -312,6 +327,7 @@ sealed class WidgetData(val type: String) {
         val location: String,
         val attendees: Int = 1
     ) : WidgetData("calendar_event") {
+        override val widgetId: String get() = id
         override fun toJson(): String {
             val sTitle = title.replace("\"", "\\\"")
             val sTime = time.replace("\"", "\\\"")
@@ -342,6 +358,7 @@ sealed class WidgetData(val type: String) {
         val items: List<String>,
         val doneFlags: List<Boolean>
     ) : WidgetData("task_checklist") {
+        override val widgetId: String get() = id.ifBlank { "tasks_checklist" }
         override fun toJson(): String {
             val sTitle = title.replace("\"", "\\\"")
             val itemsJson = items.joinToString(",") { "\"${it.replace("\"", "\\\"")}\"" }
@@ -442,14 +459,22 @@ sealed class WidgetData(val type: String) {
         }
     }
 
-    data class Skeleton(val label: String) : WidgetData("skeleton") {
+    data class Skeleton(
+        val label: String,
+        val targetType: String = "blueprint",
+        val iconEmoji: String = "✨"
+    ) : WidgetData("skeleton") {
         override fun toJson(): String {
-            return """{"type":"skeleton","label":"$label"}"""
+            return """{"type":"skeleton","label":"$label","target_type":"$targetType","icon":"$iconEmoji"}"""
         }
         override fun computeContentHash(): String = hashString(toJson())
         companion object {
             fun fromJson(json: JSONObject): Skeleton {
-                return Skeleton(json.optString("label", "Loading..."))
+                return Skeleton(
+                    label = json.optString("label", "Loading..."),
+                    targetType = json.optString("target_type", "blueprint"),
+                    iconEmoji = json.optString("icon", "✨")
+                )
             }
         }
     }
@@ -463,6 +488,7 @@ sealed class WidgetData(val type: String) {
         val rootNode: DynamicSduiNode,
         val rawJson: String = ""
     ) : WidgetData("blueprint") {
+        override val widgetId: String get() = id
         override fun toJson(): String {
             return if (rawJson.isNotBlank()) rawJson else """{"type":"blueprint","id":"$id","title":"$title","subtitle":"$subtitle"}"""
         }
@@ -556,6 +582,7 @@ sealed class WidgetData(val type: String) {
         val category: String = "productivity",
         val rawBlueprintJson: String
     ) : WidgetData("mini_app_blueprint") {
+        override val widgetId: String get() = appId
         override fun toJson(): String = rawBlueprintJson
 
         override fun computeContentHash(): String = hashString(rawBlueprintJson)
@@ -587,6 +614,7 @@ sealed class WidgetData(val type: String) {
         val appId: String,
         val patchJsonStr: String
     ) : WidgetData("mini_app_patch") {
+        override val widgetId: String get() = appId
         override fun toJson(): String {
             return """{"type":"mini_app_patch","appId":"$appId","patch":$patchJsonStr}"""
         }
@@ -612,6 +640,7 @@ sealed class WidgetData(val type: String) {
         val queuedPackets: Int,
         val linkQuality: String = "EXCELLENT"
     ) : WidgetData("system_status") {
+        override val widgetId: String get() = "system_status"
         override fun toJson(): String {
             return """{"type":"system_status","batteryPct":$batteryPct,"signalDbm":$signalDbm,"freeStorageMb":$freeStorageMb,"queuedPackets":$queuedPackets,"linkQuality":"$linkQuality"}"""
         }
@@ -652,6 +681,17 @@ sealed class WidgetData(val type: String) {
             val match = tidRegex.find(trimmed)
             if (match != null) {
                 trimmed = trimmed.replace(tidRegex, "").trim()
+            }
+
+            // Check for protocol-level or natural language ACKs
+            val ackParsed = com.cellular.rpc.domain.protocol.CellularAckParser.parse(trimmed)
+            if (ackParsed != null) {
+                return RpcControlFrame(
+                    rpcType = "ack",
+                    hash = ackParsed.hash,
+                    status = ackParsed.status,
+                    chunks = ackParsed.chunks
+                )
             }
 
             // INC-12: Support the dedicated `aiui` fenced code block protocol
@@ -696,8 +736,16 @@ sealed class WidgetData(val type: String) {
             return try {
                 // INC-12: Fuzzy Stream Demuxer repair
                 val obj = FuzzyStreamDemuxer.repairAndParse(jsonString) ?: return null
+                // INC-11: Detect RPC control frame at root or embedded in "rpc" object
+                if (obj.has("rpc")) {
+                    val rpcObj = obj.optJSONObject("rpc")
+                    if (rpcObj != null) {
+                        return RpcControlFrame.fromJson(rpcObj)
+                    }
+                }
                 val type = obj.optString("type")
                 when (type) {
+                    "rpc", "ack" -> RpcControlFrame.fromJson(obj)
                     "weather" -> Weather.fromJson(obj)
                     "news_digest" -> NewsDigest.fromJson(obj)
                     "market_ticker" -> MarketTicker.fromJson(obj)

@@ -48,11 +48,6 @@ class CellularIntentRouter(private val context: Context) {
             return false
         }
 
-        val parts = trimmed.split(Regex("\\s+"))
-        val command = parts.firstOrNull()?.lowercase() ?: ""
-        return when (command) {
-            "/theme", "/widget", "/net", "/safe", "/clear", "/reset", "/status", "/ping" -> true
-            else -> false
-        }
+        return OfflineCommandRouter.isSlashCommand(trimmed)
     }
 }

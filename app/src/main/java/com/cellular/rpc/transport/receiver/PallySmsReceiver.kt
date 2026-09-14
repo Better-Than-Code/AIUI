@@ -42,10 +42,8 @@ class PallySmsReceiver : BroadcastReceiver() {
             return
         }
 
-        val activeAiNumber = normalizePhoneNumber(com.cellular.rpc.domain.service.CellularServiceManager.getActiveService(context).phoneNumber)
         val isRecognizedSender = { sender: String ->
-            val normalizedSender = normalizePhoneNumber(sender)
-            normalizedSender.isNotBlank() && activeAiNumber.isNotBlank() && normalizedSender == activeAiNumber
+            com.cellular.rpc.domain.service.CellularServiceManager.isSenderRecognized(context, sender)
         }
 
         // Try standard Android Intents helper which correctly merges multi-part/concatenated SMS
@@ -147,6 +145,36 @@ class PallySmsReceiver : BroadcastReceiver() {
         sender: String
     ) {
         val now = System.currentTimeMillis()
+
+        // INC-11: Dual-Path Ingestion Interceptor
+        // Inspect raw incoming SMS text for protocol-level or natural language ACKs before passing to chat store
+        val parsedAck = com.cellular.rpc.domain.protocol.CellularAckParser.parse(textBody)
+        if (parsedAck != null) {
+            Log.i(TAG, "Dual-Path Interceptor: Intercepted cellular ACK (hash=${parsedAck.hash}, chunks=${parsedAck.chunks}) from $sender")
+            CarrierSafeQueueEngine.getInstance(context).onAckReceived(
+                hash = parsedAck.hash,
+                chunks = parsedAck.chunks,
+                rawWire = textBody
+            )
+
+            // If there was preceding conversational prose before an embedded data section, dispatch prose only
+            val prose = if (textBody.contains("---CELLULAR_DATA---")) {
+                textBody.split("---CELLULAR_DATA---").first().trim()
+            } else ""
+
+            if (prose.isNotEmpty()) {
+                val conversationalMessage = InboundCellularMessage(
+                    transportType = CellularTransportType.SMS_TEXT_WIRE,
+                    senderAddress = sender,
+                    rawText = prose,
+                    rawBytes = null,
+                    frame = null
+                )
+                CellularMessageDispatcher.dispatchInbound(context, conversationalMessage)
+            }
+            // Suppress SDUI card / chat bubble inflation for pure transport ACKs
+            return
+        }
 
         // Helper to handle control / ACK packets without creating UI chat bubbles
         suspend fun handleControlFrame(frame: Frame, rawBytes: ByteArray?, rawText: String, transportType: CellularTransportType): Boolean {

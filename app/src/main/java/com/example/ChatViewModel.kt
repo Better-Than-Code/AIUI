@@ -250,6 +250,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
 
+    private var lastSentText: String = ""
+    private var lastSentTimestampMs: Long = 0L
+
     /**
      * Dispatches a user chat message over the cellular SMS/MMS RPC engine.
      */
@@ -258,6 +261,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         if (trimmed.isEmpty() && attachments.isEmpty()) return
 
         val mainAttachment = attachments.firstOrNull()
+
+        // INC-20: In-memory debounce gate to prevent triplicate dispatch on rapid clicks/callbacks
+        val now = System.currentTimeMillis()
+        if (now - lastSentTimestampMs < 1000L && trimmed == lastSentText && mainAttachment == null) {
+            android.util.Log.w("ChatViewModel", "Debounced duplicate user send for: '$trimmed'")
+            return
+        }
+        lastSentTimestampMs = now
+        lastSentText = trimmed
+
         val byteCount = trimmed.toByteArray(Charsets.UTF_8).size + if (mainAttachment != null) 30 else 0
         val pduCount = ((byteCount + 139) / 140).coerceAtLeast(1)
 
@@ -289,54 +302,21 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     append(trimmed)
                 }.trim()
 
-                // Determine if user is querying a widget or requesting an action
-                val router = com.cellular.rpc.engine.CellularIntentRouter(getApplication())
-                val isLocalOnly = router.isLocalUiIntent(promptBody)
-                
-                if (isLocalOnly) {
-                    android.util.Log.i("ChatViewModel", "Sprint 6.4: Intent Router classified prompt as local UI command. Suppressing cellular transmission.")
+                // INC-21: Intercept offline slash commands locally without radio transmission
+                if (com.cellular.rpc.engine.OfflineCommandRouter.isSlashCommand(promptBody)) {
+                    android.util.Log.i("ChatViewModel", "INC-21: Intercepted offline command: $promptBody")
+                    val cmdResult = com.cellular.rpc.engine.OfflineCommandRouter.execute(promptBody, getApplication())
                     
-                    val parts = promptBody.trim().split(Regex("\\s+"))
-                    val command = parts.firstOrNull()?.lowercase() ?: ""
-                    val args = parts.drop(1)
-                    
-                    val responseText = when (command) {
-                        "/theme" -> {
-                            val elem = args.getOrNull(0) ?: "all"
-                            val valStr = args.getOrNull(1) ?: "default"
-                            "Theme command: updated $elem to $valStr."
-                        }
-                        "/widget" -> {
-                            val type = args.getOrNull(0) ?: "unknown"
-                            val action = args.getOrNull(1) ?: "refresh"
-                            "Widget command: performed $action on $type."
-                        }
-                        "/net" -> {
-                            val action = args.getOrNull(0) ?: "status"
-                            "Network command: $action executed."
-                        }
-                        "/safe" -> {
-                            val action = args.getOrNull(0) ?: "status"
-                            "Safe mode command: $action executed."
-                        }
-                        "/clear" -> "Cleared all local temporary data."
-                        "/reset" -> "Reset system to default state."
-                        "/status", "/ping" -> "System status: ONLINE. Pally RPC Active."
-                        else -> "Unknown local command: $command"
-                    }
-                    
-                    // Respond locally immediately
                     val localResponse = com.cellular.rpc.engine.ChatMessage(
                         threadId = currentTid,
                         sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
-                        text = responseText,
+                        text = cmdResult.outputText,
                         byteSize = 0,
                         pduCount = 0
                     )
                     chatRepository.saveMessage(localResponse)
-                    conversationThreadDao.updateLastMessage(currentTid, responseText, System.currentTimeMillis())
-                    
-                    return@launch // Stop execution, don't send over radio
+                    conversationThreadDao.updateLastMessage(currentTid, cmdResult.outputText.take(60), System.currentTimeMillis())
+                    return@launch // Suppress radio dispatch completely
                 }
 
                 val lower = promptBody.lowercase()
@@ -355,6 +335,42 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
                 if (detectedType != null) {
                     lastQueriedType = detectedType
+                    val skelLabel = when (detectedType) {
+                        "weather" -> "Loading Weather Widget..."
+                        "news_digest" -> "Loading News Wire..."
+                        "market_ticker" -> "Loading Market Ticker..."
+                        "transfer" -> "Loading Payment Transfer..."
+                        "poll" -> "Loading Community Poll..."
+                        "tool" -> "Loading Cellular Tool..."
+                        "calendar_event" -> "Loading Calendar Event..."
+                        "task_checklist" -> "Loading Task Checklist..."
+                        "system_status" -> "Loading System Diagnostics..."
+                        else -> "Loading $detectedType..."
+                    }
+                    val skelEmoji = when (detectedType) {
+                        "weather" -> "☀️"
+                        "news_digest" -> "📰"
+                        "market_ticker" -> "📈"
+                        "transfer" -> "💸"
+                        "poll" -> "📊"
+                        "tool" -> "🛠️"
+                        "calendar_event" -> "📅"
+                        "task_checklist" -> "☑️"
+                        "system_status" -> "⚡"
+                        else -> "✨"
+                    }
+                    val skeletonMessage = com.cellular.rpc.engine.ChatMessage(
+                        threadId = currentTid,
+                        sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
+                        text = "",
+                        widgetData = com.cellular.rpc.engine.WidgetData.Skeleton(
+                            label = skelLabel,
+                            targetType = detectedType,
+                            iconEmoji = skelEmoji
+                        ),
+                        deliveryStatus = com.cellular.rpc.engine.MessageDeliveryStatus.IN_FLIGHT
+                    )
+                    chatRepository.saveMessage(skeletonMessage)
                 }
 
                 val activeService = com.cellular.rpc.domain.service.CellularServiceManager.getActiveService(getApplication())
@@ -420,14 +436,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     } catch (e: Exception) {
                         android.util.Log.w("ChatViewModel", "Carrier MMS dispatch error: ${e.message}")
                     }
+                } else {
+                    // Enqueue text prompt over cellular queue engine only when no carrier MMS was dispatched (INC-20)
+                    queueEngine.enqueuePayload(
+                        sessionId = activeSessionId,
+                        pktType = Frame.PKT_RPC_REQ,
+                        payload = promptToSend.toByteArray(Charsets.UTF_8)
+                    )
                 }
-
-                // Always enqueue the user's natural text prompt so AI agent receives human-readable text
-                queueEngine.enqueuePayload(
-                    sessionId = activeSessionId,
-                    pktType = Frame.PKT_RPC_REQ,
-                    payload = promptToSend.toByteArray(Charsets.UTF_8)
-                )
             } catch (e: Exception) {
                 android.util.Log.e("ChatViewModel", "Failed to enqueue chat message: ${e.message}", e)
             }
@@ -467,8 +483,25 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             pduCount = ((orchestrated.estimatedBytes + 139) / 140).coerceAtLeast(1)
         )
 
+        val skeletonMessage = com.cellular.rpc.engine.ChatMessage(
+            threadId = currentTid,
+            sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
+            text = "",
+            widgetData = com.cellular.rpc.engine.WidgetData.Skeleton(
+                label = "Loading ${template.title}...",
+                targetType = when (template.category) {
+                    com.cellular.rpc.orchestrator.TemplateCategory.MINI_APP -> "mini_app"
+                    com.cellular.rpc.orchestrator.TemplateCategory.SDUI_WIDGET -> "sdui_widget"
+                    com.cellular.rpc.orchestrator.TemplateCategory.DATA_TOOL -> "tool"
+                },
+                iconEmoji = template.iconEmoji
+            ),
+            deliveryStatus = com.cellular.rpc.engine.MessageDeliveryStatus.IN_FLIGHT
+        )
+
         viewModelScope.launch(Dispatchers.IO) {
             chatRepository.saveMessage(userMessage)
+            chatRepository.saveMessage(skeletonMessage)
             conversationThreadDao.updateLastMessage(currentTid, "✨ [${template.title}] $promptText".take(60), System.currentTimeMillis())
 
             // If loopback simulation is active, immediately register mock offline payload
@@ -612,56 +645,55 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             "Request: $type update"
         }
         
-        val skeletonLabel = if (type.startsWith("market_ticker:")) {
-            val parts = type.removePrefix("market_ticker:").split(":")
-            val sym = if (parts.size >= 2) parts[1].trim().uppercase() else parts[0].trim().uppercase()
-            "Loading $sym Market Ticker..."
-        } else if (type.lowercase() == "news_digest" || type.lowercase() == "news") {
-            "Loading News Wire..."
-        } else {
-            "Loading ${type.capitalize()}..."
+        val skeletonLabel = when {
+            type.startsWith("market_ticker:") -> {
+                val parts = type.removePrefix("market_ticker:").split(":")
+                val sym = if (parts.size >= 2) parts[1].trim().uppercase() else parts[0].trim().uppercase()
+                "Loading $sym Market Ticker..."
+            }
+            type.equals("news_digest", ignoreCase = true) || type.equals("news", ignoreCase = true) -> "Loading News Wire..."
+            type.equals("weather", ignoreCase = true) -> "Loading Weather Widget..."
+            type.equals("task_checklist", ignoreCase = true) || type.equals("tasks", ignoreCase = true) -> "Loading Task Checklist..."
+            type.equals("calendar_event", ignoreCase = true) || type.equals("calendar", ignoreCase = true) -> "Loading Calendar Event..."
+            type.equals("system_status", ignoreCase = true) -> "Loading System Diagnostics..."
+            type.equals("poll", ignoreCase = true) -> "Loading Community Poll..."
+            type.contains("margin", ignoreCase = true) || type.contains("calc", ignoreCase = true) -> "Loading Margin Calc..."
+            else -> "Loading ${type.replaceFirstChar { it.uppercase() }}..."
+        }
+
+        val skeletonEmoji = when {
+            type.startsWith("market_ticker") || type.contains("market") -> "📈"
+            type.contains("news") -> "📰"
+            type.contains("weather") -> "☀️"
+            type.contains("task") -> "☑️"
+            type.contains("calendar") -> "📅"
+            type.contains("system") -> "⚡"
+            type.contains("poll") -> "📊"
+            type.contains("margin") || type.contains("calc") -> "🧮"
+            else -> "✨"
         }
 
         viewModelScope.launch(Dispatchers.IO) {
-            if (targetWidgetId != null) {
-                // In-place mutation: mark existing message as IN_FLIGHT
-                val messages = chatMessages.value
-                val existing = messages.find { it.widgetData?.widgetId == targetWidgetId && it.threadId == currentTid }
-                if (existing != null) {
-                    val db = com.cellular.rpc.data.local.AppDatabase.getInstance(getApplication())
-                    val entity = com.cellular.rpc.data.local.ChatMessageEntity(
-                        id = existing.id,
-                        threadId = existing.threadId,
-                        sender = existing.sender.name,
-                        text = existing.text,
-                        widgetDataJson = existing.widgetData?.toJson(),
-                        is304NotModified = existing.is304NotModified,
-                        wirePacket = existing.wirePacket,
-                        byteSize = existing.byteSize,
-                        pduCount = existing.pduCount,
-                        deliveryStatus = "IN_FLIGHT",
-                        timestampMs = existing.timestampMs
-                    )
-                    db.chatMessageDao().insertMessage(entity)
-                }
-            } else {
-                val userMessage = com.cellular.rpc.engine.ChatMessage(
-                    threadId = currentTid,
-                    sender = com.cellular.rpc.engine.MessageSender.USER,
-                    text = displayRequestText,
-                    byteSize = queryPrompt.length,
-                    pduCount = 1
-                )
-                val skeletonMessage = com.cellular.rpc.engine.ChatMessage(
-                    threadId = currentTid,
-                    sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
-                    text = "",
-                    widgetData = WidgetData.Skeleton(skeletonLabel),
-                    deliveryStatus = com.cellular.rpc.engine.MessageDeliveryStatus.IN_FLIGHT
-                )
-                chatRepository.saveMessage(userMessage)
-                chatRepository.saveMessage(skeletonMessage)
-            }
+            val userMessage = com.cellular.rpc.engine.ChatMessage(
+                threadId = currentTid,
+                sender = com.cellular.rpc.engine.MessageSender.USER,
+                text = displayRequestText,
+                byteSize = queryPrompt.length,
+                pduCount = 1
+            )
+            val skeletonMessage = com.cellular.rpc.engine.ChatMessage(
+                threadId = currentTid,
+                sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
+                text = "",
+                widgetData = WidgetData.Skeleton(
+                    label = skeletonLabel,
+                    targetType = type,
+                    iconEmoji = skeletonEmoji
+                ),
+                deliveryStatus = com.cellular.rpc.engine.MessageDeliveryStatus.IN_FLIGHT
+            )
+            chatRepository.saveMessage(userMessage)
+            chatRepository.saveMessage(skeletonMessage)
             
             conversationThreadDao.updateLastMessage(currentTid, displayRequestText, System.currentTimeMillis())
             

@@ -25,5 +25,8 @@ data class ChatMessage(
     val byteSize: Int = 0,
     val pduCount: Int = 1,
     val deliveryStatus: MessageDeliveryStatus = MessageDeliveryStatus.DELIVERED,
-    val timestampMs: Long = System.currentTimeMillis()
+    val timestampMs: Long = System.currentTimeMillis(),
+    val revision: Int = 1,
+    val isSuperseded: Boolean = false,
+    val supersededByMessageId: String? = null
 )

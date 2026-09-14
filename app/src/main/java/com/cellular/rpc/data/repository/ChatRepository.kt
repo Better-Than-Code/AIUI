@@ -44,7 +44,11 @@ class ChatRepository(private val chatMessageDao: ChatMessageDao) {
             } catch (e: Exception) {
                 AttachmentType.FILE
             }
-            val amps = attachmentAmplitudes?.split(",")?.mapNotNull { it.toFloatOrNull() } ?: emptyList()
+            val rawAmps = attachmentAmplitudes?.split(",")?.mapNotNull { it.toFloatOrNull() } ?: emptyList()
+            val amps = if (rawAmps.isNotEmpty()) rawAmps else if (typeEnum == AttachmentType.VOICE_NOTE) {
+                listOf(0.3f, 0.6f, 0.9f, 0.4f, 0.8f, 0.5f, 0.7f, 0.3f, 0.6f, 0.9f, 0.5f, 0.2f,
+                       0.4f, 0.7f, 0.8f, 0.5f, 0.9f, 0.6f, 0.4f, 0.8f, 0.6f, 0.3f, 0.5f, 0.2f)
+            } else emptyList()
             MessageAttachment(
                 id = attachmentId,
                 type = typeEnum,
@@ -88,7 +92,10 @@ class ChatRepository(private val chatMessageDao: ChatMessageDao) {
             byteSize = byteSize,
             pduCount = pduCount,
             deliveryStatus = parsedStatus,
-            timestampMs = timestampMs
+            timestampMs = timestampMs,
+            revision = revision,
+            isSuperseded = isSuperseded,
+            supersededByMessageId = supersededByMessageId
         )
     }
 
@@ -105,6 +112,9 @@ class ChatRepository(private val chatMessageDao: ChatMessageDao) {
             pduCount = pduCount,
             deliveryStatus = deliveryStatus.name,
             timestampMs = timestampMs,
+            revision = revision,
+            isSuperseded = isSuperseded,
+            supersededByMessageId = supersededByMessageId,
             attachmentId = attachment?.id,
             attachmentType = attachment?.type?.name,
             attachmentUri = attachment?.uri,

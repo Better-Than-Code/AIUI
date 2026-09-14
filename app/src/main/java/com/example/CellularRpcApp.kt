@@ -32,7 +32,13 @@ class CellularRpcApp : Application() {
             android.util.Log.e("CellularRpcApp", "Failed to initialize ChatThemeManager: ${e.message}")
         }
 
-        // Legacy ContentObserver was removed in favor of static broadcast receivers
+        // Register resilient Telephony ContentObservers (INC-17)
+        try {
+            com.cellular.rpc.transport.receiver.TelephonySmsObserver.register(this)
+            com.cellular.rpc.transport.receiver.TelephonyMmsObserver.register(this)
+        } catch (e: Exception) {
+            android.util.Log.w("CellularRpcApp", "ContentObserver registration deferred: ${e.message}")
+        }
     }
 
     companion object {

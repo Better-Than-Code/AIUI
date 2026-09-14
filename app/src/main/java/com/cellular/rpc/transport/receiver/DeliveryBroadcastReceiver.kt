@@ -19,6 +19,7 @@ class DeliveryBroadcastReceiver : BroadcastReceiver() {
     companion object {
         const val TAG = "DeliveryReceiver"
         const val SMS_SENT_ACTION = "com.cellular.rpc.SMS_SENT"
+        const val MMS_SENT_ACTION = "com.cellular.rpc.MMS_SENT"
         const val SMS_DELIVERED_ACTION = "com.cellular.rpc.SMS_DELIVERED"
     }
 
@@ -30,9 +31,9 @@ class DeliveryBroadcastReceiver : BroadcastReceiver() {
         val resultCode = resultCode
         val appContext = context.applicationContext
 
-        Log.i(TAG, "SMS intent received ($action) for message ID $msgId (session: $sessionId, seq: $seqNo) with result code: $resultCode")
+        Log.i(TAG, "Telephony intent received ($action) for message ID $msgId (session: $sessionId, seq: $seqNo) with result code: $resultCode")
 
-        if (action == SMS_SENT_ACTION) {
+        if (action == SMS_SENT_ACTION || action == MMS_SENT_ACTION) {
             CoroutineScope(Dispatchers.IO).launch {
                 try {
                     val db = com.cellular.rpc.data.local.AppDatabase.getInstance(appContext)
@@ -40,7 +41,7 @@ class DeliveryBroadcastReceiver : BroadcastReceiver() {
                     val circuitBreaker = com.cellular.rpc.transport.cooldown.CarrierCooldownCircuitBreaker.getInstance(appContext)
 
                     if (resultCode == Activity.RESULT_OK) {
-                        Log.i(TAG, "Physical radio SENT success for msg: $msgId")
+                        Log.i(TAG, "Physical radio SENT success ($action) for msg: $msgId")
                         // Epic 4: Record success to reset consecutive failure count and close circuit breaker
                         circuitBreaker.recordSuccess()
 
@@ -49,7 +50,7 @@ class DeliveryBroadcastReceiver : BroadcastReceiver() {
                         db.outboxDao().markAcknowledged(sessionId, seqNo)
                         db.outboxDao().clearAcknowledged()
                     } else {
-                        Log.w(TAG, "Physical radio SENT failure (code: $resultCode) for msg: $msgId. Marking stalled for retry.")
+                        Log.w(TAG, "Physical radio SENT failure ($action, code: $resultCode) for msg: $msgId. Marking stalled for retry.")
                         // Epic 4: Record physical failure in circuit breaker (trips to 15-minute cooldown on 3 failures or limit exceeded)
                         circuitBreaker.recordFailure(resultCode, "Radio failure (code $resultCode)")
 
@@ -61,7 +62,7 @@ class DeliveryBroadcastReceiver : BroadcastReceiver() {
                         )
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error handling SMS_SENT: ${e.message}")
+                    Log.e(TAG, "Error handling $action: ${e.message}")
                 }
             }
         } else if (action == SMS_DELIVERED_ACTION || action == "android.provider.Telephony.SMS_DELIVERED") {

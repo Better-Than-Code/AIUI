@@ -222,7 +222,11 @@ object CellularMessageDispatcher {
         }
 
         // Deduplication Check (within 30-second window)
-        val dedupeKey = "${message.senderAddress.filter { it.isDigit() || it == '+' }}:${payloadStr.trim()}"
+        val dedupeKey = if (message.attachment != null) {
+            "${message.senderAddress.filter { it.isDigit() || it == '+' }}:att:${message.attachment.id}:${message.attachment.fileSizeBytes}"
+        } else {
+            "${message.senderAddress.filter { it.isDigit() || it == '+' }}:${payloadStr.trim()}"
+        }
         val now = System.currentTimeMillis()
         val lastSeen = recentProcessedHashes[dedupeKey]
         if (lastSeen != null && (now - lastSeen) < 30_000L) {
@@ -327,14 +331,22 @@ object CellularMessageDispatcher {
             )
             db.chatMessageDao().insertMessage(chatMsg)
             db.conversationThreadDao().updateLastMessage(currentThread, chatMsg.text.take(60), now)
-        } else if (payloadStr.isNotBlank() && !isHandshakeHandled) {
+        } else if ((payloadStr.isNotBlank() || message.attachment != null) && !isHandshakeHandled) {
             // 5. Parse Dual Response (Conversational Text + Structured Native Widget Data)
-            val dual = try {
-                DualResponseParser.parse(payloadStr)
-            } catch (e: Exception) {
-                Log.e(TAG, "INC-12: Fenced Wire Envelope parser fault, recovering stream...", e)
+            val dual = if (payloadStr.isNotBlank()) {
+                try {
+                    DualResponseParser.parse(payloadStr)
+                } catch (e: Exception) {
+                    Log.e(TAG, "INC-12: Fenced Wire Envelope parser fault, recovering stream...", e)
+                    DualParsedResponse(
+                        conversationalText = "⚠️ Payload Parse Error. Raw: ${payloadStr.take(50)}...",
+                        widgetData = null,
+                        threadId = null
+                    )
+                }
+            } else {
                 DualParsedResponse(
-                    conversationalText = "⚠️ Payload Parse Error. Raw: ${payloadStr.take(50)}...",
+                    conversationalText = "",
                     widgetData = null,
                     threadId = null
                 )
@@ -357,15 +369,54 @@ object CellularMessageDispatcher {
             }
 
             // Cache Widget Data if present
-            if (dual.widgetData != null) {
-                val widgetType = dual.widgetData.type
+            var effectiveWidgetData = dual.widgetData
+            var calculatedRevision = 1
+            val newMsgId = "msg_${now}_${(1000..9999).random()}"
+
+            if (effectiveWidgetData != null) {
+                // If this is a mini app patch, apply delta patch to SQLite blueprint and project updated preview
+                if (effectiveWidgetData is WidgetData.MiniAppPatch) {
+                    val app = db.appBlueprintDao().getAppById(effectiveWidgetData.appId)
+                    if (app != null) {
+                        val currentBlueprint = com.cellular.rpc.domain.miniapp.MiniAppBlueprint.fromJson(app.rawBlueprintJson)
+                        if (currentBlueprint != null) {
+                            val patchResult = com.cellular.rpc.domain.miniapp.BlueprintPatcher.applyDeltaPatch(
+                                currentBlueprint,
+                                emptyMap(),
+                                effectiveWidgetData.patchJsonStr
+                            )
+                            if (patchResult.success && patchResult.patchedBlueprint != null) {
+                                val patchedApp = app.copy(
+                                    rawBlueprintJson = patchResult.patchedBlueprint.rawJson,
+                                    lastUpdated = now
+                                )
+                                db.appBlueprintDao().installOrUpdate(patchedApp)
+                                android.util.Log.i(TAG, "Successfully hot-patched mini app: ${app.appId}")
+                                // Project updated preview to tail
+                                effectiveWidgetData = WidgetData.MiniAppPreview(
+                                    appId = patchResult.patchedBlueprint.appId,
+                                    version = patchResult.patchedBlueprint.version,
+                                    title = patchResult.patchedBlueprint.metadata.title,
+                                    icon = patchResult.patchedBlueprint.metadata.icon,
+                                    description = patchResult.patchedBlueprint.metadata.description,
+                                    category = patchResult.patchedBlueprint.metadata.category,
+                                    rawBlueprintJson = patchResult.patchedBlueprint.rawJson
+                                )
+                            } else {
+                                android.util.Log.e(TAG, "Hot-patching failed for ${app.appId}: ${patchResult.errorMessage}")
+                            }
+                        }
+                    }
+                }
+
+                val widgetType = effectiveWidgetData.type
                 db.widgetCacheDao().insertOrUpdate(
                     WidgetCacheEntity(
                         widgetType = widgetType,
-                        contentHash = dual.widgetData.computeContentHash(),
-                        jsonPayload = dual.widgetData.toJson(),
+                        contentHash = effectiveWidgetData.computeContentHash(),
+                        jsonPayload = effectiveWidgetData.toJson(),
                         lastStatus = "200_OK",
-                        byteSize = dual.widgetData.toJson().toByteArray(Charsets.UTF_8).size,
+                        byteSize = effectiveWidgetData.toJson().toByteArray(Charsets.UTF_8).size,
                         lastUpdatedMs = now
                     )
                 )
@@ -375,25 +426,27 @@ object CellularMessageDispatcher {
                     else -> CellularCustomAppWidgetProvider.updateAllWidgets(context)
                 }
 
-                val wid = dual.widgetData.widgetId
-                if (wid != null && wid.isNotBlank()) {
-                    val updated = db.chatMessageDao().updateWidgetDataById(targetThreadId, "%\"id\":\"$wid\"%", dual.widgetData.toJson(), now)
-                    if (updated > 0) {
-                        isSilent = true
-                    } else {
-                        db.chatMessageDao().deleteMessagesByWidgetType(targetThreadId, "%\"type\":\"$widgetType\"%")
-                        db.chatMessageDao().deleteMessagesByWidgetType(targetThreadId, "%\"type\":\"skeleton\"%")
-                    }
-                } else {
-                    // Feed-tail projection: Delete existing widget instances of this type and any skeleton loaders
-                    db.chatMessageDao().deleteMessagesByWidgetType(targetThreadId, "%\"type\":\"$widgetType\"%")
-                    db.chatMessageDao().deleteMessagesByWidgetType(targetThreadId, "%\"type\":\"skeleton\"%")
+                // FEAT-06 Feed-Tail Projection & Revisioning:
+                // Find existing historical cards for this widget ID or type
+                val wid = effectiveWidgetData.widgetId
+                val idPattern = if (!wid.isNullOrBlank()) "%\"id\":\"$wid\"%" else "%\"type\":\"$widgetType\"%"
+                val typePattern = "%\"type\":\"$widgetType\"%"
+
+                val existingMatches = db.chatMessageDao().findMatchingWidgetMessages(targetThreadId, idPattern, typePattern)
+                if (existingMatches.isNotEmpty()) {
+                    val highestRev = existingMatches.maxOfOrNull { it.revision } ?: 1
+                    calculatedRevision = highestRev + 1
+                    // De-emphasize older historical upstream card(s) as superseded
+                    db.chatMessageDao().markMatchingWidgetsSuperseded(targetThreadId, idPattern, typePattern, newMsgId)
                 }
 
+                // Delete any pending skeleton loading placeholders in this thread
+                db.chatMessageDao().deleteSkeletonMessages(targetThreadId)
+
                 // Epic 14.2: Natural language chat creation inserts into local SQLite
-                if (dual.widgetData is WidgetData.TaskChecklist) {
-                    dual.widgetData.items.forEachIndexed { index, itemText ->
-                        val isDone = dual.widgetData.doneFlags.getOrElse(index) { false }
+                if (effectiveWidgetData is WidgetData.TaskChecklist) {
+                    effectiveWidgetData.items.forEachIndexed { index, itemText ->
+                        val isDone = effectiveWidgetData.doneFlags.getOrElse(index) { false }
                         db.taskDao().insertTask(
                             com.cellular.rpc.data.local.TaskEntity(
                                 id = "task_${now}_$index",
@@ -403,76 +456,64 @@ object CellularMessageDispatcher {
                             )
                         )
                     }
-                } else if (dual.widgetData is WidgetData.CalendarEvent) {
+                } else if (effectiveWidgetData is WidgetData.CalendarEvent) {
                     db.calendarEventDao().insertEvent(
                         com.cellular.rpc.data.local.CalendarEventEntity(
-                            id = dual.widgetData.id,
-                            title = dual.widgetData.title,
-                            description = dual.widgetData.time,
-                            location = dual.widgetData.location,
+                            id = effectiveWidgetData.id,
+                            title = effectiveWidgetData.title,
+                            description = effectiveWidgetData.time,
+                            location = effectiveWidgetData.location,
                             startTimeMs = now,
                             endTimeMs = now + 3600000
                         )
                     )
-                } else if (dual.widgetData is WidgetData.MiniAppPatch) {
-                    val app = db.appBlueprintDao().getAppById(dual.widgetData.appId)
-                    if (app != null) {
-                        val currentBlueprint = com.cellular.rpc.domain.miniapp.MiniAppBlueprint.fromJson(app.rawBlueprintJson)
-                        if (currentBlueprint != null) {
-                            val patchResult = com.cellular.rpc.domain.miniapp.BlueprintPatcher.applyDeltaPatch(
-                                currentBlueprint,
-                                emptyMap(),
-                                dual.widgetData.patchJsonStr
-                            )
-                            if (patchResult.success && patchResult.patchedBlueprint != null) {
-                                val patchedApp = app.copy(
-                                    rawBlueprintJson = patchResult.patchedBlueprint.rawJson,
-                                    lastUpdated = now
-                                )
-                                db.appBlueprintDao().installOrUpdate(patchedApp)
-                                android.util.Log.i(TAG, "Successfully hot-patched mini app: ${app.appId}")
-                            } else {
-                                android.util.Log.e(TAG, "Hot-patching failed for ${app.appId}: ${patchResult.errorMessage}")
-                            }
-                        }
-                    }
-                } else if (dual.widgetData is WidgetData.RpcControlFrame) {
-                    val hash = dual.widgetData.hash
-                    CarrierSafeQueueEngine.getInstance(context).onControlPacketReceived(hash)
+                } else if (effectiveWidgetData is WidgetData.RpcControlFrame) {
+                    val rpc = effectiveWidgetData
+                    CarrierSafeQueueEngine.getInstance(context).onAckReceived(
+                        hash = rpc.hash,
+                        chunks = rpc.chunks,
+                        rawWire = message.rawText
+                    )
                     isSilent = true
                 }
             }
 
             // Persist Inbound Chat Message directly in Room
             val displayText = dual.conversationalText.ifEmpty {
-                if (dual.widgetData != null) "" else payloadStr
+                if (effectiveWidgetData != null) "" else payloadStr
             }
 
-            if (!isSilent && (displayText.isNotEmpty() || dual.widgetData != null || message.attachment != null)) {
+            if (!isSilent && (displayText.isNotEmpty() || effectiveWidgetData != null || message.attachment != null)) {
                 val chatMsg = ChatMessageEntity(
-                    id = "msg_${now}_${(1000..9999).random()}",
+                    id = newMsgId,
                     threadId = targetThreadId,
                     sender = "AI_GATEWAY",
                     text = displayText,
-                    widgetDataJson = dual.widgetData?.toJson(),
+                    widgetDataJson = effectiveWidgetData?.toJson(),
                     is304NotModified = false,
                     wirePacket = message.rawText.ifBlank { response.toCompactWire() },
                     byteSize = payloadStr.toByteArray(Charsets.UTF_8).size,
                     pduCount = ((payloadStr.toByteArray(Charsets.UTF_8).size + 139) / 140).coerceAtLeast(1),
                     deliveryStatus = "DELIVERED",
                     timestampMs = now,
+                    revision = calculatedRevision,
+                    isSuperseded = false,
+                    supersededByMessageId = null,
                     attachmentId = message.attachment?.id,
                     attachmentType = message.attachment?.type?.name,
                     attachmentUri = message.attachment?.uri,
                     attachmentFileName = message.attachment?.fileName,
                     attachmentSizeBytes = message.attachment?.fileSizeBytes ?: 0,
-                    attachmentMimeType = message.attachment?.mimeType
+                    attachmentMimeType = message.attachment?.mimeType,
+                    attachmentDurationMs = message.attachment?.durationMs ?: 0L,
+                    attachmentAmplitudes = message.attachment?.voiceAmplitudes?.takeIf { it.isNotEmpty() }?.joinToString(",")
                 )
                 db.chatMessageDao().insertMessage(chatMsg)
 
                 val snippet = when {
                     displayText.isNotBlank() -> displayText.take(60)
-                    dual.widgetData != null -> "[Widget: ${dual.widgetData.type}]"
+                    effectiveWidgetData != null -> "[Widget: ${effectiveWidgetData.type}]"
+                    message.attachment?.type == com.cellular.rpc.engine.AttachmentType.VOICE_NOTE -> "🎤 Voice Note (${(message.attachment.durationMs / 1000).coerceAtLeast(1)}s)"
                     message.attachment != null -> "[Attachment: ${message.attachment.fileName}]"
                     else -> "New message"
                 }

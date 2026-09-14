@@ -61,7 +61,7 @@ class ExampleUnitTest {
 
   @Test
   fun testSmsRow_multiPartAssemblyLogic() {
-    val now = System.currentTimeMillis()
+    val now = 1000000000000L
     val part1 = com.cellular.rpc.transport.service.SmsRow(101L, "+16462619684", "{\"type\":\"sdui\",", now)
     val part2 = com.cellular.rpc.transport.service.SmsRow(102L, "+16462619684", "\"title\":\"Weather\",", now + 100)
     val part3 = com.cellular.rpc.transport.service.SmsRow(103L, "+16462619684", "\"temp\":72}", now + 200)
@@ -212,4 +212,278 @@ class ExampleUnitTest {
     val searchIcon = com.cellular.rpc.domain.miniapp.SemanticDesignTokens.resolveIcon("search")
     assertNotNull(searchIcon)
   }
+
+  @Test
+  fun testCellularAckParser_allFormats() {
+    // 1. Colon format
+    val colonAck = com.cellular.rpc.domain.protocol.CellularAckParser.parse("ACK:2.1.0:5B212384:1,2")
+    assertNotNull(colonAck)
+    assertEquals("5B212384", colonAck?.hash)
+    assertEquals(listOf(1, 2), colonAck?.chunks)
+
+    // 2. MCP format
+    val mcpAck = com.cellular.rpc.domain.protocol.CellularAckParser.parse("[MCP_ACK 1/67 hash=5B212384]")
+    assertNotNull(mcpAck)
+    assertEquals("5B212384", mcpAck?.hash)
+    assertEquals(listOf(1), mcpAck?.chunks)
+
+    // 3. Natural language format
+    val nlAck = com.cellular.rpc.domain.protocol.CellularAckParser.parse("ack chunks 1-2 of 67 (hash 5b212384). receiving stream.")
+    assertNotNull(nlAck)
+    assertEquals("5b212384", nlAck?.hash)
+    assertEquals(listOf(1, 2), nlAck?.chunks)
+
+    // 4. JSON format (embedded after delimiter)
+    val jsonPayload = "Receiving stream\n---CELLULAR_DATA---\n{\"version\":\"2.1.0\",\"rpc\":{\"type\":\"ack\",\"hash\":\"5B212384\",\"chunks\":[1,2],\"status\":\"OK\"}}"
+    val jsonAck = com.cellular.rpc.domain.protocol.CellularAckParser.parse(jsonPayload)
+    assertNotNull(jsonAck)
+    assertEquals("5B212384", jsonAck?.hash)
+    assertEquals(listOf(1, 2), jsonAck?.chunks)
+
+    // 5. Non-ACK payload should return null
+    val normalMessage = "What is the weather today?"
+    val noAck = com.cellular.rpc.domain.protocol.CellularAckParser.parse(normalMessage)
+    assertNull(noAck)
+  }
+
+  @Test
+  fun testSlidingWindowController_permitManagementAndDeadlockRecovery() {
+    val window = com.cellular.rpc.domain.protocol.SlidingWindowController(windowSize = 4)
+    assertEquals(0, window.getInFlightCount())
+    assertTrue(window.canTransmit())
+
+    // Transmit 4 frames
+    val f0 = com.cellular.rpc.domain.protocol.Frame(sessionId = 1, pktType = 1, seqNo = 0, payload = ByteArray(10))
+    val f1 = com.cellular.rpc.domain.protocol.Frame(sessionId = 1, pktType = 1, seqNo = 0, payload = ByteArray(10))
+    val f2 = com.cellular.rpc.domain.protocol.Frame(sessionId = 1, pktType = 1, seqNo = 0, payload = ByteArray(10))
+    val f3 = com.cellular.rpc.domain.protocol.Frame(sessionId = 1, pktType = 1, seqNo = 0, payload = ByteArray(10))
+
+    val s0 = window.registerOutbound(f0)
+    val s1 = window.registerOutbound(f1)
+    val s2 = window.registerOutbound(f2)
+    val s3 = window.registerOutbound(f3)
+
+    assertEquals(4, window.getInFlightCount())
+    assertFalse(window.canTransmit())
+
+    // Acknowledge one frame
+    window.markFrameAcknowledged(s0)
+    assertEquals(3, window.getInFlightCount())
+    assertTrue(window.canTransmit())
+
+    // Out of order ack (s2 before s1)
+    window.markFrameAcknowledged(s2)
+    assertEquals(2, window.getInFlightCount())
+
+    // Evict remaining stalled frames
+    val evicted = window.evictStalledFrames(timeoutMs = 0L, currentTimeMs = System.currentTimeMillis() + 50000L)
+    assertEquals(2, evicted)
+    assertEquals(0, window.getInFlightCount())
+    assertTrue(window.canTransmit())
+
+    // Test explicit resetInFlight
+    window.registerOutbound(f0)
+    window.registerOutbound(f1)
+    assertEquals(2, window.getInFlightCount())
+    window.resetInFlight()
+    assertEquals(0, window.getInFlightCount())
+    assertTrue(window.canTransmit())
+  }
+
+  @Test
+  fun testNamedSkeletonModel_serializationAndDefaults() {
+    val skeleton = com.cellular.rpc.engine.WidgetData.Skeleton(
+      label = "Loading Market Ticker...",
+      targetType = "market_ticker",
+      iconEmoji = "📈"
+    )
+    val jsonStr = skeleton.toJson()
+    assertTrue(jsonStr.contains("\"type\":\"skeleton\""))
+    assertTrue(jsonStr.contains("\"label\":\"Loading Market Ticker...\""))
+    assertTrue(jsonStr.contains("\"target_type\":\"market_ticker\""))
+    assertTrue(jsonStr.contains("\"icon\":\"📈\""))
+
+    val parsed = com.cellular.rpc.engine.WidgetData.parse(jsonStr)
+    assertTrue(parsed is com.cellular.rpc.engine.WidgetData.Skeleton)
+    val parsedSkeleton = parsed as com.cellular.rpc.engine.WidgetData.Skeleton
+    assertEquals("Loading Market Ticker...", parsedSkeleton.label)
+    assertEquals("market_ticker", parsedSkeleton.targetType)
+    assertEquals("📈", parsedSkeleton.iconEmoji)
+
+    // Verify backward compatibility when optional fields are omitted in legacy JSON
+    val legacyJson = org.json.JSONObject().apply {
+      put("type", "skeleton")
+      put("label", "Loading Blueprint...")
+    }
+    val parsedLegacy = com.cellular.rpc.engine.WidgetData.Skeleton.fromJson(legacyJson)
+    assertEquals("Loading Blueprint...", parsedLegacy.label)
+    assertEquals("blueprint", parsedLegacy.targetType)
+    assertEquals("✨", parsedLegacy.iconEmoji)
+  }
+
+  @Test
+  fun testChatMessage_revisionAndSupersededProperties() {
+    val initialMsg = com.cellular.rpc.engine.ChatMessage(
+      sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
+      text = "Initial",
+      revision = 1,
+      isSuperseded = false,
+      supersededByMessageId = null
+    )
+    assertEquals(1, initialMsg.revision)
+    assertFalse(initialMsg.isSuperseded)
+    assertNull(initialMsg.supersededByMessageId)
+
+    val updatedMsg = initialMsg.copy(
+      revision = 2,
+      isSuperseded = true,
+      supersededByMessageId = "msg_next_gen_123"
+    )
+    assertEquals(2, updatedMsg.revision)
+    assertTrue(updatedMsg.isSuperseded)
+    assertEquals("msg_next_gen_123", updatedMsg.supersededByMessageId)
+  }
+
+  @Test
+  fun testWidgetModels_consistentWidgetIdExposure() {
+    val weather = com.cellular.rpc.engine.WidgetData.Weather(72, "San Francisco", "Sunny")
+    assertEquals("weather_san_francisco", weather.widgetId)
+
+    val news = com.cellular.rpc.engine.WidgetData.NewsDigest("news_42", "Solar Flare Detected", "No disruption")
+    assertEquals("news_news_42", news.widgetId)
+
+    val ticker = com.cellular.rpc.engine.WidgetData.MarketTicker("ticker_btc", "BTC", "64,200", "+3.2%")
+    assertEquals("ticker_btc", ticker.widgetId)
+
+    val transfer = com.cellular.rpc.engine.WidgetData.CellularTransfer("tx_99", "Alice", "$50", "Lunch", "CONFIRMED")
+    assertEquals("tx_99", transfer.widgetId)
+
+    val tasks = com.cellular.rpc.engine.WidgetData.TaskChecklist("todo_list", "My Tasks", listOf("Item 1"), listOf(false))
+    assertEquals("todo_list", tasks.widgetId)
+
+    val miniApp = com.cellular.rpc.engine.WidgetData.MiniAppPreview(
+      appId = "calc_app",
+      title = "Calculator",
+      rawBlueprintJson = "{}"
+    )
+    assertEquals("calc_app", miniApp.widgetId)
+
+    val patch = com.cellular.rpc.engine.WidgetData.MiniAppPatch(
+      appId = "calc_app",
+      patchJsonStr = "[]"
+    )
+    assertEquals("calc_app", patch.widgetId)
+  }
+
+  /**
+   * FEAT-09: Unit test CarrierApnResolver fallback parsing.
+   */
+  @Test
+  fun testCarrierApnResolverProfiles() {
+    val tmobile = com.cellular.rpc.transport.apn.CarrierNetworkProfile(
+      carrierName = "T-Mobile",
+      simOperator = "310260",
+      mcc = "310",
+      mnc = "260",
+      activeMmscUrl = "http://mms.msg.eng.t-mobile.com/mms/wapenc",
+      mmsProxy = null,
+      mmsPort = null,
+      isApnResolvedFromSystem = false,
+      subId = 1
+    )
+    assertEquals("310", tmobile.mcc)
+    assertEquals("260", tmobile.mnc)
+    assertTrue(tmobile.activeMmscUrl.contains("t-mobile.com"))
+
+    val att = com.cellular.rpc.transport.apn.CarrierNetworkProfile(
+      carrierName = "AT&T",
+      simOperator = "310410",
+      mcc = "310",
+      mnc = "410",
+      activeMmscUrl = "http://mmsc.mobile.att.net",
+      mmsProxy = "proxy.mobile.att.net",
+      mmsPort = 80,
+      isApnResolvedFromSystem = false,
+      subId = 2
+    )
+    assertEquals("310410", att.simOperator)
+    assertEquals("proxy.mobile.att.net", att.mmsProxy)
+    assertEquals(80, att.mmsPort)
+  }
+
+  /**
+   * FEAT-11: Test voice note seek math and speed toggling.
+   */
+  @Test
+  fun testVoiceNoteScrubbingAndSpeedToggles() {
+    val durationMs = 45000L // 45 seconds
+    val scrubFraction = 0.40f // 40%
+    val calculatedSeekMs = (scrubFraction * durationMs).toLong()
+    assertEquals(18000L, calculatedSeekMs)
+
+    var currentSpeed = 1.0f
+    val speeds = listOf(1.0f, 1.5f, 2.0f)
+    fun cycleSpeed(spd: Float): Float = when (spd) {
+      1.0f -> 1.5f
+      1.5f -> 2.0f
+      else -> 1.0f
+    }
+
+    currentSpeed = cycleSpeed(currentSpeed)
+    assertEquals(1.5f, currentSpeed, 0.01f)
+    currentSpeed = cycleSpeed(currentSpeed)
+    assertEquals(2.0f, currentSpeed, 0.01f)
+    currentSpeed = cycleSpeed(currentSpeed)
+    assertEquals(1.0f, currentSpeed, 0.01f)
+  }
+
+  /**
+   * FEAT-12: Test SDUI Playground AST blueprint parsing and linter.
+   */
+  @Test
+  fun testSduiPlaygroundTemplateParsingAndLinting() {
+    val telemetryJson = """{
+      "appId": "app_telemetry_studio",
+      "version": 1,
+      "metadata": {
+        "title": "Dual Telemetry Lab",
+        "description": "Comparative time-series sensor graph with interactive scrubber",
+        "icon": "trending_up"
+      },
+      "initialState": {
+        "primary_stream": [18.2, 22.4, 25.1, 23.8],
+        "secondary_stream": [14.0, 16.5, 19.8, 22.0],
+        "status": "Telemetry Online"
+      },
+      "uiRoot": {
+        "type": "column",
+        "children": [
+          {
+            "type": "text",
+            "text": "Comparative Inverter Telemetry",
+            "fontSize": 16,
+            "fontWeight": "bold"
+          },
+          {
+            "type": "sparkline",
+            "bind": "primary_stream",
+            "secondary_bind": "secondary_stream",
+            "color": "#00E5FF",
+            "secondary_color": "#00E676",
+            "height": 140
+          }
+        ]
+      }
+    }"""
+
+    val blueprint = com.cellular.rpc.domain.miniapp.MiniAppBlueprint.fromJson(telemetryJson)
+    assertNotNull(blueprint)
+    assertEquals("app_telemetry_studio", blueprint?.appId)
+    assertEquals(2, blueprint?.uiRoot?.children?.size)
+
+    val lintResult = com.cellular.rpc.domain.miniapp.BlueprintLinter.lint(blueprint!!)
+    assertTrue(lintResult.isValid)
+    assertEquals(0, lintResult.errors.size)
+  }
 }
+

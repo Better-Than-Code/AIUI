@@ -190,21 +190,74 @@ class CarrierSafeQueueEngine(
 
     val circuitBreaker: CarrierCooldownCircuitBreaker = CarrierCooldownCircuitBreaker.getInstance(context)
 
+    fun resetInFlight() {
+        windowController.resetInFlight()
+        _inFlightCount.value = 0
+        Log.i(TAG, "Sliding window permits explicitly reset (inFlight = 0).")
+    }
+
     fun acknowledgeAnyInFlight() {
         val frames = windowController.getInFlightFrames()
         for (f in frames) {
-            windowController.processAck(f.seqNo, 0L)
+            windowController.markFrameAcknowledged(f.seqNo)
             scope.launch {
                 outboxDao.markAcknowledged(f.sessionId, f.seqNo)
+            }
+        }
+        scope.launch {
+            outboxDao.markAllInFlightAcknowledged()
+        }
+        _inFlightCount.value = windowController.getInFlightCount()
+    }
+
+    fun onAckReceived(hash: String, chunks: List<Int> = emptyList(), rawWire: String = "") {
+        _rxPacketCount.value += 1
+        Log.i(TAG, "Dual-Path Interceptor: Inbound cellular ACK processed (hash=$hash, chunks=$chunks, RX=${_rxPacketCount.value})")
+
+        val parsedSessionId = hash.take(4).toIntOrNull(16) ?: 0
+
+        scope.launch {
+            try {
+                val db = AppDatabase.getInstance(context)
+                db.packetLogDao().insert(
+                    PacketLogEntity(
+                        direction = "RX",
+                        sessionId = parsedSessionId,
+                        pktType = Frame.PKT_CTL_ACK,
+                        pktTypeName = "CTL_ACK",
+                        seqNo = chunks.firstOrNull() ?: 0,
+                        ackBitsHex = hash,
+                        payloadString = "ACK hash=$hash chunks=$chunks",
+                        wireFormat = rawWire.ifEmpty { "ACK:2.1.0:$hash:${chunks.joinToString(",")}" },
+                        binaryByteCount = 0,
+                        crc16Hex = "0000",
+                        crcValid = true
+                    )
+                )
+
+                if (chunks.isNotEmpty()) {
+                    for (c in chunks) {
+                        windowController.markFrameAcknowledged(c)
+                        windowController.markFrameAcknowledged(c - 1)
+                        outboxDao.markAcknowledgedFlexible(parsedSessionId, c)
+                    }
+                } else if (parsedSessionId != 0) {
+                    outboxDao.markSessionAcknowledged(parsedSessionId)
+                    acknowledgeAnyInFlight()
+                } else {
+                    acknowledgeAnyInFlight()
+                }
+
+                _inFlightCount.value = windowController.getInFlightCount()
+                Log.i(TAG, "Sliding window released permit. In-flight count is now: ${_inFlightCount.value}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in onAckReceived: ${e.message}", e)
             }
         }
     }
 
     fun onControlPacketReceived(hash: String) {
-        // Find if this hash matches any in-flight frame or broadly acknowledge.
-        // The spec says: ACKs increment RX, decrement IN-FLIGHT permits, and slide the transmission window.
-        Log.i(TAG, "Received RPC Control Packet (hash=$hash). Acknowledging in-flight frames.")
-        acknowledgeAnyInFlight()
+        onAckReceived(hash = hash, chunks = emptyList(), rawWire = "RPC_ACK:$hash")
     }
 
     @Synchronized
@@ -214,9 +267,17 @@ class CarrierSafeQueueEngine(
         Log.i(TAG, "Starting CarrierSafeQueueEngine...")
 
         transmissionJob = scope.launch {
-            // INC-10: Reconcile cold-start counter from local Outbox
+            // INC-10: Cold-start state reconciliation:
+            // Reconcile in-flight database rows. Any orphaned IN_FLIGHT items from prior crash/kill reset to PENDING.
+            val staleThreshold = System.currentTimeMillis()
+            outboxDao.resetStalledToPending(staleThreshold)
             val inFlightDb = outboxDao.countInFlight()
-            _inFlightCount.value = inFlightDb
+            if (inFlightDb == 0) {
+                resetInFlight()
+            } else {
+                _inFlightCount.value = inFlightDb
+            }
+            Log.i(TAG, "Cold-start reconciled inFlight permits: ${_inFlightCount.value}")
             queueLoop()
         }
 
@@ -247,10 +308,10 @@ class CarrierSafeQueueEngine(
         }
         val base85 = GsmSafeBase85.encode(finalPayload)
 
-        // Prevent duplicate outbound queueing for identical pending/in-flight frames
-        val duplicateCount = outboxDao.countDuplicatePending(sessionId, pktType, base85)
+        // Prevent duplicate outbound queueing for identical pending/in-flight frames across sessions (INC-20)
+        val duplicateCount = outboxDao.countDuplicatePayloadPending(base85)
         if (duplicateCount > 0) {
-            Log.w(TAG, "Duplicate outbound payload prevented for session $sessionId (pktType=$pktType). Already in queue.")
+            Log.w(TAG, "Duplicate outbound payload prevented across sessions (pktType=$pktType). Already in queue.")
             return sessionId
         }
 
@@ -418,7 +479,7 @@ class CarrierSafeQueueEngine(
         val assignedSeq = windowController.registerOutbound(frame)
         val finalFrame = frame.copy(seqNo = assignedSeq)
 
-        outboxDao.markAttempted(entity.id, OutboxEntity.STATUS_IN_FLIGHT, System.currentTimeMillis())
+        outboxDao.markAttemptedWithSeq(entity.id, OutboxEntity.STATUS_IN_FLIGHT, assignedSeq, System.currentTimeMillis())
 
         dispatchPhysicalFrame(finalFrame, entity.id)
 
@@ -570,9 +631,14 @@ class CarrierSafeQueueEngine(
                 context = context,
                 destinationNumber = cleanNumber,
                 text = textToSend,
-                anchorUri = anchorUri
+                anchorUri = anchorUri,
+                sessionId = frame.sessionId.toLong(),
+                seqNo = frame.seqNo,
+                outboxId = outboxId
             )
             scope.launch {
+                windowController.markFrameAcknowledged(frame.seqNo)
+                _inFlightCount.value = outboxDao.getPendingCount()
                 if (outboxId > 0L) {
                     outboxDao.markAcknowledgedById(outboxId)
                 } else {
@@ -896,6 +962,7 @@ class CarrierSafeQueueEngine(
                 for (f in newlyAcked) {
                     outboxDao.markAcknowledged(f.sessionId, f.seqNo)
                 }
+                _inFlightCount.value = windowController.getInFlightCount()
             }
             Frame.PKT_RPC_RES -> {
                 val payloadStr = CellularBpeTokenizer.decompress(frame.payload)

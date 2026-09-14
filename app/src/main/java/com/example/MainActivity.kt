@@ -92,8 +92,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Epic 10: Delta reconciliation onResume to capture any messages received while in background
-
+        // Register ContentObservers onResume (INC-17)
+        try {
+            com.cellular.rpc.transport.receiver.TelephonySmsObserver.register(applicationContext)
+            com.cellular.rpc.transport.receiver.TelephonyMmsObserver.register(applicationContext)
+        } catch (ignored: Exception) {}
     }
 
     override fun onPause() {
@@ -365,20 +368,6 @@ fun CellularRpcScreen(
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
-
-                            IconButton(
-                                onClick = { showSettingsSheet = true },
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .testTag("top_settings_button")
-                            ) {
-                                Icon(
-                                    Icons.Default.MoreVert,
-                                    contentDescription = "Settings & Gateway",
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
                         }
                     }
 
@@ -456,23 +445,9 @@ fun CellularRpcScreen(
                 NavigationBarItem(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    icon = { Icon(Icons.Default.Widgets, contentDescription = "Widgets") },
-                    label = { Text("Widgets") },
-                    modifier = Modifier.testTag("nav_widgets")
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 5,
-                    onClick = { selectedTab = 5 },
-                    icon = { Icon(Icons.Default.Extension, contentDescription = "Extensions") },
+                    icon = { Icon(Icons.Default.Apps, contentDescription = "Apps Hub") },
                     label = { Text("Apps") },
-                    modifier = Modifier.testTag("nav_dynamic_apps")
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 7,
-                    onClick = { selectedTab = 7 },
-                    icon = { Icon(Icons.Default.DateRange, contentDescription = "Agenda Hub") },
-                    label = { Text("Agenda") },
-                    modifier = Modifier.testTag("nav_agenda")
+                    modifier = Modifier.testTag("nav_apps")
                 )
             }
         }
@@ -510,12 +485,25 @@ fun CellularRpcScreen(
                     onDeleteMessage = { chatViewModel.deleteChatMessage(it) },
                     chatListState = chatListState
                 )
-                1 -> WidgetsAndRpcTab(
-                    widgetCache = widgetCache,
-                    onQueryWidget = { chatViewModel.queryWidget(it) },
-                    onMutateServer = { widgetViewModel.simulateServerDataChange(it) },
-                    onSendBinary = { widgetViewModel.sendBinaryDemo(260) },
-                    lastBinaryPayload = lastBinaryPayload
+                1 -> com.cellular.rpc.ui.miniapp.UnifiedAppDrawerTab(
+                    installedMiniApps = installedMiniApps,
+                    selectedMiniApp = selectedMiniApp,
+                    onSelectMiniApp = { miniAppViewModel.selectMiniApp(it) },
+                    onUninstallMiniApp = { miniAppViewModel.uninstallMiniApp(it) },
+                    onUpdateMiniAppState = { id, state -> miniAppViewModel.updateMiniAppState(id, state) },
+                    onSeedSampleMiniApps = { miniAppViewModel.seedSampleMiniApps() },
+                    onInstallBlueprint = { bp, state -> miniAppViewModel.installMiniApp(bp, state) },
+                    dynamicFeatures = dynamicFeatures,
+                    selectedFeature = selectedFeature,
+                    onSelectFeature = { miniAppViewModel.selectDynamicFeature(it) },
+                    onDeleteFeature = { miniAppViewModel.deleteDynamicFeature(it) },
+                    onDeploySampleFeature = { miniAppViewModel.deploySampleFeature(it) },
+                    onLaunchQuickPrompt = { prompt ->
+                        selectedTab = 0
+                        chatViewModel.sendChatMessage(prompt)
+                    },
+                    onOpenSettings = { showSettingsSheet = true },
+                    gatewayName = activeService.name
                 )
                 2 -> PacketInspectorTab(
                     packetLogs = packetLogs,

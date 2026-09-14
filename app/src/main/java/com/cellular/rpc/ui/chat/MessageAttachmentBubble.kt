@@ -4,6 +4,8 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -15,9 +17,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -29,7 +34,7 @@ import com.example.ui.theme.*
 /**
  * Native Attachment View inside Chat Bubbles:
  * - High-resolution Image card with rounded corners
- * - Voice Note Player with interactive Play/Pause, live progress scrubbing, and waveforms
+ * - Voice Note Player with interactive Play/Pause, live waveform seek scrubber, speed toggle (1.0x / 1.5x / 2.0x), and dual timestamp
  * - File / Document card with size and file type badges
  */
 @Composable
@@ -63,6 +68,17 @@ fun MessageAttachmentBubble(
         AttachmentType.VOICE_NOTE -> {
             val isPlaying = audioPlayerManager?.playingAttachmentId?.collectAsState()?.value == attachment.id
             val currentPos = audioPlayerManager?.currentPositionMs?.collectAsState()?.value ?: 0L
+            val playbackSpeed = audioPlayerManager?.playbackSpeed?.collectAsState()?.value ?: 1.0f
+
+            var waveformWidthPx by remember { mutableStateOf(1) }
+            var isScrubbing by remember { mutableStateOf(false) }
+            var scrubFraction by remember { mutableStateOf(0f) }
+
+            val effectiveProgress = if (isScrubbing) {
+                scrubFraction
+            } else if (attachment.durationMs > 0) {
+                (currentPos.toFloat() / attachment.durationMs.toFloat()).coerceIn(0f, 1f)
+            } else 0f
 
             Surface(
                 color = if (isUser) CyanPrimaryDark else MaterialTheme.colorScheme.surfaceVariant,
@@ -96,31 +112,79 @@ fun MessageAttachmentBubble(
 
                     Spacer(modifier = Modifier.width(10.dp))
 
-                    // Waveform + Playback Time
+                    // Waveform + Playback Time + Scrubber
                     Column(modifier = Modifier.weight(1f)) {
-                        Row(
+                        // Interactive Waveform Seek Area
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(22.dp),
-                            horizontalArrangement = Arrangement.spacedBy(2.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .height(26.dp)
+                                .onSizeChanged { size ->
+                                    waveformWidthPx = if (size.width > 0) size.width else 1
+                                }
+                                .pointerInput(attachment.id, attachment.durationMs) {
+                                    detectTapGestures(
+                                        onPress = { offset ->
+                                            val fraction = (offset.x / waveformWidthPx.toFloat()).coerceIn(0f, 1f)
+                                            isScrubbing = true
+                                            scrubFraction = fraction
+                                            val seekMs = (fraction * attachment.durationMs).toLong()
+                                            audioPlayerManager?.seekTo(seekMs)
+                                            tryAwaitRelease()
+                                            isScrubbing = false
+                                        }
+                                    )
+                                }
+                                .pointerInput(attachment.id, attachment.durationMs) {
+                                    detectDragGestures(
+                                        onDragStart = { offset ->
+                                            isScrubbing = true
+                                            val fraction = (offset.x / waveformWidthPx.toFloat()).coerceIn(0f, 1f)
+                                            scrubFraction = fraction
+                                            audioPlayerManager?.seekTo((fraction * attachment.durationMs).toLong())
+                                        },
+                                        onDragEnd = {
+                                            isScrubbing = false
+                                        },
+                                        onDragCancel = {
+                                            isScrubbing = false
+                                        },
+                                        onDrag = { change, _ ->
+                                            val fraction = (change.position.x / waveformWidthPx.toFloat()).coerceIn(0f, 1f)
+                                            scrubFraction = fraction
+                                            audioPlayerManager?.seekTo((fraction * attachment.durationMs).toLong())
+                                        }
+                                    )
+                                },
+                            contentAlignment = Alignment.CenterStart
                         ) {
-                            val amps = if (attachment.voiceAmplitudes.isNotEmpty()) attachment.voiceAmplitudes else listOf(0.3f, 0.6f, 0.9f, 0.4f, 0.8f, 0.5f, 0.7f, 0.3f, 0.6f, 0.9f, 0.5f, 0.2f)
-                            amps.take(24).forEachIndexed { index, amp ->
-                                val progressRatio = if (attachment.durationMs > 0) currentPos.toFloat() / attachment.durationMs.toFloat() else 0f
-                                val barRatio = index.toFloat() / amps.size.toFloat()
-                                val isPlayed = isPlaying && barRatio <= progressRatio
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(22.dp),
+                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val amps = if (attachment.voiceAmplitudes.isNotEmpty()) attachment.voiceAmplitudes else listOf(0.3f, 0.6f, 0.9f, 0.4f, 0.8f, 0.5f, 0.7f, 0.3f, 0.6f, 0.9f, 0.5f, 0.2f, 0.4f, 0.7f, 0.6f, 0.3f, 0.8f, 0.5f, 0.4f, 0.7f, 0.9f, 0.6f, 0.4f, 0.2f)
+                                amps.take(24).forEachIndexed { index, amp ->
+                                    val barRatio = (index + 0.5f) / amps.size.toFloat()
+                                    val isPlayed = (isPlaying || isScrubbing) && barRatio <= effectiveProgress
 
-                                val barHeight = (amp * 20.dp.value).coerceIn(4f, 20f).dp
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(barHeight)
-                                        .clip(RoundedCornerShape(2.dp))
-                                        .background(
-                                            if (isPlayed) CyanPrimary else (if (isUser) Color.White.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
-                                        )
-                                )
+                                    val barHeight = (amp * 20.dp.value).coerceIn(4f, 20f).dp
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(barHeight)
+                                            .clip(RoundedCornerShape(2.dp))
+                                            .background(
+                                                if (isPlayed) {
+                                                    if (isUser) CyanPrimary else SignalGreen
+                                                } else {
+                                                    if (isUser) Color.White.copy(alpha = 0.45f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                                                }
+                                            )
+                                    )
+                                }
                             }
                         }
 
@@ -128,24 +192,72 @@ fun MessageAttachmentBubble(
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            val durationDisplay = if (isPlaying) currentPos else attachment.durationMs
-                            val seconds = (durationDisplay / 1000) % 60
-                            val minutes = (durationDisplay / 1000) / 60
+                            val activeDisplayMs = if (isScrubbing) {
+                                (scrubFraction * attachment.durationMs).toLong()
+                            } else if (isPlaying) {
+                                currentPos
+                            } else 0L
+
+                            val curSec = (activeDisplayMs / 1000) % 60
+                            val curMin = (activeDisplayMs / 1000) / 60
+                            val totSec = (attachment.durationMs / 1000) % 60
+                            val totMin = (attachment.durationMs / 1000) / 60
+
+                            val timeText = if (isPlaying || isScrubbing) {
+                                String.format("%02d:%02d / %02d:%02d", curMin, curSec, totMin, totSec)
+                            } else {
+                                String.format("%02d:%02d", totMin, totSec)
+                            }
+
                             Text(
-                                text = String.format("%02d:%02d", minutes, seconds),
+                                text = timeText,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontSize = 10.sp,
                                 fontFamily = FontFamily.Monospace,
-                                color = if (isUser) Color.White.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (isUser) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Text(
-                                text = "Voice Note • Cellular Audio",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontSize = 9.sp,
-                                color = if (isUser) CyanPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                // Playback Speed Selector (Toggles between 1.0x, 1.5x, 2.0x)
+                                if (isPlaying) {
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = if (isUser) Color.White.copy(alpha = 0.2f) else CyanPrimary.copy(alpha = 0.15f),
+                                        modifier = Modifier
+                                            .clickable {
+                                                val nextSpeed = when (playbackSpeed) {
+                                                    1.0f -> 1.5f
+                                                    1.5f -> 2.0f
+                                                    else -> 1.0f
+                                                }
+                                                audioPlayerManager?.setPlaybackSpeed(nextSpeed)
+                                            }
+                                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                                    ) {
+                                        Text(
+                                            text = "${playbackSpeed}x",
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isUser) Color.White else CyanPrimary
+                                            ),
+                                            modifier = Modifier.padding(horizontal = 2.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                }
+
+                                Text(
+                                    text = "Cellular Audio",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 9.sp,
+                                    color = if (isUser) CyanPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }

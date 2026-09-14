@@ -785,29 +785,24 @@ fun FullNativeChatInputBar(
                 }
             }
 
-            // 5. Status Telemetry
-            Spacer(modifier = Modifier.height(4.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = if (isLoopback) "⚡ Local Loopback Gateway" else "📡 Cellular: $destinationPhone",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (isLoopback) SignalAmber else SignalGreen
-                )
-                Text(
-                    text = "$byteCount/140B • $pduCount PDU" + if (pendingAttachments.isNotEmpty()) " (${pendingAttachments.size} media)" else "",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = if (byteCount <= 140) SignalGreen else SignalAmber
-                )
+            // 5. Status Telemetry - Dynamic Segment Counter (INC-19: visible only while typing)
+            if (inputText.isNotEmpty() || pendingAttachments.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 6.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "$byteCount/140B • $pduCount PDU" + if (pendingAttachments.isNotEmpty()) " (${pendingAttachments.size} media)" else "",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = if (byteCount <= 140) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f) else SignalAmber
+                    )
+                }
             }
         }
     }

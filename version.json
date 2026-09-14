@@ -1,6 +1,6 @@
 {
-  "versionCode": 30,
-  "versionName": "5.2",
-  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v30.apk",
-  "releaseNotes": "Release v30 - Version 5.2: Rollup release for Sprint 3. Finalizes Epic 13.5 and earlier stability patches. Prepares environment for the next roadmap sprint."
+  "versionCode": 31,
+  "versionName": "5.3",
+  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v31.apk",
+  "releaseNotes": "Release v31 - Version 5.3: Includes FEAT-06 Inline Card Iteration & Feed-Tail Re-anchoring, INC-05 Inbound Voice Note MMS Extraction with AMR-NB/WB waveform synthesis, INC-07 Direct Background MMS PDU Egress (eliminating Android App Chooser), and Epic 14 SDUI Primitive Expansion (native Sparkline & Mini-Bar Canvas charts)."
 }

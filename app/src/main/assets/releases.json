@@ -1,9 +1,30 @@
 [
   {
+    "versionCode": 31,
+    "versionName": "5.3",
+    "fileName": "pallyai-v31.apk",
+    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v31.apk",
+    "releaseNotes": "Release v31 - Version 5.3: Includes FEAT-06 Inline Card Iteration & Feed-Tail Re-anchoring, INC-05 Inbound Voice Note MMS Extraction with AMR-NB/WB waveform synthesis, INC-07 Direct Background MMS PDU Egress (eliminating Android App Chooser), and Epic 14 SDUI Primitive Expansion (native Sparkline & Mini-Bar Canvas charts)."
+  },
+  {
+    "versionCode": 30,
+    "versionName": "5.2",
+    "fileName": "pallyai-v30.apk",
+    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v30.apk",
+    "releaseNotes": "Release v30 - Version 5.2: Rollup release for Sprint 3 (Carrier Ingress, Sender Validation, Debounce & 2-Tab Navigation Architecture)."
+  },
+  {
+    "versionCode": 29,
+    "versionName": "5.1",
+    "fileName": "pallyai-v29.apk",
+    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v29.apk",
+    "releaseNotes": "Release v29 - Version 5.1: Implementation of Epic 13.4 and Epic 13.5. Features Market Ticker Interactive Input & In-Place Reconciliation (keyed in-place mutation, loading shimmer) and Genesis Protocol System Prompt & AI Runtime Contract (preamble injection and compact diagnostic payloads on fresh sessions)."
+  },
+  {
     "versionCode": 28,
     "versionName": "5.0",
     "fileName": "pallyai-v28.apk",
     "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v28.apk",
-    "releaseNotes": "Release v28 - Version 5.0: Carrier Telephony Ingestion & Fault-Tolerant Transport Architecture. Features TelephonyObserverCursor hardening with persistent monotonic row ID checkpoints and dynamic delta windowing, Inbound Transport Failover Protocol enforcing strict 256B SMS ceiling and automatic SMIL MMS promotion with 32x32 carrier-compliant visual anchors, 4-stage adaptive MMS part table latency retry (0ms, 1200ms, 2500ms, 4500ms) with multi-tag SMIL text accumulation and recursive XML entity unescaping, and 15-Minute Carrier Cooldown Circuit Breaker with 3-state FSM (CLOSED, OPEN, HALF_OPEN) preventing SIM spam lockouts with line-clearance canary probing."
+    "releaseNotes": "Release v28 - Version 5.0: Carrier Telephony Ingestion & Fault-Tolerant Transport Architecture."
   }
 ]

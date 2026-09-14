@@ -14,10 +14,12 @@ object BlueprintLinter {
 
     private val VALID_NODE_TYPES = setOf(
         "column", "row", "box", "card", "text", "button", "input", "textfield",
-        "checkbox", "switch", "badge", "progress", "slider", "select", "segmented",
-        "radio", "tabs", "chips", "canvas", "canvas_view", "draw_canvas", "chart",
-        "linechart", "barchart", "piechart", "list", "lazycolumn", "spacer", "divider",
-        "icon", "image", "document_list"
+        "checkbox", "switch", "toggle", "badge", "progress", "progress_bar", "slider", "stepper",
+        "select", "segmented", "radio", "tabs", "chips", "canvas", "canvas_view", "draw_canvas",
+        "chart", "linechart", "barchart", "piechart", "sparkline", "chart_sparkline", "sparkline_chart",
+        "bar_mini", "mini_bar", "barchart_mini", "list", "lazycolumn", "spacer", "divider",
+        "icon", "iconbutton", "image", "document_list", "accordion", "metric_stat", "metric", "stat",
+        "key_value_list", "kvlist", "markdown", "reader", "installfooter"
     )
 
     fun lint(blueprint: MiniAppBlueprint): LintResult {

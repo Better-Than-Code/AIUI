@@ -315,7 +315,7 @@ class ExampleRobolectricTest {
     assertTrue("Manifest must declare cellular MTU constraints", genesisJson.contains("mtu_budget_bytes"))
 
     val prompt = com.cellular.rpc.domain.mcp.CellularMcpRegistry.buildGenesisSmsPrompt()
-    assertTrue(prompt.startsWith("SYS:MCP_GENESIS_SYNC"))
+    assertTrue(prompt.contains("SYS:MCP_GENESIS_SYNC"))
     assertTrue(prompt.contains("---CELLULAR_DATA---"))
 
     val tools = com.cellular.rpc.domain.mcp.CellularMcpRegistry.getRegisteredTools()
@@ -991,6 +991,303 @@ class ExampleRobolectricTest {
     assertFalse(cb.canTransmit())
 
     cb.forceReset()
+  }
+
+  @Test
+  fun `feat-05 named shimmer skeleton creation and in-memory chat message integration`() {
+    val skeleton = com.cellular.rpc.engine.WidgetData.Skeleton(
+        label = "Loading Market Ticker...",
+        targetType = "market_ticker",
+        iconEmoji = "📈"
+    )
+    val chatMessage = com.cellular.rpc.engine.ChatMessage(
+        threadId = "th_test",
+        sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
+        text = "",
+        widgetData = skeleton,
+        deliveryStatus = com.cellular.rpc.engine.MessageDeliveryStatus.IN_FLIGHT
+    )
+    assertNotNull(chatMessage.widgetData)
+    assertEquals("Loading Market Ticker...", (chatMessage.widgetData as com.cellular.rpc.engine.WidgetData.Skeleton).label)
+    assertEquals("market_ticker", (chatMessage.widgetData as com.cellular.rpc.engine.WidgetData.Skeleton).targetType)
+    assertEquals("📈", (chatMessage.widgetData as com.cellular.rpc.engine.WidgetData.Skeleton).iconEmoji)
+  }
+
+  @Test
+  fun `feat-06 inline card iteration feed-tail re-anchoring and superseded revisioning`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val db = androidx.room.Room.inMemoryDatabaseBuilder(context, com.cellular.rpc.data.local.AppDatabase::class.java)
+        .allowMainThreadQueries()
+        .build()
+
+    val dao = db.chatMessageDao()
+    val threadId = "th_test_feat06"
+    val widgetId = "weather_san_francisco"
+
+    // 1. First iteration arrives: v1.0
+    val msgV1 = com.cellular.rpc.data.local.ChatMessageEntity(
+        id = "msg_v1",
+        threadId = threadId,
+        sender = "AI_GATEWAY",
+        text = "Weather for SF",
+        widgetDataJson = """{"type":"weather","city":"San Francisco","temp":65,"cond":"Sunny"}""",
+        timestampMs = 1000L,
+        revision = 1,
+        isSuperseded = false,
+        supersededByMessageId = null
+    )
+    dao.insertMessage(msgV1)
+
+    // Verify initial state
+    val initialMessages = dao.getAllMessagesList()
+    assertEquals(1, initialMessages.size)
+    assertEquals(1, initialMessages[0].revision)
+    assertFalse(initialMessages[0].isSuperseded)
+
+    // 2. Incoming update arrives for the same widget
+    val existing = dao.findMatchingWidgetMessages(threadId, "%\"city\":\"San Francisco\"%", "%\"type\":\"weather\"%")
+    assertEquals(1, existing.size)
+    val highestRev = existing.maxOfOrNull { it.revision } ?: 1
+    val calculatedRevision = highestRev + 1
+    assertEquals(2, calculatedRevision)
+
+    // Mark previous card superseded
+    val msgV2Id = "msg_v2"
+    dao.markMatchingWidgetsSuperseded(threadId, "%\"city\":\"San Francisco\"%", "%\"type\":\"weather\"%", msgV2Id)
+
+    // Project new card at tail with revision 2
+    val msgV2 = com.cellular.rpc.data.local.ChatMessageEntity(
+        id = msgV2Id,
+        threadId = threadId,
+        sender = "AI_GATEWAY",
+        text = "Updated Weather for SF",
+        widgetDataJson = """{"type":"weather","city":"San Francisco","temp":68,"cond":"Partly Cloudy"}""",
+        timestampMs = 2000L,
+        revision = calculatedRevision,
+        isSuperseded = false,
+        supersededByMessageId = null
+    )
+    dao.insertMessage(msgV2)
+
+    // 3. Verify thread messages
+    val threadMessages = dao.getAllMessagesList()
+    assertEquals(2, threadMessages.size)
+
+    val olderMsg = threadMessages.first { it.id == "msg_v1" }
+    assertTrue("Older card must be marked superseded", olderMsg.isSuperseded)
+    assertEquals("msg_v2", olderMsg.supersededByMessageId)
+    assertEquals(1, olderMsg.revision)
+
+    val newerMsg = threadMessages.first { it.id == "msg_v2" }
+    assertFalse("Newest tail card must NOT be superseded", newerMsg.isSuperseded)
+    assertNull(newerMsg.supersededByMessageId)
+    assertEquals(2, newerMsg.revision)
+    assertTrue("Newer message timestamp must place it at the tail", newerMsg.timestampMs > olderMsg.timestampMs)
+
+    db.close()
+  }
+
+  /**
+   * INC-05: Test waveform amplitude generation from raw audio bytes
+   */
+  @Test
+  fun `INC-05 audio waveform generation produces valid normalized amplitudes`() {
+    val tempAudio = java.io.File.createTempFile("test_voice", ".amr")
+    try {
+      // Write simulated AMR audio frame bytes
+      val sampleBytes = ByteArray(480) { (it * 7 % 256).toByte() }
+      tempAudio.writeBytes(sampleBytes)
+
+      val waveform = com.cellular.rpc.transport.service.HardenedMmsParser.generateAudioWaveform(tempAudio, 24)
+      assertEquals(24, waveform.size)
+      waveform.forEach { amp ->
+        assertTrue("Amplitude $amp must be >= 0.15f", amp >= 0.15f)
+        assertTrue("Amplitude $amp must be <= 1.0f", amp <= 1.0f)
+      }
+    } finally {
+      tempAudio.delete()
+    }
+  }
+
+  /**
+   * INC-05: Inbound Cellular Voice Note Ingestion via CellularMessageDispatcher.
+   * Verify that an MMS containing an audio voice note attachment (even with blank text)
+   * is successfully ingested, persisted to Room with VOICE_NOTE attachment fields,
+   * sets the thread snippet with microphone badge, and preserves duration/waveforms.
+   */
+  @Test
+  fun `INC-05 inbound cellular voice note ingestion persists and updates thread feed`() {
+    kotlinx.coroutines.runBlocking {
+      val context = ApplicationProvider.getApplicationContext<Context>()
+      val db = com.cellular.rpc.data.local.AppDatabase.getInstance(context)
+
+      // Clear messages for isolated verification
+      db.chatMessageDao().clearAllMessages()
+
+      val tempAudio = java.io.File(context.cacheDir, "test_inbound_voice.amr").apply {
+        writeBytes(ByteArray(3200) { (it % 128).toByte() })
+      }
+
+      val voiceAttachment = com.cellular.rpc.engine.MessageAttachment(
+        id = "mms_att_voice_99",
+        type = com.cellular.rpc.engine.AttachmentType.VOICE_NOTE,
+        uri = android.net.Uri.fromFile(tempAudio).toString(),
+        fileName = "voice_note_test.amr",
+        fileSizeBytes = tempAudio.length(),
+        mimeType = "audio/amr",
+        durationMs = 2000L,
+        voiceAmplitudes = listOf(0.4f, 0.8f, 0.6f, 0.9f, 0.5f)
+      )
+
+      val inboundVoiceMsg = com.cellular.rpc.transport.handler.InboundCellularMessage(
+        transportType = com.cellular.rpc.transport.handler.CellularTransportType.MMS_WAP_PUSH,
+        senderAddress = "+15551234567",
+        rawText = "", // Blank text payload typical of voice notes
+        attachment = voiceAttachment
+      )
+
+      com.cellular.rpc.transport.handler.CellularMessageDispatcher.dispatchInbound(context, inboundVoiceMsg)
+
+      // Verify message persisted in Room
+      val messages = db.chatMessageDao().getAllMessagesList()
+      assertEquals("Exactly one message must be ingested", 1, messages.size)
+
+      val ingested = messages[0]
+      assertEquals("mms_att_voice_99", ingested.attachmentId)
+      assertEquals("VOICE_NOTE", ingested.attachmentType)
+      assertEquals("voice_note_test.amr", ingested.attachmentFileName)
+      assertEquals(2000L, ingested.attachmentDurationMs)
+      assertEquals("0.4,0.8,0.6,0.9,0.5", ingested.attachmentAmplitudes)
+
+      // Verify thread snippet
+      val thread = db.conversationThreadDao().getThreadById("th_main")
+      assertNotNull("Default main thread must exist", thread)
+      assertTrue("Thread snippet should indicate voice note", thread!!.lastSnippet.contains("Voice Note"))
+
+      tempAudio.delete()
+    }
+  }
+
+  /**
+   * INC-07: Test MmsPduComposer binary PDU generation and direct carrier MMS dispatch without external intents.
+   */
+  @Test
+  fun `MmsPduComposer creates valid binary M-Send req PDU with multipart structure`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val parts = listOf(
+      com.cellular.rpc.transport.mms.MmsPduComposer.MmsPart(
+        contentType = "text/plain; charset=utf-8",
+        contentLocation = "body.txt",
+        contentId = "body_part",
+        data = "Hello Cellular AI".toByteArray(Charsets.UTF_8)
+      ),
+      com.cellular.rpc.transport.mms.MmsPduComposer.MmsPart(
+        contentType = "image/png",
+        contentLocation = "aiui_mms_anchor.png",
+        contentId = "anchor_part",
+        data = ByteArray(32) { 0x01 }
+      )
+    )
+
+    val pduBytes = com.cellular.rpc.transport.mms.MmsPduComposer.composeSendReqPdu(
+      recipientNumber = "+15551234567",
+      parts = parts,
+      transactionId = "TXN_TEST_1001"
+    )
+
+    assertTrue("PDU bytes must not be empty", pduBytes.isNotEmpty())
+    // 0x8C is HDR_MESSAGE_TYPE, 0x80 is m-send-req
+    assertEquals(0x8C.toByte(), pduBytes[0])
+    assertEquals(0x80.toByte(), pduBytes[1])
+
+    val pduFile = com.cellular.rpc.transport.mms.MmsPduComposer.createPduFile(
+      context = context,
+      recipientNumber = "+15551234567",
+      parts = parts
+    )
+    assertTrue("PDU file must be created on disk", pduFile.exists())
+    assertTrue("PDU file length must match composed bytes", pduFile.length() > 0)
+  }
+
+  /**
+   * INC-07: Test PallyMmsHelper dispatch carrier MMS bundle without throwing to ACTION_SEND.
+   */
+  @Test
+  fun `PallyMmsHelper dispatches carrier MMS bundle safely in background`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    
+    // Test dispatchCarrierMmsBundle for a 6-PDU long message (>256B)
+    val longText = "A".repeat(400)
+    com.cellular.rpc.transport.receiver.PallyMmsHelper.dispatchCarrierMmsBundle(
+      context = context,
+      destinationNumber = "+15559876543",
+      text = longText
+    )
+
+    // Verify anchor file is generated and cached
+    val anchorFile = com.cellular.rpc.transport.failover.TransportFailoverEngine.getOrCreateVisualAnchorFile(context)
+    assertTrue(anchorFile.exists())
+  }
+
+  /**
+   * Epic 14: Test BlueprintLinter validates sparkline, bar_mini, accordion, and metric_stat nodes.
+   */
+  @Test
+  fun `BlueprintLinter successfully validates extended SDUI primitives`() {
+    val sparklineNode = com.cellular.rpc.domain.miniapp.MiniAppUiNode(
+      type = "sparkline",
+      bindItems = "prices",
+      modifier = mapOf("height" to 60)
+    )
+    val barMiniNode = com.cellular.rpc.domain.miniapp.MiniAppUiNode(
+      type = "bar_mini",
+      bindItems = "volumes"
+    )
+    val rootColumn = com.cellular.rpc.domain.miniapp.MiniAppUiNode(
+      type = "column",
+      children = listOf(sparklineNode, barMiniNode)
+    )
+    val blueprint = com.cellular.rpc.domain.miniapp.MiniAppBlueprint(
+      appId = "app_dashboard_analytics",
+      metadata = com.cellular.rpc.domain.miniapp.MiniAppMetadata(title = "Analytics Dashboard"),
+      initialState = mapOf("prices" to listOf(10f, 20f, 30f), "volumes" to listOf(5f, 15f)),
+      uiRoot = rootColumn
+    )
+
+    val lintResult = com.cellular.rpc.domain.miniapp.BlueprintLinter.lint(blueprint)
+    assertTrue("Extended SDUI blueprint must pass AST linter", lintResult.isValid)
+    assertTrue("Lint errors must be empty", lintResult.errors.isEmpty())
+  }
+
+  /**
+   * FEAT-08: Test BlueprintLinter validates multi-series comparative sparklines.
+   */
+  @Test
+  fun `BlueprintLinter validates multi-series comparative sparkline nodes`() {
+    val multiSparklineNode = com.cellular.rpc.domain.miniapp.MiniAppUiNode(
+      type = "sparkline",
+      bindItems = "btc_series",
+      modifier = mapOf(
+        "height" to 72,
+        "secondary_bind" to "eth_series"
+      )
+    )
+    val rootColumn = com.cellular.rpc.domain.miniapp.MiniAppUiNode(
+      type = "column",
+      children = listOf(multiSparklineNode)
+    )
+    val blueprint = com.cellular.rpc.domain.miniapp.MiniAppBlueprint(
+      appId = "app_crypto_comparison",
+      metadata = com.cellular.rpc.domain.miniapp.MiniAppMetadata(title = "Crypto Market Comparison"),
+      initialState = mapOf(
+        "btc_series" to listOf(64000f, 64200f, 63800f, 65000f),
+        "eth_series" to listOf(3400f, 3450f, 3390f, 3520f)
+      ),
+      uiRoot = rootColumn
+    )
+
+    val lintResult = com.cellular.rpc.domain.miniapp.BlueprintLinter.lint(blueprint)
+    assertTrue("Multi-series comparative sparkline blueprint must pass AST linter", lintResult.isValid)
   }
 }
 

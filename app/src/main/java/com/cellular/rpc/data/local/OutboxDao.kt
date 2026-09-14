@@ -33,6 +33,9 @@ interface OutboxDao {
     @Query("SELECT COUNT(*) FROM outbox WHERE sessionId = :sessionId AND pktType = :pktType AND payloadBase85 = :payloadBase85 AND (status = 'PENDING' OR status = 'IN_FLIGHT')")
     suspend fun countDuplicatePending(sessionId: Int, pktType: Byte, payloadBase85: String): Int
 
+    @Query("SELECT COUNT(*) FROM outbox WHERE payloadBase85 = :payloadBase85 AND (status = 'PENDING' OR status = 'IN_FLIGHT')")
+    suspend fun countDuplicatePayloadPending(payloadBase85: String): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(frame: OutboxEntity): Long
 
@@ -45,8 +48,20 @@ interface OutboxDao {
     @Query("UPDATE outbox SET status = :newStatus, lastAttemptMs = :timestamp, retries = retries + 1 WHERE id = :id")
     suspend fun markAttempted(id: Long, newStatus: String, timestamp: Long)
 
+    @Query("UPDATE outbox SET status = :newStatus, seqNo = :seqNo, lastAttemptMs = :timestamp, retries = retries + 1 WHERE id = :id")
+    suspend fun markAttemptedWithSeq(id: Long, newStatus: String, seqNo: Int, timestamp: Long)
+
     @Query("UPDATE outbox SET status = 'ACKNOWLEDGED' WHERE sessionId = :sessionId AND seqNo = :seqNo")
     suspend fun markAcknowledged(sessionId: Int, seqNo: Int)
+
+    @Query("UPDATE outbox SET status = 'ACKNOWLEDGED' WHERE (sessionId = :sessionId OR :sessionId = 0) AND (seqNo = :seqNo OR seqNo = :seqNo - 1)")
+    suspend fun markAcknowledgedFlexible(sessionId: Int, seqNo: Int): Int
+
+    @Query("UPDATE outbox SET status = 'ACKNOWLEDGED' WHERE sessionId = :sessionId")
+    suspend fun markSessionAcknowledged(sessionId: Int): Int
+
+    @Query("UPDATE outbox SET status = 'ACKNOWLEDGED' WHERE status = 'IN_FLIGHT'")
+    suspend fun markAllInFlightAcknowledged(): Int
 
     @Query("UPDATE outbox SET status = 'ACKNOWLEDGED' WHERE id = :id")
     suspend fun markAcknowledgedById(id: Long)

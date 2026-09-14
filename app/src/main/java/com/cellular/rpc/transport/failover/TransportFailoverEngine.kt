@@ -191,6 +191,22 @@ object TransportFailoverEngine {
     }
 
     /**
+     * Checks if a local media file matches the 32x32 visual carrier anchor.
+     */
+    fun isVisualAnchor(file: java.io.File?): Boolean {
+        if (file == null || !file.exists()) return false
+        if (isVisualAnchor(file.name, file.length())) return true
+        if (file.length() in 50..8192) {
+            try {
+                val opts = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeFile(file.absolutePath, opts)
+                if (opts.outWidth == 32 && opts.outHeight == 32) return true
+            } catch (ignored: Exception) {}
+        }
+        return false
+    }
+
+    /**
      * Creates an InboundCellularMessage promoted to MMS_WAP_PUSH container with the 32x32 anchor.
      */
     fun createPromotedMmsMessage(

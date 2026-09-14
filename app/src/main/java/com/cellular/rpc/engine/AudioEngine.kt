@@ -164,6 +164,9 @@ class AudioPlayerManager(private val context: Context) {
     private val _currentPositionMs = MutableStateFlow(0L)
     val currentPositionMs: StateFlow<Long> = _currentPositionMs.asStateFlow()
 
+    private val _playbackSpeed = MutableStateFlow(1.0f)
+    val playbackSpeed: StateFlow<Float> = _playbackSpeed.asStateFlow()
+
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
 
@@ -215,6 +218,7 @@ class AudioPlayerManager(private val context: Context) {
             val mediaItem = MediaItem.fromUri(uri)
             player.setMediaItem(mediaItem)
             player.prepare()
+            player.setPlaybackSpeed(_playbackSpeed.value)
             player.play()
             _playingAttachmentId.value = attachment.id
 
@@ -222,6 +226,15 @@ class AudioPlayerManager(private val context: Context) {
         } catch (e: Exception) {
             Log.e("AudioPlayerManager", "ExoPlayer playback failed: ${e.message}", e)
             stop()
+        }
+    }
+
+    fun setPlaybackSpeed(speed: Float) {
+        _playbackSpeed.value = speed
+        try {
+            exoPlayer?.setPlaybackSpeed(speed)
+        } catch (e: Exception) {
+            Log.e("AudioPlayerManager", "Set playback speed failed: ${e.message}")
         }
     }
 

@@ -20,6 +20,9 @@ data class ChatMessageEntity(
     val pduCount: Int = 1,
     val deliveryStatus: String = "DELIVERED", // "QUEUED", "IN_FLIGHT", "DELIVERED"
     val timestampMs: Long = System.currentTimeMillis(),
+    val revision: Int = 1,
+    val isSuperseded: Boolean = false,
+    val supersededByMessageId: String? = null,
     // Embedded Attachment fields
     val attachmentId: String? = null,
     val attachmentType: String? = null, // "IMAGE", "FILE", "VOICE_NOTE"
@@ -62,6 +65,15 @@ interface ChatMessageDao {
 
     @Query("UPDATE chat_messages SET widgetDataJson = :newJson, timestampMs = :now, deliveryStatus = \"DELIVERED\" WHERE threadId = :threadId AND widgetDataJson LIKE :idPattern")
     suspend fun updateWidgetDataById(threadId: String, idPattern: String, newJson: String, now: Long): Int
+
+    @Query("SELECT * FROM chat_messages WHERE threadId = :threadId AND (widgetDataJson LIKE :idPattern OR widgetDataJson LIKE :typePattern) ORDER BY timestampMs ASC")
+    suspend fun findMatchingWidgetMessages(threadId: String, idPattern: String, typePattern: String): List<ChatMessageEntity>
+
+    @Query("UPDATE chat_messages SET isSuperseded = 1, supersededByMessageId = :supersededByMessageId WHERE threadId = :threadId AND (widgetDataJson LIKE :idPattern OR widgetDataJson LIKE :typePattern)")
+    suspend fun markMatchingWidgetsSuperseded(threadId: String, idPattern: String, typePattern: String, supersededByMessageId: String): Int
+
+    @Query("DELETE FROM chat_messages WHERE threadId = :threadId AND widgetDataJson LIKE '%\"type\":\"skeleton\"%'")
+    suspend fun deleteSkeletonMessages(threadId: String)
 
 
     @Query("DELETE FROM chat_messages")

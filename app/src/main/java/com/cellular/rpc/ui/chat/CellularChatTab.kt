@@ -102,8 +102,8 @@ fun CellularChatTab(
     val listState = chatListState
     val coroutineScope = rememberCoroutineScope()
 
-    // Auto-scroll to latest message on receive
-    LaunchedEffect(messages.size) {
+    // Auto-scroll to latest message on receive or feed-tail update
+    LaunchedEffect(messages.size, messages.lastOrNull()?.id, messages.lastOrNull()?.timestampMs) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
         }
@@ -211,6 +211,13 @@ fun CellularChatTab(
                     },
                     onDelete = {
                         onDeleteMessage(it.id)
+                    },
+                    onJumpToTail = {
+                        coroutineScope.launch {
+                            if (messages.isNotEmpty()) {
+                                listState.animateScrollToItem(messages.size - 1)
+                            }
+                        }
                     }
                 )
             }
@@ -761,34 +768,14 @@ fun MarketChatCard(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Custom Native Canvas Sparkline
-            Canvas(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(38.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(6.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-            ) {
-                val points = ticker.sparkline
-                if (points.size >= 2) {
-                    val min = points.minOrNull() ?: 0f
-                    val max = points.maxOrNull() ?: 1f
-                    val range = if (max - min == 0f) 1f else max - min
-
-                    val path = Path()
-                    points.forEachIndexed { index, value ->
-                        val x = (index.toFloat() / (points.size - 1)) * size.width
-                        val y = size.height - ((value - min) / range) * size.height
-                        if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                    }
-
-                    drawPath(
-                        path = path,
-                        color = trendColor,
-                        style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
-                    )
-                }
-            }
+            // Custom Native Vector Sparkline with interactive touch scrubber
+            com.cellular.rpc.ui.components.SparklineCanvas(
+                dataPoints = ticker.sparkline,
+                lineColor = trendColor,
+                fillGradient = true,
+                heightDp = 44.dp,
+                enableScrubber = true
+            )
         }
     }
 }

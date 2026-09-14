@@ -39,7 +39,7 @@ data class MiniAppBlueprint(
                 val stateObj = obj.optJSONObject("initialState") ?: JSONObject()
                 val initialState = jsonObjectToMap(stateObj)
 
-                val uiObj = obj.optJSONObject("ui") ?: obj.optJSONObject("layout") ?: obj.optJSONObject("root") ?: run {
+                val uiObj = obj.optJSONObject("uiRoot") ?: obj.optJSONObject("ui") ?: obj.optJSONObject("layout") ?: obj.optJSONObject("root") ?: run {
                     if (isDrawingApp) {
                         JSONObject().apply {
                             put("type", "canvas_view")

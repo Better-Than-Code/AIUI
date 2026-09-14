@@ -84,66 +84,309 @@ object PallyMmsHelper {
     /**
      * Dispatches a carrier MMS failover bundle promoting large payloads (>256B)
      * with the carrier-compliant 32x32 visual anchor and strictly encapsulated payload body.
-     * Companion SMS preamble is prohibited.
+     * Direct background transmission via SmsManager.sendMultimediaMessage with chunked SMS fallback.
+     * Under zero circumstances is Intent.ACTION_SEND or external app chooser triggered.
      */
     fun dispatchCarrierMmsBundle(
         context: Context,
         destinationNumber: String,
         text: String,
-        anchorUri: Uri? = null
+        anchorUri: Uri? = null,
+        sessionId: Long = System.currentTimeMillis(),
+        seqNo: Int = 0,
+        outboxId: Long = 0L
     ) {
-        val resolvedAnchorUri = anchorUri ?: com.cellular.rpc.transport.failover.TransportFailoverEngine.getVisualAnchorUri(context)
-        dispatchCarrierMms(
+        val anchorFile = com.cellular.rpc.transport.failover.TransportFailoverEngine.getOrCreateVisualAnchorFile(context)
+        val anchorBytes = if (anchorFile.exists()) anchorFile.readBytes() else ByteArray(0)
+
+        val parts = mutableListOf<com.cellular.rpc.transport.mms.MmsPduComposer.MmsPart>()
+        if (text.isNotBlank()) {
+            parts.add(
+                com.cellular.rpc.transport.mms.MmsPduComposer.MmsPart(
+                    contentType = "text/plain; charset=utf-8",
+                    contentLocation = "body.txt",
+                    contentId = "body_text",
+                    data = text.toByteArray(Charsets.UTF_8)
+                )
+            )
+        }
+        if (anchorBytes.isNotEmpty()) {
+            parts.add(
+                com.cellular.rpc.transport.mms.MmsPduComposer.MmsPart(
+                    contentType = "image/png",
+                    contentLocation = com.cellular.rpc.transport.failover.TransportFailoverEngine.VISUAL_ANCHOR_NAME,
+                    contentId = "visual_anchor",
+                    data = anchorBytes
+                )
+            )
+        }
+
+        dispatchCarrierMmsDirect(
             context = context,
             destinationNumber = destinationNumber,
             text = text,
-            attachmentUri = resolvedAnchorUri,
-            mimeType = "image/png"
+            parts = parts,
+            sessionId = sessionId,
+            seqNo = seqNo,
+            outboxId = outboxId
         )
     }
 
     /**
-     * Dispatches an outbound MMS with attachment using the system telephony provider / carrier SMS-MMS handler.
-     * Ensures file:// URIs are converted to shareable content:// URIs via FileProvider.
+     * Dispatches an outbound MMS with attachment using direct background SmsManager transmission.
+     * If direct MMS is unconfigured or unavailable, silently falls back to carrier-safe chunked SMS.
+     * Eliminates external ACTION_SEND intents and system app choosers.
      */
     fun dispatchCarrierMms(
         context: Context,
         destinationNumber: String,
         text: String,
         attachmentUri: Uri?,
-        mimeType: String? = "image/*"
+        mimeType: String? = "image/*",
+        sessionId: Long = System.currentTimeMillis(),
+        seqNo: Int = 0,
+        outboxId: Long = 0L
     ) {
-        try {
-            val cleanNumber = destinationNumber.replace(Regex("[^0-9+]"), "")
-            
-            val shareableUri = if (attachmentUri != null && (attachmentUri.scheme == "file" || attachmentUri.scheme == null)) {
-                val filePath = attachmentUri.path ?: ""
-                val file = File(filePath)
-                if (file.exists()) {
-                    FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-                } else {
-                    attachmentUri
+        val parts = mutableListOf<com.cellular.rpc.transport.mms.MmsPduComposer.MmsPart>()
+
+        if (text.isNotBlank()) {
+            parts.add(
+                com.cellular.rpc.transport.mms.MmsPduComposer.MmsPart(
+                    contentType = "text/plain; charset=utf-8",
+                    contentLocation = "body.txt",
+                    contentId = "body_text",
+                    data = text.toByteArray(Charsets.UTF_8)
+                )
+            )
+        }
+
+        if (attachmentUri != null) {
+            try {
+                val attachmentBytes: ByteArray? = when {
+                    attachmentUri.scheme == "file" || attachmentUri.scheme == null -> {
+                        val file = File(attachmentUri.path ?: "")
+                        if (file.exists()) file.readBytes() else null
+                    }
+                    else -> {
+                        context.contentResolver.openInputStream(attachmentUri)?.use { it.readBytes() }
+                    }
                 }
-            } else {
-                attachmentUri
+
+                if (attachmentBytes != null && attachmentBytes.isNotEmpty()) {
+                    val resolvedMime = mimeType ?: "application/octet-stream"
+                    val filename = attachmentUri.lastPathSegment ?: "attachment.dat"
+                    parts.add(
+                        com.cellular.rpc.transport.mms.MmsPduComposer.MmsPart(
+                            contentType = resolvedMime,
+                            contentLocation = filename,
+                            contentId = "attachment_part",
+                            data = attachmentBytes
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed reading attachment URI $attachmentUri: ${e.message}")
+            }
+        }
+
+        dispatchCarrierMmsDirect(
+            context = context,
+            destinationNumber = destinationNumber,
+            text = text,
+            parts = parts,
+            sessionId = sessionId,
+            seqNo = seqNo,
+            outboxId = outboxId
+        )
+    }
+
+    /**
+     * Executes direct background MMS dispatch via SmsManager.sendMultimediaMessage()
+     * with automatic carrier-safe chunked SMS fallback.
+     */
+    private fun dispatchCarrierMmsDirect(
+        context: Context,
+        destinationNumber: String,
+        text: String,
+        parts: List<com.cellular.rpc.transport.mms.MmsPduComposer.MmsPart>,
+        sessionId: Long = System.currentTimeMillis(),
+        seqNo: Int = 0,
+        outboxId: Long = 0L
+    ) {
+        val cleanNumber = destinationNumber.replace(Regex("[^0-9+]"), "")
+        if (cleanNumber.isBlank()) {
+            Log.e(TAG, "Cannot dispatch carrier MMS: blank destination number.")
+            return
+        }
+
+        try {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
+                Log.e(TAG, "Cannot dispatch carrier MMS: SEND_SMS permission is not granted.")
+                return
             }
 
-            val intent = Intent(Intent.ACTION_SEND).apply {
-                type = mimeType ?: "*/*"
-                putExtra("address", cleanNumber)
-                putExtra(Intent.EXTRA_PHONE_NUMBER, cleanNumber)
-                putExtra("sms_body", text)
-                putExtra(Intent.EXTRA_TEXT, text)
-                if (shareableUri != null) {
-                    putExtra(Intent.EXTRA_STREAM, shareableUri)
+            val pduFile = com.cellular.rpc.transport.mms.MmsPduComposer.createPduFile(
+                context = context,
+                recipientNumber = cleanNumber,
+                parts = parts,
+                sessionId = sessionId
+            )
+
+            val pduUri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                pduFile
+            )
+
+            val carrierProfile = com.cellular.rpc.transport.apn.CarrierApnResolver.resolveProfile(context)
+            Log.i(TAG, "Carrier profile for direct MMS: ${carrierProfile.carrierName} (${carrierProfile.simOperator}), MMSC: ${carrierProfile.activeMmscUrl}, subId: ${carrierProfile.subId}")
+
+            val smsManager: android.telephony.SmsManager = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                if (carrierProfile.subId >= 0) {
+                    context.getSystemService(android.telephony.SmsManager::class.java)?.createForSubscriptionId(carrierProfile.subId)
+                        ?: context.getSystemService(android.telephony.SmsManager::class.java)
+                        ?: @Suppress("DEPRECATION") android.telephony.SmsManager.getSmsManagerForSubscriptionId(carrierProfile.subId)
+                } else {
+                    context.getSystemService(android.telephony.SmsManager::class.java) ?: @Suppress("DEPRECATION") android.telephony.SmsManager.getDefault()
                 }
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            } else {
+                if (carrierProfile.subId >= 0) {
+                    @Suppress("DEPRECATION") android.telephony.SmsManager.getSmsManagerForSubscriptionId(carrierProfile.subId)
+                } else {
+                    @Suppress("DEPRECATION") android.telephony.SmsManager.getDefault()
+                }
             }
-            context.startActivity(intent)
-            Log.i(TAG, "Dispatched carrier MMS intent for $cleanNumber with shareableUri $shareableUri (MIME: $mimeType)")
+
+            val flags = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            } else {
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT
+            }
+
+            val sentIntent = Intent(DeliveryBroadcastReceiver.MMS_SENT_ACTION).apply {
+                putExtra("msg_id", "mms_${sessionId}_${seqNo}")
+                putExtra("session_id", sessionId)
+                putExtra("seq_no", seqNo)
+                putExtra("outbox_id", outboxId)
+                setPackage(context.packageName)
+            }
+            val sentPI = android.app.PendingIntent.getBroadcast(
+                context,
+                (sessionId * 41 + seqNo).toInt(),
+                sentIntent,
+                flags
+            )
+
+            context.grantUriPermission("com.android.mms.service", pduUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            context.grantUriPermission("com.android.phone", pduUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+
+            Log.i(TAG, "Transmitting direct carrier MMS to $cleanNumber via SmsManager (PDU: ${pduFile.length()} bytes, URI: $pduUri, MMSC: ${carrierProfile.activeMmscUrl})")
+            smsManager.sendMultimediaMessage(context, pduUri, carrierProfile.activeMmscUrl, null, sentPI)
+            Log.i(TAG, "Direct background MMS dispatched successfully without launching external app chooser.")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to launch carrier MMS intent: ${e.message}", e)
+            Log.w(TAG, "Direct SmsManager.sendMultimediaMessage failed (${e.message}). Triggering Option B Carrier-Safe Chunked SMS Fallback.")
+            fallbackChunkedSms(
+                context = context,
+                destinationNumber = cleanNumber,
+                text = text,
+                sessionId = sessionId,
+                seqNo = seqNo,
+                outboxId = outboxId
+            )
+        }
+    }
+
+    /**
+     * Option B: Carrier-Safe Chunked Multi-Part SMS Fallback.
+     * Splits long message bodies (>250B) into safe multi-part SMS or sequenced segments
+     * with inter-PDU pacing delay, transmitting silently in background.
+     */
+    private fun fallbackChunkedSms(
+        context: Context,
+        destinationNumber: String,
+        text: String,
+        sessionId: Long = 0L,
+        seqNo: Int = 0,
+        outboxId: Long = 0L
+    ) {
+        val cleanNumber = destinationNumber.replace(Regex("[^0-9+]"), "")
+        if (cleanNumber.isBlank() || text.isBlank()) {
+            Log.w(TAG, "Fallback chunked SMS aborted: cleanNumber or text is blank.")
+            return
+        }
+
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
+            Log.e(TAG, "Cannot dispatch fallback chunked SMS: SEND_SMS permission is not granted.")
+            return
+        }
+
+        try {
+            val carrierProfile = com.cellular.rpc.transport.apn.CarrierApnResolver.resolveProfile(context)
+            val smsManager: android.telephony.SmsManager = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                if (carrierProfile.subId >= 0) {
+                    context.getSystemService(android.telephony.SmsManager::class.java)?.createForSubscriptionId(carrierProfile.subId)
+                        ?: context.getSystemService(android.telephony.SmsManager::class.java)
+                        ?: @Suppress("DEPRECATION") android.telephony.SmsManager.getSmsManagerForSubscriptionId(carrierProfile.subId)
+                } else {
+                    context.getSystemService(android.telephony.SmsManager::class.java) ?: @Suppress("DEPRECATION") android.telephony.SmsManager.getDefault()
+                }
+            } else {
+                if (carrierProfile.subId >= 0) {
+                    @Suppress("DEPRECATION") android.telephony.SmsManager.getSmsManagerForSubscriptionId(carrierProfile.subId)
+                } else {
+                    @Suppress("DEPRECATION") android.telephony.SmsManager.getDefault()
+                }
+            }
+
+            val flags = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            } else {
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT
+            }
+
+            val sentIntent = Intent(DeliveryBroadcastReceiver.SMS_SENT_ACTION).apply {
+                putExtra("msg_id", "mms_fallback_${sessionId}_${seqNo}")
+                putExtra("session_id", sessionId)
+                putExtra("seq_no", seqNo)
+                putExtra("outbox_id", outboxId)
+                setPackage(context.packageName)
+            }
+            val sentPI = android.app.PendingIntent.getBroadcast(
+                context,
+                (sessionId * 31 + seqNo).toInt(),
+                sentIntent,
+                flags
+            )
+
+            val deliveryIntent = Intent(DeliveryBroadcastReceiver.SMS_DELIVERED_ACTION).apply {
+                putExtra("msg_id", "mms_fallback_${sessionId}_${seqNo}")
+                putExtra("session_id", sessionId)
+                putExtra("seq_no", seqNo)
+                setPackage(context.packageName)
+            }
+            val deliveryPI = android.app.PendingIntent.getBroadcast(
+                context,
+                (sessionId * 37 + seqNo).toInt(),
+                deliveryIntent,
+                flags
+            )
+
+            val parts = smsManager.divideMessage(text)
+            if (parts.size > 1) {
+                val sentList = ArrayList<android.app.PendingIntent>(parts.size).apply {
+                    for (i in parts.indices) add(sentPI)
+                }
+                val deliveryList = ArrayList<android.app.PendingIntent>(parts.size).apply {
+                    for (i in parts.indices) add(deliveryPI)
+                }
+                smsManager.sendMultipartTextMessage(cleanNumber, null, parts, sentList, deliveryList)
+                Log.i(TAG, "Dispatched fallback carrier multi-part SMS (${parts.size} parts) to $cleanNumber silently in background.")
+            } else {
+                smsManager.sendTextMessage(cleanNumber, null, text, sentPI, deliveryPI)
+                Log.i(TAG, "Dispatched fallback single SMS to $cleanNumber silently in background.")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Fallback chunked SMS error: ${e.message}", e)
         }
     }
 

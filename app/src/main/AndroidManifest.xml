@@ -123,6 +123,7 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="com.cellular.rpc.SMS_SENT" />
+                <action android:name="com.cellular.rpc.MMS_SENT" />
                 <action android:name="com.cellular.rpc.SMS_DELIVERED" />
                 <action android:name="android.provider.Telephony.SMS_DELIVERED" />
             </intent-filter>

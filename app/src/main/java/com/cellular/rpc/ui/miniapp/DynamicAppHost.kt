@@ -1046,6 +1046,54 @@ private fun RenderNode(
             }
         }
 
+        "sparkline", "chart_sparkline", "sparkline_chart" -> {
+            val bindKey = node.bindItems.ifBlank { node.bind }
+            val rawList = (appState[bindKey] as? List<*>) ?: (node.modifier["points"] as? List<*>) ?: emptyList<Any>()
+            val dataPoints = rawList.mapNotNull {
+                when (it) {
+                    is Number -> it.toFloat()
+                    is String -> it.toFloatOrNull()
+                    else -> null
+                }
+            }
+
+            val secondaryBindKey = (node.modifier["secondary_bind"] as? String) ?: "secondary_points"
+            val rawSecList = (appState[secondaryBindKey] as? List<*>) ?: (node.modifier["secondary_points"] as? List<*>)
+            val secondaryDataPoints = rawSecList?.mapNotNull {
+                when (it) {
+                    is Number -> it.toFloat()
+                    is String -> it.toFloatOrNull()
+                    else -> null
+                }
+            }
+
+            val height = ((node.modifier["height"] as? Number)?.toInt() ?: 48).dp
+            com.cellular.rpc.ui.components.SparklineCanvas(
+                dataPoints = if (dataPoints.isNotEmpty()) dataPoints else listOf(10f, 25f, 18f, 32f, 28f, 45f),
+                secondaryDataPoints = secondaryDataPoints,
+                modifier = Modifier.padding(vertical = (node.padding / 2).dp),
+                heightDp = height
+            )
+        }
+
+        "bar_mini", "mini_bar", "barchart_mini" -> {
+            val bindKey = node.bindItems.ifBlank { node.bind }
+            val rawList = (appState[bindKey] as? List<*>) ?: (node.modifier["points"] as? List<*>) ?: emptyList<Any>()
+            val dataPoints = rawList.mapNotNull {
+                when (it) {
+                    is Number -> it.toFloat()
+                    is String -> it.toFloatOrNull()
+                    else -> null
+                }
+            }
+            val height = ((node.modifier["height"] as? Number)?.toInt() ?: 48).dp
+            com.cellular.rpc.ui.components.MiniBarChartCanvas(
+                dataPoints = if (dataPoints.isNotEmpty()) dataPoints else listOf(12f, 18f, 24f, 15f, 30f),
+                modifier = Modifier.padding(vertical = (node.padding / 2).dp),
+                heightDp = height
+            )
+        }
+
         else -> {
             Surface(
                 color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f),
@@ -1247,3 +1295,21 @@ private fun formatSingleValue(rawVal: String, isCurrency: Boolean, isPercent: Bo
         else -> rawVal
     }
 }
+
+/**
+ * FEAT-05: Dynamic App Skeleton placeholder for pending blueprints.
+ */
+@Composable
+fun DynamicAppSkeleton(
+    title: String,
+    modifier: Modifier = Modifier,
+    iconEmoji: String = "✨"
+) {
+    com.cellular.rpc.ui.components.DynamicNamedSkeletonCard(
+        label = title,
+        targetType = "mini_app_blueprint",
+        iconEmoji = iconEmoji,
+        modifier = modifier
+    )
+}
+

@@ -16,10 +16,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -57,6 +59,7 @@ fun NextGenChatMessageItem(
     onResend: (ChatMessage) -> Unit,
     onDelete: ((ChatMessage) -> Unit)? = null,
     audioPlayerManager: com.cellular.rpc.engine.AudioPlayerManager? = null,
+    onJumpToTail: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val isUser = message.sender == MessageSender.USER
@@ -175,63 +178,122 @@ fun NextGenChatMessageItem(
                         }
 
                         if (message.widgetData != null) {
-                            // Render rich inline widget
-                            when (val widget = message.widgetData) {
-                                is WidgetData.Weather -> WeatherChatCard(
-                                    weather = widget,
-                                    is304 = message.is304NotModified,
-                                    onRefresh = { onRefreshWidget("weather") }
-                                )
-                                is WidgetData.NewsDigest -> NewsChatCard(news = widget)
-                                is WidgetData.MarketTicker -> MarketChatCard(
-                                    isRefreshing = message.deliveryStatus == com.cellular.rpc.engine.MessageDeliveryStatus.IN_FLIGHT || message.deliveryStatus == com.cellular.rpc.engine.MessageDeliveryStatus.QUEUED,
-                                    ticker = widget,
-                                    onQuerySymbol = { sym ->
-                                        onRefreshWidget("market_ticker:${widget.widgetId}:$sym")
-                                    }
-                                )
-                                is WidgetData.CellularTransfer -> TransferChatCard(
-                                    transfer = widget,
-                                    onConfirm = { onConfirmTransfer(widget.id) }
-                                )
-                                is WidgetData.CellularPoll -> PollChatCard(
-                                    poll = widget,
-                                    onVote = { onVote(widget.id, it) }
-                                )
-                                is WidgetData.CellularTool -> ToolChatCard(tool = widget)
-                                is WidgetData.CalendarEvent -> CalendarChatCard(event = widget)
-                                is WidgetData.TaskChecklist -> TaskChecklistChatCard(checklist = widget)
-                                is WidgetData.SystemStatus -> SystemStatusChatCard(status = widget)
-                                is WidgetData.Skeleton -> SkeletonChatCard(skeleton = widget)
-                                is WidgetData.MiniAppPreview -> {
-                                    val blueprint = com.cellular.rpc.domain.miniapp.MiniAppBlueprint.fromJson(widget.rawBlueprintJson)
-                                    if (blueprint != null) {
-                                        val context = androidx.compose.ui.platform.LocalContext.current
-                                        val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
-                                        com.cellular.rpc.ui.miniapp.DynamicAppHost(
-                                            blueprint = blueprint,
-                                            isPreviewMode = true,
-                                            onInstallToDeck = { bp, st ->
-                                                coroutineScope.launch {
-                                                    com.cellular.rpc.domain.miniapp.MiniAppDeckManager.installApp(context, bp, st)
+                            if (message.isSuperseded) {
+                                var isExpanded by remember { mutableStateOf(false) }
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = DarkNavySurface.copy(alpha = 0.6f),
+                                    border = BorderStroke(1.dp, DarkNavyBorder.copy(alpha = 0.5f)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("superseded_card_${message.id}")
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp)) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable { isExpanded = !isExpanded },
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.weight(1f, fill = false)
+                                            ) {
+                                                Text(text = "📦", fontSize = 12.sp)
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = "v1.${(message.revision - 1).coerceAtLeast(0)} (Superseded)",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color.White.copy(alpha = 0.55f),
+                                                    fontSize = 11.sp
+                                                )
+                                                if (onJumpToTail != null) {
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text(
+                                                        text = "• See latest at tail ↓",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = CyanPrimary.copy(alpha = 0.85f),
+                                                        fontSize = 11.sp,
+                                                        modifier = Modifier.clickable { onJumpToTail() }
+                                                    )
                                                 }
                                             }
-                                        )
-                                    } else {
-                                        AiMarkdownBubble(text = widget.rawBlueprintJson, onLongClick = { showContextMenu = true })
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = if (isExpanded) "Hide" else "View",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontSize = 10.sp,
+                                                    color = Color.White.copy(alpha = 0.45f)
+                                                )
+                                                Icon(
+                                                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                                    contentDescription = "Toggle Superseded Card",
+                                                    tint = Color.White.copy(alpha = 0.45f),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+
+                                        AnimatedVisibility(visible = isExpanded) {
+                                            Column(modifier = Modifier.padding(top = 8.dp)) {
+                                                Box(modifier = Modifier.alpha(0.7f)) {
+                                                    WidgetCardRenderer(
+                                                        widget = message.widgetData,
+                                                        message = message,
+                                                        onRefreshWidget = onRefreshWidget,
+                                                        onConfirmTransfer = onConfirmTransfer,
+                                                        onVote = onVote,
+                                                        onContextMenu = { showContextMenu = true }
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 }
-                                is WidgetData.DynamicBlueprint -> DynamicBlueprintChatCard(blueprint = widget)
-                                is WidgetData.ChatText -> if (message.text.isBlank()) {
-                                    AiMarkdownBubble(
-                                        text = widget.text,
-                                        onLongClick = { showContextMenu = true }
-                                    )
-                                }
-                                else -> if (message.text.isBlank()) {
-                                    AiMarkdownBubble(
-                                        text = widget.toJson(),
-                                        onLongClick = { showContextMenu = true }
+                            } else {
+                                Column {
+                                    if (message.revision > 1) {
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = CyanPrimary.copy(alpha = 0.12f),
+                                            border = BorderStroke(0.5.dp, CyanPrimary.copy(alpha = 0.45f)),
+                                            modifier = Modifier
+                                                .padding(bottom = 6.dp)
+                                                .testTag("revision_badge_${message.id}")
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.ArrowDownward,
+                                                    contentDescription = "Feed-tail project",
+                                                    tint = CyanPrimary,
+                                                    modifier = Modifier.size(11.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    text = "v1.${message.revision - 1} • Updated from previous revision",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 10.sp,
+                                                    color = CyanPrimary,
+                                                    letterSpacing = 0.3.sp
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    WidgetCardRenderer(
+                                        widget = message.widgetData,
+                                        message = message,
+                                        onRefreshWidget = onRefreshWidget,
+                                        onConfirmTransfer = onConfirmTransfer,
+                                        onVote = onVote,
+                                        onContextMenu = { showContextMenu = true }
                                     )
                                 }
                             }
@@ -369,28 +431,73 @@ fun NextGenChatMessageItem(
 
 @Composable
 fun SkeletonChatCard(skeleton: WidgetData.Skeleton) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(20.dp),
-                strokeWidth = 2.dp,
-                color = CyanPrimary
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                text = skeleton.label,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+    com.cellular.rpc.ui.components.DynamicNamedSkeletonCard(
+        label = skeleton.label,
+        targetType = skeleton.targetType,
+        iconEmoji = skeleton.iconEmoji
+    )
+}
+
+@Composable
+private fun WidgetCardRenderer(
+    widget: WidgetData,
+    message: ChatMessage,
+    onRefreshWidget: (String) -> Unit,
+    onConfirmTransfer: (String) -> Unit,
+    onVote: (String, Int) -> Unit,
+    onContextMenu: () -> Unit
+) {
+    when (widget) {
+        is WidgetData.Weather -> WeatherChatCard(
+            weather = widget,
+            is304 = message.is304NotModified,
+            onRefresh = { onRefreshWidget("weather") }
+        )
+        is WidgetData.NewsDigest -> NewsChatCard(news = widget)
+        is WidgetData.MarketTicker -> MarketChatCard(
+            isRefreshing = message.deliveryStatus == MessageDeliveryStatus.IN_FLIGHT || message.deliveryStatus == MessageDeliveryStatus.QUEUED,
+            ticker = widget,
+            onQuerySymbol = { sym ->
+                onRefreshWidget("market_ticker:${widget.widgetId}:$sym")
+            }
+        )
+        is WidgetData.CellularTransfer -> TransferChatCard(
+            transfer = widget,
+            onConfirm = { onConfirmTransfer(widget.id) }
+        )
+        is WidgetData.CellularPoll -> PollChatCard(
+            poll = widget,
+            onVote = { onVote(widget.id, it) }
+        )
+        is WidgetData.CellularTool -> ToolChatCard(tool = widget)
+        is WidgetData.CalendarEvent -> CalendarChatCard(event = widget)
+        is WidgetData.TaskChecklist -> TaskChecklistChatCard(checklist = widget)
+        is WidgetData.SystemStatus -> SystemStatusChatCard(status = widget)
+        is WidgetData.Skeleton -> SkeletonChatCard(skeleton = widget)
+        is WidgetData.MiniAppPreview -> {
+            val blueprint = com.cellular.rpc.domain.miniapp.MiniAppBlueprint.fromJson(widget.rawBlueprintJson)
+            if (blueprint != null) {
+                val context = androidx.compose.ui.platform.LocalContext.current
+                val coroutineScope = rememberCoroutineScope()
+                com.cellular.rpc.ui.miniapp.DynamicAppHost(
+                    blueprint = blueprint,
+                    isPreviewMode = true,
+                    onInstallToDeck = { bp, st ->
+                        coroutineScope.launch {
+                            com.cellular.rpc.domain.miniapp.MiniAppDeckManager.installApp(context, bp, st)
+                        }
+                    }
+                )
+            } else {
+                AiMarkdownBubble(text = widget.rawBlueprintJson, onLongClick = onContextMenu)
+            }
+        }
+        is WidgetData.DynamicBlueprint -> DynamicBlueprintChatCard(blueprint = widget)
+        is WidgetData.ChatText -> if (message.text.isBlank()) {
+            AiMarkdownBubble(text = widget.text, onLongClick = onContextMenu)
+        }
+        else -> if (message.text.isBlank()) {
+            AiMarkdownBubble(text = widget.toJson(), onLongClick = onContextMenu)
         }
     }
 }

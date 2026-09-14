@@ -677,6 +677,105 @@ fun PallySettingsBottomSheet(
                                     }
                                 }
                             }
+
+                            // FEAT-09: Carrier APN Auto-Detection & MMSC Diagnostics Card
+                            val carrierProfile = remember { com.cellular.rpc.transport.apn.CarrierApnResolver.resolveProfile(context) }
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                ),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.SignalCellularAlt,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp),
+                                                tint = CyanPrimary
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "Carrier APN & MMSC",
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = if (carrierProfile.isApnResolvedFromSystem) SignalGreen.copy(alpha = 0.2f) else CyanPrimary.copy(alpha = 0.15f)
+                                        ) {
+                                            Text(
+                                                text = if (carrierProfile.isApnResolvedFromSystem) "SYSTEM APN" else "KNOWN FALLBACK",
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontSize = 10.sp
+                                                ),
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (carrierProfile.isApnResolvedFromSystem) SignalGreen else CyanPrimary
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text(
+                                            text = "Operator / MCC-MNC:",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = "${carrierProfile.carrierName} (${carrierProfile.mcc}-${carrierProfile.mnc})",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(4.dp))
+
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text(
+                                            text = "Active MMSC URL:",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = carrierProfile.activeMmscUrl.take(28) + if (carrierProfile.activeMmscUrl.length > 28) "…" else "",
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 10.sp,
+                                                color = CyanPrimary
+                                            ),
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+
+                                    if (carrierProfile.mmsProxy != null) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                            Text(
+                                                text = "MMS Proxy / Port:",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Text(
+                                                text = "${carrierProfile.mmsProxy}:${carrierProfile.mmsPort ?: 80}",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
                             OutlinedButton(
                                 onClick = onOpenInspector,
                                 modifier = Modifier.fillMaxWidth(),

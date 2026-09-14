@@ -16,13 +16,13 @@ class SlidingWindowController(
 
     @Synchronized
     fun canTransmit(): Boolean {
-        val currentInFlight = (nextSequence - baseSequence + maxSequence) % maxSequence
-        return currentInFlight < windowSize
+        // Real in-flight permit check based on active unacknowledged frames
+        return unacknowledgedFrames.size < windowSize
     }
 
     @Synchronized
     fun getInFlightCount(): Int {
-        return (nextSequence - baseSequence + maxSequence) % maxSequence
+        return unacknowledgedFrames.size
     }
 
     @Synchronized
@@ -41,8 +41,12 @@ class SlidingWindowController(
     @Synchronized
     fun markFrameAcknowledged(seqNo: Int) {
         unacknowledgedFrames.remove(seqNo)
-        if (seqNo == baseSequence) {
+        // Advance baseSequence past any already-acknowledged or evicted frames
+        while (baseSequence != nextSequence && !unacknowledgedFrames.containsKey(baseSequence)) {
             baseSequence = (baseSequence + 1) % maxSequence
+        }
+        if (unacknowledgedFrames.isEmpty()) {
+            baseSequence = nextSequence
         }
     }
 
@@ -68,12 +72,22 @@ class SlidingWindowController(
         }
 
         // 2. Clear selectively ACKed items based on the bitmask
-        val bits = BitSet.valueOf(longArrayOf(bitmask))
-        for (i in 0 until 32) {
-            if (bits.get(i)) {
-                val targetSeq = (ackBase + 1 + i) % maxSequence
-                unacknowledgedFrames.remove(targetSeq)?.let { newlyAcked.add(it) }
+        if (bitmask != 0L) {
+            val bits = BitSet.valueOf(longArrayOf(bitmask))
+            for (i in 0 until 32) {
+                if (bits.get(i)) {
+                    val targetSeq = (ackBase + 1 + i) % maxSequence
+                    unacknowledgedFrames.remove(targetSeq)?.let { newlyAcked.add(it) }
+                }
             }
+        }
+
+        // Advance baseSequence past any already-cleared frames
+        while (baseSequence != nextSequence && !unacknowledgedFrames.containsKey(baseSequence)) {
+            baseSequence = (baseSequence + 1) % maxSequence
+        }
+        if (unacknowledgedFrames.isEmpty()) {
+            baseSequence = nextSequence
         }
 
         return newlyAcked
@@ -101,8 +115,17 @@ class SlidingWindowController(
         while (baseSequence != nextSequence && !unacknowledgedFrames.containsKey(baseSequence)) {
             baseSequence = (baseSequence + 1) % maxSequence
         }
+        if (unacknowledgedFrames.isEmpty()) {
+            baseSequence = nextSequence
+        }
 
         return stalledSeqs.size
+    }
+
+    @Synchronized
+    fun resetInFlight() {
+        unacknowledgedFrames.clear()
+        baseSequence = nextSequence
     }
 
     @Synchronized

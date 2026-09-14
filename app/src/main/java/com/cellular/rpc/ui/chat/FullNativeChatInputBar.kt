@@ -68,6 +68,7 @@ fun FullNativeChatInputBar(
     // Audio Recorder Setup
     val audioRecorder = remember { AudioRecorderManager(context) }
     val isRecording by audioRecorder.isRecording.collectAsState()
+    val isLocked by audioRecorder.isLocked.collectAsState()
     val recordDurationMs by audioRecorder.recordDurationMs.collectAsState()
     val amplitudes by audioRecorder.amplitudes.collectAsState()
 
@@ -297,110 +298,22 @@ fun FullNativeChatInputBar(
                 }
             }
 
-            // 3. Compose Field / Voice Recording Bar
+            // 3. Section 2.11: Live Voice Recording Bar with 50-60Hz dynamic waveform & slide-to-cancel scrubber
             if (isRecording) {
-                // Live Voice Recording Pill with animated waveform
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(24.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.error),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Flashing recording red dot
-                        val infiniteTransition = rememberInfiniteTransition(label = "recording_pulse")
-                        val scale by infiniteTransition.animateFloat(
-                            initialValue = 0.8f,
-                            targetValue = 1.3f,
-                            animationSpec = infiniteRepeatable(
-                                animation = tween(600, easing = LinearEasing),
-                                repeatMode = RepeatMode.Reverse
-                            ),
-                            label = "dot_scale"
-                        )
-                        Box(
-                            modifier = Modifier
-                                .size(12.dp)
-                                .scale(scale)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.error)
-                        )
-
-                        Spacer(modifier = Modifier.width(10.dp))
-
-                        // Duration text
-                        val seconds = (recordDurationMs / 1000) % 60
-                        val minutes = (recordDurationMs / 1000) / 60
-                        Text(
-                            text = String.format("%02d:%02d", minutes, seconds),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.error
-                        )
-
-                        Spacer(modifier = Modifier.width(10.dp))
-
-                        // Waveform bars
-                        Row(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(26.dp),
-                            horizontalArrangement = Arrangement.spacedBy(2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            amplitudes.takeLast(20).forEach { amp ->
-                                val barHeight = (amp * 24.dp.value).coerceIn(4f, 24f).dp
-                                Box(
-                                    modifier = Modifier
-                                        .width(3.dp)
-                                        .height(barHeight)
-                                        .clip(RoundedCornerShape(2.dp))
-                                        .background(CyanPrimary)
-                                )
-                            }
+                com.cellular.rpc.ui.chat.audio.LiveVoiceRecordingBar(
+                    isRecording = isRecording,
+                    isLocked = isLocked,
+                    recordDurationMs = recordDurationMs,
+                    amplitudes = amplitudes,
+                    onCancel = { audioRecorder.stopRecording(discard = true) },
+                    onSendOrKeep = {
+                        val voiceAtt = audioRecorder.stopRecording(discard = false)
+                        if (voiceAtt != null) {
+                            onAddAttachment(voiceAtt)
                         }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        // Cancel Button
-                        IconButton(
-                            onClick = { audioRecorder.stopRecording(discard = true) },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = "Discard Voice Note",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        // Done / Save Button
-                        FilledIconButton(
-                            onClick = {
-                                val voiceAtt = audioRecorder.stopRecording(discard = false)
-                                if (voiceAtt != null) {
-                                    onAddAttachment(voiceAtt)
-                                }
-                            },
-                            modifier = Modifier.size(36.dp),
-                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = CyanPrimary)
-                        ) {
-                            Icon(
-                                Icons.Default.Check,
-                                contentDescription = "Keep Voice Note",
-                                tint = Color.Black
-                            )
-                        }
-                    }
-                }
+                    },
+                    onToggleLock = { audioRecorder.setLocked(it) }
+                )
             } else {
                 // Regular Text Input + Attachment Actions Row
                 Row(

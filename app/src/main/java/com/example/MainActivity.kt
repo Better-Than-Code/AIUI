@@ -482,6 +482,9 @@ fun CellularRpcScreen(
                     onVote = { pollId, opt -> chatViewModel.castVote(pollId, opt) },
                     onConfirmTransfer = { chatViewModel.confirmTransfer(it) },
                     onRefreshWidget = { chatViewModel.queryWidget(it) },
+                    onForkThread = { msg, customPrompt, title ->
+                        chatViewModel.forkThreadFromMessage(msg, customPrompt, title)
+                    },
                     onDeleteMessage = { chatViewModel.deleteChatMessage(it) },
                     chatListState = chatListState
                 )

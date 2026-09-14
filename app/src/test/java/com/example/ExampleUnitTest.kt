@@ -485,5 +485,332 @@ class ExampleUnitTest {
     assertTrue(lintResult.isValid)
     assertEquals(0, lintResult.errors.size)
   }
+
+  /**
+   * Test packet inspector filter logic and JSON timeline serialization.
+   */
+  @Test
+  fun testPacketInspectorFiltersAndExportSerialization() {
+    val sampleLogs = listOf(
+      com.cellular.rpc.data.local.PacketLogEntity(
+        id = 1,
+        direction = "TX",
+        sessionId = 101,
+        pktType = 0x01,
+        pktTypeName = "RPC_REQ",
+        seqNo = 1,
+        ackBitsHex = "00",
+        payloadString = "weather:NYC",
+        wireFormat = "~101:01:01:00:weather:NYC:F2A1#",
+        binaryByteCount = 28,
+        crc16Hex = "F2A1",
+        crcValid = true
+      ),
+      com.cellular.rpc.data.local.PacketLogEntity(
+        id = 2,
+        direction = "RX",
+        sessionId = 101,
+        pktType = 0x02,
+        pktTypeName = "MMS_PDU",
+        seqNo = 1,
+        ackBitsHex = "01",
+        payloadString = "DATA:GZ:H4sIC...",
+        wireFormat = "~101:02:01:01:DATA:GZ:H4sIC...:A4B2#",
+        binaryByteCount = 240,
+        crc16Hex = "A4B2",
+        crcValid = true
+      )
+    )
+
+    // Verify TX filter
+    val txOnly = sampleLogs.filter { it.direction == "TX" }
+    assertEquals(1, txOnly.size)
+    assertEquals("RPC_REQ", txOnly.first().pktTypeName)
+
+    // Verify MMS filter
+    val mmsOnly = sampleLogs.filter { it.pktTypeName.contains("MMS") || it.wireFormat.contains("MMS") }
+    assertEquals(1, mmsOnly.size)
+    assertEquals("MMS_PDU", mmsOnly.first().pktTypeName)
+
+    // Verify GZIP filter
+    val gzipOnly = sampleLogs.filter { it.payloadString.contains("DATA:GZ") || it.wireFormat.contains("GZ") }
+    assertEquals(1, gzipOnly.size)
+
+    // Verify JSON Serialization format
+    val jsonArray = org.json.JSONArray()
+    sampleLogs.forEach { log ->
+      val obj = org.json.JSONObject().apply {
+        put("id", log.id)
+        put("direction", log.direction)
+        put("sessionId", log.sessionId)
+        put("pktType", log.pktTypeName)
+        put("seqNo", log.seqNo)
+        put("bytes", log.binaryByteCount)
+        put("crc", log.crc16Hex)
+      }
+      jsonArray.put(obj)
+    }
+    assertEquals(2, jsonArray.length())
+    assertEquals("TX", jsonArray.getJSONObject(0).getString("direction"))
+    assertEquals("RX", jsonArray.getJSONObject(1).getString("direction"))
+  }
+
+  /**
+   * Doc Section 2.12 / 2.14: Test pluggable animation preset configs and serialization.
+   */
+  @Test
+  fun testPluggableAnimationPresetConfigsAndSerialization() {
+    val cloud = com.cellular.rpc.ui.chat.animation.AnimationPresetConfig.fromPresetId("cloud")
+    assertEquals("cloud", cloud.presetId)
+    assertEquals("vapor_condense", cloud.shaderType)
+
+    val neon = com.cellular.rpc.ui.chat.animation.AnimationPresetConfig.fromPresetId("neon_strike")
+    assertEquals("neon_strike", neon.presetId)
+    assertEquals("glow_pulse", neon.shaderType)
+
+    val origami = com.cellular.rpc.ui.chat.animation.AnimationPresetConfig.fromPresetId("origami_fold")
+    assertEquals("origami_fold", origami.presetId)
+    assertEquals("crease_snap", origami.shaderType)
+
+    val spring = com.cellular.rpc.ui.chat.animation.AnimationPresetConfig.fromPresetId("spring_detent")
+    assertEquals("spring_detent", spring.presetId)
+
+    // Test JSON schema contract serialization
+    val jsonStr = neon.toJson()
+    val jsonObj = org.json.JSONObject(jsonStr)
+    assertEquals("neon_strike", jsonObj.getString("preset_id"))
+    assertEquals(300, jsonObj.getInt("duration_ms"))
+    assertEquals("glow_pulse", jsonObj.getJSONObject("shader_effect").getString("type"))
+
+    // Test ThemeConfig binding
+    val themeConfig = com.cellular.rpc.ui.chat.theme.ChatThemeConfig(animationStyle = "origami_fold")
+    assertEquals("origami_fold", themeConfig.animationPreset.presetId)
+  }
+
+  /**
+   * Doc Section 2.13: Test Thread Forking logic and message cloning semantics.
+   */
+  @Test
+  fun testThreadForkingAndMessageCloning() {
+    val origThreadId = "th_main"
+    val msg1 = com.cellular.rpc.engine.ChatMessage(
+        id = "msg_001",
+        threadId = origThreadId,
+        sender = com.cellular.rpc.engine.MessageSender.USER,
+        text = "Analyze Q3 portfolio performance",
+        timestampMs = 1000L
+    )
+    val msg2 = com.cellular.rpc.engine.ChatMessage(
+        id = "msg_002",
+        threadId = origThreadId,
+        sender = com.cellular.rpc.engine.MessageSender.AI_GATEWAY,
+        text = "Portfolio is up 14.2% driven by tech sector rally.",
+        timestampMs = 2000L
+    )
+    val msg3 = com.cellular.rpc.engine.ChatMessage(
+        id = "msg_003",
+        threadId = origThreadId,
+        sender = com.cellular.rpc.engine.MessageSender.USER,
+        text = "Unrelated question about weather",
+        timestampMs = 3000L
+    )
+
+    val allMessages = listOf(msg1, msg2, msg3)
+    val targetMessage = msg2
+
+    // Filter messages up to cutoff timestamp
+    val messagesToClone = allMessages.filter { it.timestampMs <= targetMessage.timestampMs || it.id == targetMessage.id }
+    assertEquals(2, messagesToClone.size)
+    assertEquals("msg_001", messagesToClone[0].id)
+    assertEquals("msg_002", messagesToClone[1].id)
+
+    val newBranchThreadId = "th_fork_ab12cd"
+    val clonedMessages = messagesToClone.map { orig ->
+        orig.copy(
+            id = "msg_clone_" + orig.id,
+            threadId = newBranchThreadId
+        )
+    }
+
+    assertEquals(2, clonedMessages.size)
+    assertEquals(newBranchThreadId, clonedMessages[0].threadId)
+    assertEquals(newBranchThreadId, clonedMessages[1].threadId)
+    assertEquals("Analyze Q3 portfolio performance", clonedMessages[0].text)
+    assertEquals("Portfolio is up 14.2% driven by tech sector rally.", clonedMessages[1].text)
+    assertFalse(clonedMessages[0].id == msg1.id)
+  }
+
+  /**
+   * Doc Section 2.13: Test Edit Prompt PDU calculation and branch title formatting.
+   */
+  @Test
+  fun testEditPromptPduCalculationAndBranchTitle() {
+    val shortPrompt = "Current weather in SF"
+    val shortBytes = shortPrompt.toByteArray(Charsets.UTF_8).size
+    val shortPdu = ((shortBytes + 139) / 140).coerceAtLeast(1)
+    assertEquals(1, shortPdu)
+
+    val longPrompt = "A".repeat(300)
+    val longBytes = longPrompt.toByteArray(Charsets.UTF_8).size
+    val longPdu = ((longBytes + 139) / 140).coerceAtLeast(1)
+    assertEquals(3, longPdu)
+
+    val customPrompt = "Calculate 15% tip on $120 total bill"
+    val branchTitle = "Branch: " + customPrompt.trim().take(22)
+    assertEquals("Branch: Calculate 15% tip on $", branchTitle)
+  }
+
+  /**
+   * Doc Section 2.10: Test 2D MiniGame Physics Engine Vector Mathematics & Symplectic Euler Integration.
+   */
+  @Test
+  fun testMiniGamePhysicsEngine_tiltAccelerationAndWallCollisions() {
+    val engine = com.cellular.rpc.domain.game.MiniGamePhysicsEngine(
+      arenaWidth = 300f,
+      arenaHeight = 300f,
+      gravityFactor = 200f,
+      damping = 0.95f,
+      restitution = 0.5f
+    )
+
+    var state = com.cellular.rpc.domain.game.GameEngineState(
+      ball = com.cellular.rpc.domain.game.BallState(
+        pos = com.cellular.rpc.domain.game.Vector2D(150f, 150f),
+        radius = 10f
+      ),
+      targets = listOf(
+        com.cellular.rpc.domain.game.TargetRing("t1", com.cellular.rpc.domain.game.Vector2D(180f, 150f), radius = 15f, points = 10)
+      ),
+      obstacles = listOf(
+        com.cellular.rpc.domain.game.Obstacle("hazard_1", 200f, 100f, 220f, 200f, isHazard = true)
+      ),
+      lives = 3,
+      timeRemainingSec = 30f
+    )
+
+    // Simulate tilt right (tiltX = -5f => ax > 0)
+    var collected = false
+    var collisionCount = 0
+    for (i in 0 until 10) {
+      state = engine.update(
+        state = state,
+        tiltX = -5f,
+        tiltY = 0f,
+        dtSec = 0.05f,
+        onCollision = { isHazard -> collisionCount++ },
+        onCollectTarget = { target -> collected = true }
+      )
+    }
+
+    // Ball should have moved to the right (x > 150)
+    assertTrue("Ball should move right on negative tiltX", state.ball.pos.x > 150f)
+    assertTrue("Target t1 should be collected", collected)
+    assertEquals(10, state.score)
+    assertTrue("Target should be marked collected in state", state.targets[0].isCollected)
+  }
+
+  /**
+   * Doc Section 2.10: Test Hardware Sensor Engine Simulation Tilt & Blueprint Linter whitelisting.
+   */
+  @Test
+  fun testSensorGameBlueprintLintingAndSimulation() {
+    val gameBlueprintJson = """
+    {
+      "type": "mini_app_blueprint",
+      "appId": "sensor_maze_test",
+      "version": 1,
+      "metadata": {
+        "title": "Sensor Maze Test",
+        "icon": "sports_esports"
+      },
+      "initialState": {
+        "score": 0,
+        "lives": 3
+      },
+      "ui": {
+        "type": "sensor_game",
+        "bind": "score",
+        "modifier": {
+          "height": 280,
+          "lives": 3,
+          "timeLimit": 45
+        }
+      }
+    }
+    """.trimIndent()
+
+    val blueprint = com.cellular.rpc.domain.miniapp.MiniAppBlueprint.fromJson(gameBlueprintJson)
+    assertNotNull(blueprint)
+    val lintResult = com.cellular.rpc.domain.miniapp.BlueprintLinter.lint(blueprint!!)
+    assertTrue(lintResult.isValid)
+    assertEquals(0, lintResult.errors.size)
+  }
+
+  /**
+   * Doc Section 2.11: Test Live Voice Recorder State, Max Duration & Waveform Normalization.
+   */
+  @Test
+  fun testLiveVoiceRecorderAmplitudesAndDurationFormatting() {
+    // Amplitude normalization test
+    val rawAmplitudes = listOf(100, 3276, 16384, 32767, 50000)
+    val normalized = rawAmplitudes.map { (it / 32767f).coerceIn(0.06f, 1.0f) }
+
+    assertEquals(0.06f, normalized[0], 0.01f)
+    assertEquals(0.10f, normalized[1], 0.01f)
+    assertEquals(0.50f, normalized[2], 0.01f)
+    assertEquals(1.00f, normalized[3], 0.01f)
+    assertEquals(1.00f, normalized[4], 0.01f) // Clamped to 1.0f
+
+    // Duration formatting test
+    val durationMs = 65_000L // 1 min 5 sec
+    val seconds = (durationMs / 1000) % 60
+    val minutes = (durationMs / 1000) / 60
+    val formatted = String.format("%02d:%02d", minutes, seconds)
+    assertEquals("01:05", formatted)
+  }
+
+  /**
+   * Doc Section 2.16: Test Procedural 2D Maze Generator Determinism, DFS Layout & Obstacle Scaling.
+   */
+  @Test
+  fun testProceduralMazeGeneratorDeterministicDFSAndTargets() {
+    val seed = 42L
+    val maze1 = com.cellular.rpc.domain.game.ProceduralMazeGenerator.generateMaze(
+      arenaWidth = 600f,
+      arenaHeight = 600f,
+      difficulty = com.cellular.rpc.domain.game.ProceduralMazeGenerator.MazeDifficulty.INTERMEDIATE,
+      customSeed = seed
+    )
+
+    val maze2 = com.cellular.rpc.domain.game.ProceduralMazeGenerator.generateMaze(
+      arenaWidth = 600f,
+      arenaHeight = 600f,
+      difficulty = com.cellular.rpc.domain.game.ProceduralMazeGenerator.MazeDifficulty.INTERMEDIATE,
+      customSeed = seed
+    )
+
+    // Verify determinism from same seed
+    assertEquals(seed, maze1.seed)
+    assertEquals(maze1.gridSize, maze2.gridSize)
+    assertEquals(maze1.obstacles.size, maze2.obstacles.size)
+    assertEquals(maze1.targets.size, maze2.targets.size)
+    assertEquals(maze1.ballSpawn.x, maze2.ballSpawn.x, 0.001f)
+    assertEquals(maze1.ballSpawn.y, maze2.ballSpawn.y, 0.001f)
+
+    // Verify target rings are created and exit portal is present
+    assertTrue("Targets should be non-empty", maze1.targets.isNotEmpty())
+    assertNotNull("Exit portal should be created", maze1.exitPortal)
+    assertTrue("Obstacles should contain walls and hazards", maze1.obstacles.any { it.isHazard })
+
+    // Test difficulty tier scaling
+    val expertMaze = com.cellular.rpc.domain.game.ProceduralMazeGenerator.generateMaze(
+      arenaWidth = 600f,
+      arenaHeight = 600f,
+      difficulty = com.cellular.rpc.domain.game.ProceduralMazeGenerator.MazeDifficulty.EXPERT,
+      customSeed = 999L
+    )
+    assertEquals(8, expertMaze.gridSize)
+    assertTrue(expertMaze.targets.size >= 8)
+  }
 }
 

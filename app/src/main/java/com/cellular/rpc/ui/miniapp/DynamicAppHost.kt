@@ -708,6 +708,42 @@ private fun RenderNode(
             )
         }
 
+        "sensor_game", "physics_game", "tilt_maze", "game_arena", "maze_game" -> {
+            val arenaHeight = (node.modifier["height"] as? Number)?.toInt()
+                ?: (node.modifier["arenaHeight"] as? Number)?.toInt()
+                ?: 280
+            val initialLives = (node.modifier["lives"] as? Number)?.toInt() ?: 3
+            val timeLimitSec = (node.modifier["timeLimit"] as? Number)?.toFloat() ?: 45f
+            val difficulty = (node.modifier["difficulty"] as? String) ?: (node.modifier["maze_difficulty"] as? String) ?: "intermediate"
+            val isProcedural = (node.modifier["procedural"] as? Boolean) ?: true
+            val seed = (node.modifier["seed"] as? Number)?.toLong() ?: (node.modifier["maze_seed"] as? Number)?.toLong()
+            val gameId = if (node.bind.isNotBlank()) node.bind else "game_${node.text.hashCode()}"
+
+            SensorGameView(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(node.padding.dp),
+                gameId = gameId,
+                arenaHeightDp = arenaHeight,
+                initialLives = initialLives,
+                timeLimitSec = timeLimitSec,
+                mazeDifficulty = difficulty,
+                isProcedural = isProcedural,
+                mazeSeed = seed,
+                onScoreChanged = { score, isOver, isComplete ->
+                    val scoreBindKey = if (node.bind.isNotBlank()) node.bind else "game_score"
+                    onDirectStateMutation(scoreBindKey, score)
+                    onDirectStateMutation("game_over", isOver)
+                    onDirectStateMutation("game_complete", isComplete)
+                },
+                onGameStateExport = { exportedMap ->
+                    exportedMap.forEach { (k, v) ->
+                        onDirectStateMutation("game_$k", v)
+                    }
+                }
+            )
+        }
+
         "markdown", "reader", "article" -> {
             val rawMarkdown = when {
                 node.bind.isNotBlank() -> resolveBinding(node.bind, appState, itemContext)

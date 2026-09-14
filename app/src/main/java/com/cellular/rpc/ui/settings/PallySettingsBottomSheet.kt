@@ -421,6 +421,60 @@ fun PallySettingsBottomSheet(
                 }
             }
 
+            // Section 4.5: Chat Bubble Animation Presets (Doc Section 2.12 / 2.14)
+            item {
+                val themeConfig by com.cellular.rpc.ui.chat.theme.ChatThemeManager.themeFlow.collectAsStateWithLifecycle()
+                val animPresets = listOf(
+                    "cloud" to "Cloud (Vapor)",
+                    "origami_fold" to "Origami (Fold)",
+                    "neon_strike" to "Neon (Strike)",
+                    "spring_detent" to "Spring (Jelly)",
+                    "liquid_morph" to "Liquid (Morph)"
+                )
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = CyanPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Bubble Animation Reveal Presets",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Standardized physics & shader reveal dynamics conforming to the Section 2.14 contract.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(animPresets) { (presetKey, label) ->
+                                val isSelected = themeConfig.animationStyle == presetKey
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        val patchJson = """[{"op":"replace","path":"/animationStyle","value":"$presetKey"}]"""
+                                        com.cellular.rpc.ui.chat.theme.ChatThemeManager.updateTheme(context, patchJson)
+                                    },
+                                    label = { Text(label, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // Section 5: Cellular Transport & Diagnostics
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {

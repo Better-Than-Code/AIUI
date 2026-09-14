@@ -243,6 +243,14 @@ private fun ChatTabPill(
                     modifier = Modifier.size(12.dp)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
+            } else if (title.startsWith("Branch") || title.contains("Branch:")) {
+                Icon(
+                    imageVector = Icons.Default.CallSplit,
+                    contentDescription = "Branched Thread",
+                    tint = SignalPurple,
+                    modifier = Modifier.size(12.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
             }
 
             // Tab Title

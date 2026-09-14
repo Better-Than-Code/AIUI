@@ -8,6 +8,8 @@ val CyanPrimaryDark = Color(0xFF00B4D8)
 val SignalGreen = Color(0xFF00F5A0)
 val SignalAmber = Color(0xFFFFD166)
 val SignalRed = Color(0xFFFF5470)
+val SignalPurple = Color(0xFFB388FF)
+val SignalIndigo = Color(0xFF7C4DFF)
 
 val DarkNavyBackground = Color(0xFF0A0F1D)
 val DarkNavySurface = Color(0xFF131A2E)

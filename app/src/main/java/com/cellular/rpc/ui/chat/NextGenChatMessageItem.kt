@@ -57,6 +57,8 @@ fun NextGenChatMessageItem(
     onRefreshWidget: (String) -> Unit,
     onReply: (ChatMessage) -> Unit,
     onResend: (ChatMessage) -> Unit,
+    onEditPrompt: ((ChatMessage) -> Unit)? = null,
+    onForkThread: ((ChatMessage) -> Unit)? = null,
     onDelete: ((ChatMessage) -> Unit)? = null,
     audioPlayerManager: com.cellular.rpc.engine.AudioPlayerManager? = null,
     onJumpToTail: (() -> Unit)? = null,
@@ -140,161 +142,171 @@ fun NextGenChatMessageItem(
                 }
 
                 if (isUser) {
-                    // USER BUBBLE (Dynamic Themed Pill)
+                    // USER BUBBLE (Dynamic Themed Pill wrapped with Pluggable Animation Preset)
                     if (message.text.isNotBlank()) {
-                        Surface(
-                            color = themeConfig.outgoingBubbleColor,
-                            shape = RoundedCornerShape(
-                                topStart = bubbleRadius,
-                                topEnd = bubbleRadius,
-                                bottomStart = bubbleRadius,
-                                bottomEnd = 4.dp
-                            ),
-                            border = if (themeConfig.bubbleBorderWidthDp > 0f) {
-                                BorderStroke(themeConfig.bubbleBorderWidthDp.dp, themeConfig.bubbleBorderColor)
-                            } else null,
-                            modifier = Modifier.combinedClickable(
-                                onClick = { },
-                                onLongClick = { showContextMenu = true }
-                            )
+                        com.cellular.rpc.ui.chat.animation.PluggableBubbleContainer(
+                            preset = themeConfig.animationPreset,
+                            isOutgoing = true
                         ) {
-                            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)) {
-                                RichMarkdownText(
-                                    text = message.text,
-                                    textColor = themeConfig.outgoingTextColor
+                            Surface(
+                                color = themeConfig.outgoingBubbleColor,
+                                shape = RoundedCornerShape(
+                                    topStart = bubbleRadius,
+                                    topEnd = bubbleRadius,
+                                    bottomStart = bubbleRadius,
+                                    bottomEnd = 4.dp
+                                ),
+                                border = if (themeConfig.bubbleBorderWidthDp > 0f) {
+                                    BorderStroke(themeConfig.bubbleBorderWidthDp.dp, themeConfig.bubbleBorderColor)
+                                } else null,
+                                modifier = Modifier.combinedClickable(
+                                    onClick = { },
+                                    onLongClick = { showContextMenu = true }
                                 )
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)) {
+                                    RichMarkdownText(
+                                        text = message.text,
+                                        textColor = themeConfig.outgoingTextColor
+                                    )
+                                }
                             }
                         }
                     }
                 } else {
                     // AI BUBBLE / INLINE WIDGET CARD
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if (message.text.isNotBlank()) {
-                            AiMarkdownBubble(
-                                text = message.text,
-                                themeConfig = themeConfig,
-                                onLongClick = { showContextMenu = true }
-                            )
-                        }
+                    com.cellular.rpc.ui.chat.animation.PluggableBubbleContainer(
+                        preset = themeConfig.animationPreset,
+                        isOutgoing = false
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (message.text.isNotBlank()) {
+                                AiMarkdownBubble(
+                                    text = message.text,
+                                    themeConfig = themeConfig,
+                                    onLongClick = { showContextMenu = true }
+                                )
+                            }
 
-                        if (message.widgetData != null) {
-                            if (message.isSuperseded) {
-                                var isExpanded by remember { mutableStateOf(false) }
-                                Surface(
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = DarkNavySurface.copy(alpha = 0.6f),
-                                    border = BorderStroke(1.dp, DarkNavyBorder.copy(alpha = 0.5f)),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("superseded_card_${message.id}")
-                                ) {
-                                    Column(modifier = Modifier.padding(10.dp)) {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clickable { isExpanded = !isExpanded },
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
+                            if (message.widgetData != null) {
+                                if (message.isSuperseded) {
+                                    var isExpanded by remember { mutableStateOf(false) }
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = DarkNavySurface.copy(alpha = 0.6f),
+                                        border = BorderStroke(1.dp, DarkNavyBorder.copy(alpha = 0.5f)),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("superseded_card_${message.id}")
+                                    ) {
+                                        Column(modifier = Modifier.padding(10.dp)) {
                                             Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable { isExpanded = !isExpanded },
                                                 verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier.weight(1f, fill = false)
+                                                horizontalArrangement = Arrangement.SpaceBetween
                                             ) {
-                                                Text(text = "📦", fontSize = 12.sp)
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Text(
-                                                    text = "v1.${(message.revision - 1).coerceAtLeast(0)} (Superseded)",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = Color.White.copy(alpha = 0.55f),
-                                                    fontSize = 11.sp
-                                                )
-                                                if (onJumpToTail != null) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier.weight(1f, fill = false)
+                                                ) {
+                                                    Text(text = "📦", fontSize = 12.sp)
                                                     Spacer(modifier = Modifier.width(6.dp))
                                                     Text(
-                                                        text = "• See latest at tail ↓",
+                                                        text = "v1.${(message.revision - 1).coerceAtLeast(0)} (Superseded)",
                                                         style = MaterialTheme.typography.labelSmall,
-                                                        fontWeight = FontWeight.SemiBold,
-                                                        color = CyanPrimary.copy(alpha = 0.85f),
-                                                        fontSize = 11.sp,
-                                                        modifier = Modifier.clickable { onJumpToTail() }
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color.White.copy(alpha = 0.55f),
+                                                        fontSize = 11.sp
+                                                    )
+                                                    if (onJumpToTail != null) {
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Text(
+                                                            text = "• See latest at tail ↓",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            color = CyanPrimary.copy(alpha = 0.85f),
+                                                            fontSize = 11.sp,
+                                                            modifier = Modifier.clickable { onJumpToTail() }
+                                                        )
+                                                    }
+                                                }
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(
+                                                        text = if (isExpanded) "Hide" else "View",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontSize = 10.sp,
+                                                        color = Color.White.copy(alpha = 0.45f)
+                                                    )
+                                                    Icon(
+                                                        imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                                        contentDescription = "Toggle Superseded Card",
+                                                        tint = Color.White.copy(alpha = 0.45f),
+                                                        modifier = Modifier.size(16.dp)
                                                     )
                                                 }
                                             }
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(
-                                                    text = if (isExpanded) "Hide" else "View",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    fontSize = 10.sp,
-                                                    color = Color.White.copy(alpha = 0.45f)
-                                                )
-                                                Icon(
-                                                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                                    contentDescription = "Toggle Superseded Card",
-                                                    tint = Color.White.copy(alpha = 0.45f),
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
-                                        }
 
-                                        AnimatedVisibility(visible = isExpanded) {
-                                            Column(modifier = Modifier.padding(top = 8.dp)) {
-                                                Box(modifier = Modifier.alpha(0.7f)) {
-                                                    WidgetCardRenderer(
-                                                        widget = message.widgetData,
-                                                        message = message,
-                                                        onRefreshWidget = onRefreshWidget,
-                                                        onConfirmTransfer = onConfirmTransfer,
-                                                        onVote = onVote,
-                                                        onContextMenu = { showContextMenu = true }
-                                                    )
+                                            AnimatedVisibility(visible = isExpanded) {
+                                                Column(modifier = Modifier.padding(top = 8.dp)) {
+                                                    Box(modifier = Modifier.alpha(0.7f)) {
+                                                        WidgetCardRenderer(
+                                                            widget = message.widgetData,
+                                                            message = message,
+                                                            onRefreshWidget = onRefreshWidget,
+                                                            onConfirmTransfer = onConfirmTransfer,
+                                                            onVote = onVote,
+                                                            onContextMenu = { showContextMenu = true }
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
                                     }
-                                }
-                            } else {
-                                Column {
-                                    if (message.revision > 1) {
-                                        Surface(
-                                            shape = RoundedCornerShape(6.dp),
-                                            color = CyanPrimary.copy(alpha = 0.12f),
-                                            border = BorderStroke(0.5.dp, CyanPrimary.copy(alpha = 0.45f)),
-                                            modifier = Modifier
-                                                .padding(bottom = 6.dp)
-                                                .testTag("revision_badge_${message.id}")
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                                verticalAlignment = Alignment.CenterVertically
+                                } else {
+                                    Column {
+                                        if (message.revision > 1) {
+                                            Surface(
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = CyanPrimary.copy(alpha = 0.12f),
+                                                border = BorderStroke(0.5.dp, CyanPrimary.copy(alpha = 0.45f)),
+                                                modifier = Modifier
+                                                    .padding(bottom = 6.dp)
+                                                    .testTag("revision_badge_${message.id}")
                                             ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.ArrowDownward,
-                                                    contentDescription = "Feed-tail project",
-                                                    tint = CyanPrimary,
-                                                    modifier = Modifier.size(11.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text(
-                                                    text = "v1.${message.revision - 1} • Updated from previous revision",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 10.sp,
-                                                    color = CyanPrimary,
-                                                    letterSpacing = 0.3.sp
-                                                )
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.ArrowDownward,
+                                                        contentDescription = "Feed-tail project",
+                                                        tint = CyanPrimary,
+                                                        modifier = Modifier.size(11.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text(
+                                                        text = "v1.${message.revision - 1} • Updated from previous revision",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 10.sp,
+                                                        color = CyanPrimary,
+                                                        letterSpacing = 0.3.sp
+                                                    )
+                                                }
                                             }
                                         }
-                                    }
 
-                                    WidgetCardRenderer(
-                                        widget = message.widgetData,
-                                        message = message,
-                                        onRefreshWidget = onRefreshWidget,
-                                        onConfirmTransfer = onConfirmTransfer,
-                                        onVote = onVote,
-                                        onContextMenu = { showContextMenu = true }
-                                    )
+                                        WidgetCardRenderer(
+                                            widget = message.widgetData,
+                                            message = message,
+                                            onRefreshWidget = onRefreshWidget,
+                                            onConfirmTransfer = onConfirmTransfer,
+                                            onVote = onVote,
+                                            onContextMenu = { showContextMenu = true }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -424,6 +436,8 @@ fun NextGenChatMessageItem(
             onInspectWire = {
                 showWireDetails = true
             },
+            onEditPrompt = onEditPrompt,
+            onForkThread = onForkThread,
             onDelete = onDelete
         )
     }

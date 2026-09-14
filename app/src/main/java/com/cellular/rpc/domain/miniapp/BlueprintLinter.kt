@@ -19,7 +19,8 @@ object BlueprintLinter {
         "chart", "linechart", "barchart", "piechart", "sparkline", "chart_sparkline", "sparkline_chart",
         "bar_mini", "mini_bar", "barchart_mini", "list", "lazycolumn", "spacer", "divider",
         "icon", "iconbutton", "image", "document_list", "accordion", "metric_stat", "metric", "stat",
-        "key_value_list", "kvlist", "markdown", "reader", "installfooter"
+        "key_value_list", "kvlist", "markdown", "reader", "installfooter",
+        "sensor_game", "physics_game", "tilt_maze", "game_arena", "maze_game"
     )
 
     fun lint(blueprint: MiniAppBlueprint): LintResult {

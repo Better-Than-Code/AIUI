@@ -55,6 +55,13 @@ import java.util.*
 
 
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import org.json.JSONArray
+import org.json.JSONObject
+
 @Composable
 fun PacketInspectorTab(
     packetLogs: List<PacketLogEntity>,
@@ -67,8 +74,35 @@ fun PacketInspectorTab(
     onProbeHandshake: () -> Unit = {},
     onResolveIntervention: (String, String) -> Unit = { _, _ -> }
 ) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     var showMcpManifestDialog by remember { mutableStateOf(false) }
+    var selectedFilter by remember { mutableStateOf("ALL") } // ALL, TX, RX, MMS, WAP, DATA:GZ
+    var searchQuery by remember { mutableStateOf("") }
+    var showExportSuccessToast by remember { mutableStateOf(false) }
     val genesisManifestJson = remember { com.cellular.rpc.domain.mcp.CellularMcpRegistry.buildGenesisManifestJson() }
+
+    // Filter packet logs based on active filter chip and search query
+    val filteredLogs = remember(packetLogs, selectedFilter, searchQuery) {
+        packetLogs.filter { log ->
+            val matchesFilter = when (selectedFilter) {
+                "ALL" -> true
+                "TX" -> log.direction == "TX"
+                "RX" -> log.direction == "RX"
+                "MMS" -> log.pktTypeName.contains("MMS", ignoreCase = true) || log.wireFormat.contains("MMS", ignoreCase = true)
+                "GZIP" -> log.wireFormat.contains("GZ", ignoreCase = true) || log.payloadString.contains("DATA:GZ", ignoreCase = true)
+                "ACK" -> log.pktTypeName.contains("ACK", ignoreCase = true) || log.pktType == 0x06.toByte()
+                else -> true
+            }
+            val matchesSearch = if (searchQuery.isBlank()) true else {
+                log.wireFormat.contains(searchQuery, ignoreCase = true) ||
+                log.payloadString.contains(searchQuery, ignoreCase = true) ||
+                log.pktTypeName.contains(searchQuery, ignoreCase = true) ||
+                log.sessionId.toString().contains(searchQuery)
+            }
+            matchesFilter && matchesSearch
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -80,7 +114,7 @@ fun PacketInspectorTab(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "Live Cellular Protocol Inspector",
                     style = MaterialTheme.typography.titleMedium,
@@ -93,11 +127,39 @@ fun PacketInspectorTab(
                 )
             }
 
-            IconButton(
-                onClick = onClearLogs,
-                modifier = Modifier.testTag("clear_logs_button")
-            ) {
-                Icon(Icons.Default.DeleteSweep, contentDescription = "Clear Logs")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Export Timeline Button
+                IconButton(
+                    onClick = {
+                        val exportArray = JSONArray()
+                        filteredLogs.forEach { log ->
+                            val obj = JSONObject().apply {
+                                put("id", log.id)
+                                put("direction", log.direction)
+                                put("sessionId", log.sessionId)
+                                put("pktType", log.pktTypeName)
+                                put("seqNo", log.seqNo)
+                                put("bytes", log.binaryByteCount)
+                                put("crc", log.crc16Hex)
+                                put("wireFormat", log.wireFormat)
+                                put("payload", log.payloadString)
+                                put("timestamp", log.timestampMs)
+                            }
+                            exportArray.put(obj)
+                        }
+                        clipboardManager.setText(AnnotatedString(exportArray.toString(2)))
+                        showExportSuccessToast = true
+                    }
+                ) {
+                    Icon(Icons.Default.FileDownload, contentDescription = "Export JSON Timeline", modifier = Modifier.size(20.dp), tint = CyanPrimary)
+                }
+
+                IconButton(
+                    onClick = onClearLogs,
+                    modifier = Modifier.testTag("clear_logs_button")
+                ) {
+                    Icon(Icons.Default.DeleteSweep, contentDescription = "Clear Logs")
+                }
             }
         }
 
@@ -259,7 +321,105 @@ fun PacketInspectorTab(
             )
         }
 
-        if (packetLogs.isEmpty()) {
+        if (showExportSuccessToast) {
+            Surface(
+                color = SignalGreen.copy(alpha = 0.15f),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, SignalGreen.copy(alpha = 0.4f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = SignalGreen, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Copied ${filteredLogs.size} cellular packets to clipboard as JSON",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = SignalGreen,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    IconButton(
+                        onClick = { showExportSuccessToast = false },
+                        modifier = Modifier.size(20.dp)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = SignalGreen, modifier = Modifier.size(14.dp))
+                    }
+                }
+            }
+        }
+
+        // Filter Chips & Search Bar Row
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            // Filter Chips Scrollable Row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val filterList = listOf("ALL", "TX", "RX", "MMS", "GZIP", "ACK")
+                filterList.forEach { filterName ->
+                    val isSelected = selectedFilter == filterName
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { selectedFilter = filterName },
+                        label = {
+                            Text(
+                                text = filterName,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = CyanPrimary.copy(alpha = 0.2f),
+                            selectedLabelColor = CyanPrimary
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            borderColor = if (isSelected) CyanPrimary else MaterialTheme.colorScheme.outlineVariant,
+                            enabled = true,
+                            selected = isSelected
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                }
+            }
+
+            // Search Bar
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("Filter by session, payload, or protocol...", style = MaterialTheme.typography.bodySmall) },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }, modifier = Modifier.size(20.dp)) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear search", modifier = Modifier.size(14.dp))
+                        }
+                    }
+                },
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                shape = RoundedCornerShape(10.dp),
+                textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        if (filteredLogs.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -268,12 +428,12 @@ fun PacketInspectorTab(
                     Icon(Icons.Default.Podcasts, contentDescription = null, tint = TextTertiary, modifier = Modifier.size(48.dp))
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "No cellular packets captured yet.",
+                        text = if (packetLogs.isEmpty()) "No cellular packets captured yet." else "No packets match '$selectedFilter' filter.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondary
                     )
                     Text(
-                        text = "Dispatch an RPC query to observe wire framing.",
+                        text = if (packetLogs.isEmpty()) "Dispatch an RPC query to observe wire framing." else "Try adjusting your filter chips or search query.",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextTertiary
                     )
@@ -284,7 +444,7 @@ fun PacketInspectorTab(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(packetLogs, key = { it.id }) { log ->
+                items(filteredLogs, key = { it.id }) { log ->
                     PacketLogCard(log)
                 }
             }

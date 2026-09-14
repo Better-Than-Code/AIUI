@@ -705,5 +705,40 @@ private val SAMPLE_TEMPLATES = listOf(
       }
     ]
   }
+}""",
+    "Sensor 2D Maze" to """{
+  "appId": "app_sensor_maze_studio",
+  "version": 1,
+  "metadata": {
+    "title": "Tilt Probe 2D Game",
+    "description": "Hardware accelerometer 2D physics game with collision haptics",
+    "icon": "sports_esports"
+  },
+  "initialState": {
+    "game_score": 0,
+    "game_lives": 3,
+    "game_over": false,
+    "game_complete": false
+  },
+  "uiRoot": {
+    "type": "column",
+    "children": [
+      {
+        "type": "text",
+        "text": "Tilt Probe 2D Game Engine",
+        "fontSize": 16,
+        "fontWeight": "bold"
+      },
+      {
+        "type": "sensor_game",
+        "bind": "game_score",
+        "modifier": {
+          "height": 280,
+          "lives": 3,
+          "timeLimit": 60
+        }
+      }
+    ]
+  }
 }"""
 )

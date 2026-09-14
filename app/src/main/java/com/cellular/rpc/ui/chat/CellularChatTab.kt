@@ -84,11 +84,13 @@ fun CellularChatTab(
     onVote: (String, Int) -> Unit,
     onConfirmTransfer: (String) -> Unit,
     onRefreshWidget: (String) -> Unit,
+    onForkThread: ((ChatMessage, String?, String?) -> Unit)? = null,
     onDeleteMessage: (String) -> Unit = {},
     chatListState: LazyListState = rememberLazyListState()
 ) {
     var inputText by remember { mutableStateOf("") }
     var replyingToMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var editingPromptMessage by remember { mutableStateOf<ChatMessage?>(null) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val pendingAttachments = remember { mutableStateListOf<com.cellular.rpc.engine.MessageAttachment>() }
     val audioPlayer = remember { com.cellular.rpc.engine.AudioPlayerManager(context) }
@@ -209,6 +211,12 @@ fun CellularChatTab(
                     onResend = {
                         onSendMessage(it.widgetData?.toJson() ?: it.text, emptyList())
                     },
+                    onEditPrompt = {
+                        editingPromptMessage = it
+                    },
+                    onForkThread = {
+                        onForkThread?.invoke(it, null, null)
+                    },
                     onDelete = {
                         onDeleteMessage(it.id)
                     },
@@ -221,6 +229,23 @@ fun CellularChatTab(
                     }
                 )
             }
+        }
+
+        // Section 2.13: Edit Prompt & Conversation Forking Dialog
+        editingPromptMessage?.let { targetMsg ->
+            com.cellular.rpc.ui.chat.EditPromptForkDialog(
+                message = targetMsg,
+                onDismiss = { editingPromptMessage = null },
+                onSendInCurrentThread = { updatedText ->
+                    onSendMessage(updatedText, emptyList())
+                },
+                onForkAndSend = { msg, updatedText ->
+                    onForkThread?.invoke(msg, updatedText, null)
+                },
+                onLoadIntoInputBar = { updatedText ->
+                    inputText = updatedText
+                }
+            )
         }
 
         // Full Native Compose Bar with Photo Picker, Documents, Voice Note Recorder & Tools

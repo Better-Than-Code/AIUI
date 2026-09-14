@@ -195,6 +195,59 @@ object MiniAppDeckManager {
             if (blueprint != null) {
                 installApp(context, blueprint, blueprint.initialState)
             }
+
+            // Seed Sensor Maze Runner v1
+            val sensorMazeJson = """
+            {
+              "type": "mini_app_blueprint",
+              "appId": "sensor_maze_runner_v1",
+              "version": 1,
+              "metadata": {
+                "title": "Tilt Probe 2D Game",
+                "icon": "sports_esports",
+                "description": "Hardware accelerometer sensor 2D physics mini-game",
+                "category": "games"
+              },
+              "initialState": {
+                "game_score": 0,
+                "game_lives": 3,
+                "game_over": false,
+                "game_complete": false
+              },
+              "ui": {
+                "type": "Card",
+                "padding": 12,
+                "children": [
+                  {
+                    "type": "Row",
+                    "align": "SpaceBetween",
+                    "children": [
+                      {"type": "Text", "style": "TitleMedium", "text": "Tilt Maze Probe 2D"},
+                      {"type": "Badge", "text": "Sensor Engine"}
+                    ]
+                  },
+                  {
+                    "type": "Divider",
+                    "spacing": 8
+                  },
+                  {
+                    "type": "sensor_game",
+                    "bind": "game_score",
+                    "modifier": {
+                      "height": 280,
+                      "lives": 3,
+                      "timeLimit": 60
+                    }
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+
+            val mazeBlueprint = MiniAppBlueprint.fromJson(sensorMazeJson)
+            if (mazeBlueprint != null) {
+                installApp(context, mazeBlueprint, mazeBlueprint.initialState)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error seeding sample mini apps: ${e.message}", e)
         }

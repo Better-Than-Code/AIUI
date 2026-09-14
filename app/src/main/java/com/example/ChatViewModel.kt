@@ -795,4 +795,78 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    /**
+     * Section 2.13: Forks / branches conversation history from a specific message into an isolated sub-thread.
+     * Optionally appends and sends an edited or new prompt.
+     */
+    fun forkThreadFromMessage(
+        targetMessage: com.cellular.rpc.engine.ChatMessage,
+        customPrompt: String? = null,
+        customTitle: String? = null
+    ): String {
+        val newThreadId = "th_fork_" + java.util.UUID.randomUUID().toString().take(6)
+        val branchTitle = customTitle ?: run {
+            val preview = (customPrompt ?: targetMessage.text).trim().take(22)
+            if (preview.isNotBlank()) "Branch: $preview" else "Branch ${newThreadId.takeLast(4)}"
+        }
+        val now = System.currentTimeMillis()
+        val sourceTid = targetMessage.threadId.ifBlank { _activeThreadId.value }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            // 1. Fetch current thread messages
+            val allSourceMessages = chatRepository.getMessagesForThread(sourceTid).first()
+
+            // 2. Clone messages up to and including targetMessage
+            val cutoffTimestamp = targetMessage.timestampMs
+            val messagesToClone = allSourceMessages.filter { it.timestampMs <= cutoffTimestamp || it.id == targetMessage.id }
+
+            val clonedMessages = messagesToClone.map { orig ->
+                orig.copy(
+                    id = "msg_" + java.util.UUID.randomUUID().toString().take(8),
+                    threadId = newThreadId
+                )
+            }
+
+            // 3. Create the new branched conversation thread in Room
+            val newThread = ConversationThreadEntity(
+                threadId = newThreadId,
+                title = branchTitle,
+                createdAtMs = now,
+                lastMessageTimestamp = now,
+                lastSnippet = "Branched from $sourceTid"
+            )
+            conversationThreadDao.insertOrUpdate(newThread)
+
+            // 4. Save cloned messages into new thread
+            if (clonedMessages.isNotEmpty()) {
+                chatRepository.saveMessages(clonedMessages)
+            }
+
+            // 5. Switch to the newly created branch thread
+            selectThread(newThreadId)
+
+            // 6. If an edited/new prompt was supplied, send it in the newly created branch
+            if (!customPrompt.isNullOrBlank()) {
+                sendChatMessage(customPrompt)
+            }
+        }
+        return newThreadId
+    }
+
+    /**
+     * Section 2.13: Edits a prompt and resends it either in the current active thread or a new forked branch.
+     */
+    fun editAndResendPrompt(
+        originalMessage: com.cellular.rpc.engine.ChatMessage,
+        updatedPrompt: String,
+        forkToNewBranch: Boolean = false
+    ) {
+        if (updatedPrompt.isBlank()) return
+        if (forkToNewBranch) {
+            forkThreadFromMessage(originalMessage, customPrompt = updatedPrompt)
+        } else {
+            sendChatMessage(updatedPrompt)
+        }
+    }
 }

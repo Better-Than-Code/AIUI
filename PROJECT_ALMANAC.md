@@ -174,10 +174,55 @@
 
 ---
 
-### Almanac Patch: FEAT-12 Zero-Data Offline SDUI Studio & Playground
+- **Build 55 (Version 5.3 / FEAT-13 Cellular Packet Inspector Filters & Timeline Export)**: Implemented FEAT-13 (Cellular Packet Inspector Filters & Timeline Export).
+  - **Protocol Inspector UI (`PacketInspectorTab.kt`)**: Added scrollable filter chips (`ALL`, `TX`, `RX`, `MMS`, `GZIP`, `ACK`) and live search bar filtering packets across wire format, payload strings, session IDs, and packet types.
+  - **Timeline JSON Export Engine**: Integrated one-tap structured JSON timeline serialization directly to the Android system clipboard with success status banners.
+  - **Verification & Deployment**: Added unit test `testPacketInspectorFiltersAndExportSerialization` in `ExampleUnitTest.kt`, verified 56/56 unit tests passing green, and refreshed distribution release binary `apk/releases/pallyai-v31.apk`.
+
+---
+
+### Almanac Patch: FEAT-13 Cellular Packet Inspector Filters & Timeline Export
 * **Status:** Completed
-* **New ADR:** ADR-025 — [Zero-Data On-Device SDUI AST Authoring & Live Hot-Reload Host: Embedded an on-device code editor, headless AST validator, and hot-reload Compose host allowing instant blueprint experimentation and one-tap installation directly into the offline Room database without network overhead | 2026-09-13]
-* **V2 Backlog Additions:** Advanced cellular packet inspector filters and timeline export.
+* **New ADR:** ADR-026 — [On-Device Telephony Packet Filter Graph & Deterministic JSON Timeline Export: Added low-overhead in-memory filter chips, live search string matching, and structured JSON timeline clipboard export directly from the Protocol Inspector for developer telemetry | 2026-09-13]
+* **V2 Backlog Additions:** Multi-SIM Sub-Slot manual override in Carrier Diagnostics sheet.
+
+---
+
+### Almanac Patch: Section 2.13 Long-Press Context Menu Extensions (Fork Thread & Edit Prompt)
+* **Status:** Completed
+* **New ADR:** ADR-027 — [Non-Destructive Thread Forking & In-Situ Prompt Refinement: Implemented message history cloning up to target cutoff timestamp into isolated sub-threads (`th_fork_...`) with tab bar branching indicators, paired with multi-line Edit Prompt dialog with real-time PDU cost estimation and branching dispatch options | 2026-09-13]
+* **V2 Backlog Additions:** Merging branched conversation threads back into parent thread with diff views.
+
+---
+
+### Almanac Patch: Section 2.10 Tier 2/3 Hardware Sensor 2D Mini-Game Engine
+* **Status:** Completed
+* **New ADR:** ADR-028 — [Hardware Sensor 2D Physics Mini-Game Engine & SDUI Integration: Implemented `HardwareSensorEngine` with EMA low-pass filtering, on-device simulation tilt fallbacks, and multi-tier haptic feedback (`VibrationEffect`/`VibratorManager`), paired with `MiniGamePhysicsEngine` symplectic Euler 2D integration and `SensorGameView` canvas component embedded directly as SDUI node types (`sensor_game`, `physics_game`, `tilt_maze`). Whitelisted in `BlueprintLinter` and pre-seeded into Universal Apps deck and SDUI Studio | 2026-09-13]
+* **V2 Backlog Additions:** Procedural maze generator nodes for infinite multi-tier level progression.
+
+---
+
+### Almanac Patch: Section 2.11 Audio Voice Note Live Recorder & Cancellation Scrubber
+* **Status:** Completed
+* **New ADR:** ADR-029 — [Live Voice Note Recording Bar with 50Hz Dynamic Waveform & Cancellation Scrubber: Upgraded `AudioRecorderManager` with 50Hz amplitude polling, 2-minute safety auto-stop ceiling, and lockable recording state. Created `LiveVoiceRecordingBar` featuring dynamic Canvas wave bars, pulsing LED, tactile haptic feedback, and horizontal slide-to-cancel gestures directly integrated into `FullNativeChatInputBar` with AMR-WB compression | 2026-09-13]
+* **V2 Backlog Additions:** Noise-gate filter parameter in voice settings.
+
+---
+
+### Almanac Patch: Section 2.16 Procedural 2D Maze Generator for Sensor Game
+* **Status:** Completed
+* **New ADR:** ADR-030 — [Procedural 2D Maze Generator & Multi-Tier Progression: Created `ProceduralMazeGenerator` utilizing randomized recursive backtracking (Depth-First Search) to carve passage channels, place dead-end target rings, exit portals, and hazard traps across 4 difficulty tiers (Novice, Intermediate, Expert, Master). Extended `SensorGameView` with level advancement (`STG 1..N`), seed reproducibility for shared cellular SMS maze challenges, and whitelisted SDUI node type `maze_game` in `BlueprintLinter` | 2026-09-13]
+* **V2 Backlog Additions:** Fog of war visibility radius option for maze exploration.
+
+---
+
+### Almanac Patch: Release Build v32 (v5.4)
+* **Status:** Released
+* **Summary:** Promoted build to Version Code 32 (v5.4). Consolidated Section 2.10 (Hardware Sensor Game Engine), Section 2.11 (Audio Voice Note Live Recorder & Scrubber), Section 2.13 (Thread Forking & Edit Prompt), Section 2.14 (Pluggable Bubble Animation Presets), and Section 2.16 (Procedural 2D Maze Generator).
+
+
+
+
 
 
 

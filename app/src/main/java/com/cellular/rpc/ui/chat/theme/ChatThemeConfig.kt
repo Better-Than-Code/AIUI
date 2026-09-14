@@ -19,9 +19,12 @@ data class ChatThemeConfig(
     val bubbleBorderWidthDp: Float = 1.0f,
     val bubbleBorderColorHex: String = "#334155",
     val fontScaleMultiplier: Float = 1.0f,
-    val animationStyle: String = "slide", // "slide", "fade", "pop"
+    val animationStyle: String = "cloud", // "cloud", "origami_fold", "neon_strike", "spring_detent", "liquid_morph"
     val showPduBadge: Boolean = false
 ) {
+    val animationPreset: com.cellular.rpc.ui.chat.animation.AnimationPresetConfig
+        get() = com.cellular.rpc.ui.chat.animation.AnimationPresetConfig.fromPresetId(animationStyle)
+
     val incomingBubbleColor: Color
         get() = parseHexColor(incomingBubbleColorHex, Color(0xFF1E293B))
 
@@ -75,7 +78,7 @@ data class ChatThemeConfig(
                     bubbleBorderWidthDp = obj.optDouble("bubbleBorderWidthDp", 1.0).toFloat(),
                     bubbleBorderColorHex = obj.optString("bubbleBorderColorHex", "#334155"),
                     fontScaleMultiplier = obj.optDouble("fontScaleMultiplier", 1.0).toFloat(),
-                    animationStyle = obj.optString("animationStyle", "slide"),
+                    animationStyle = obj.optString("animationStyle", "cloud"),
                     showPduBadge = obj.optBoolean("showPduBadge", false)
                 )
             } catch (e: Exception) {

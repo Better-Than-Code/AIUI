@@ -6,7 +6,9 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -19,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -30,7 +33,7 @@ import com.example.ui.theme.*
 
 /**
  * Modern floating horizontal circular action bar & reaction pill popup.
- * Avoids old vertical menus in favor of a sleek floating toolbar directly above the message.
+ * Section 2.13: Extended with Edit Prompt & Fork/Branch Thread actions.
  */
 @Composable
 fun MessageTapbackOverlay(
@@ -41,6 +44,8 @@ fun MessageTapbackOverlay(
     onReply: (ChatMessage) -> Unit,
     onResend: (ChatMessage) -> Unit,
     onInspectWire: (ChatMessage) -> Unit,
+    onEditPrompt: ((ChatMessage) -> Unit)? = null,
+    onForkThread: ((ChatMessage) -> Unit)? = null,
     onDelete: ((ChatMessage) -> Unit)? = null
 ) {
     val clipboardManager = LocalClipboardManager.current
@@ -63,8 +68,8 @@ fun MessageTapbackOverlay(
         ) {
             Column(
                 modifier = Modifier
-                    .widthIn(max = 340.dp)
-                    .padding(20.dp)
+                    .widthIn(max = 360.dp)
+                    .padding(16.dp)
                     .clickable(enabled = false) {}, // Prevent dismiss when tapping inside
                 horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
                 verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -110,27 +115,58 @@ fun MessageTapbackOverlay(
 
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), thickness = 0.5.dp)
 
-                        // Bottom Row: Horizontal Circular Action Buttons (Reply, Copy, Resend, Wire, Delete)
+                        // Bottom Row: Horizontal Circular Action Buttons (Reply, Edit, Fork, Copy, Resend, Wire, Delete)
+                        val actionsScrollState = rememberScrollState()
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(actionsScrollState),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             // Reply
                             CircularActionButton(
                                 icon = Icons.AutoMirrored.Filled.Reply,
                                 tint = CyanPrimary,
-                                label = "Reply"
+                                label = "Reply",
+                                tag = "action_reply"
                             ) {
                                 onReply(message)
                                 onDismiss()
+                            }
+
+                            // Edit Prompt (Doc Section 2.13)
+                            if (onEditPrompt != null) {
+                                CircularActionButton(
+                                    icon = Icons.Default.EditNote,
+                                    tint = SignalGreen,
+                                    label = "Edit",
+                                    tag = "action_edit_prompt"
+                                ) {
+                                    onEditPrompt(message)
+                                    onDismiss()
+                                }
+                            }
+
+                            // Fork / Branch Thread (Doc Section 2.13)
+                            if (onForkThread != null) {
+                                CircularActionButton(
+                                    icon = Icons.Default.CallSplit,
+                                    tint = SignalPurple,
+                                    label = "Fork",
+                                    tag = "action_fork_thread"
+                                ) {
+                                    onForkThread(message)
+                                    onDismiss()
+                                }
                             }
 
                             // Copy
                             CircularActionButton(
                                 icon = if (isCopied) Icons.Default.Check else Icons.Default.ContentCopy,
                                 tint = if (isCopied) SignalGreen else CyanPrimary,
-                                label = "Copy"
+                                label = "Copy",
+                                tag = "action_copy"
                             ) {
                                 clipboardManager.setText(AnnotatedString(message.widgetData?.toJson() ?: message.text))
                                 isCopied = true
@@ -141,7 +177,8 @@ fun MessageTapbackOverlay(
                             CircularActionButton(
                                 icon = Icons.Default.Refresh,
                                 tint = SignalAmber,
-                                label = "Resend"
+                                label = "Resend",
+                                tag = "action_resend"
                             ) {
                                 onResend(message)
                                 onDismiss()
@@ -151,7 +188,8 @@ fun MessageTapbackOverlay(
                             CircularActionButton(
                                 icon = Icons.Default.Code,
                                 tint = MaterialTheme.colorScheme.primary,
-                                label = "Wire"
+                                label = "Wire",
+                                tag = "action_wire"
                             ) {
                                 onInspectWire(message)
                                 onDismiss()
@@ -162,7 +200,8 @@ fun MessageTapbackOverlay(
                                 CircularActionButton(
                                     icon = Icons.Default.DeleteOutline,
                                     tint = Color(0xFFFF5252),
-                                    label = "Delete"
+                                    label = "Delete",
+                                    tag = "action_delete"
                                 ) {
                                     onDelete(message)
                                     onDismiss()
@@ -181,6 +220,7 @@ private fun CircularActionButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     tint: Color,
     label: String,
+    tag: String = "",
     onClick: () -> Unit
 ) {
     Column(
@@ -189,6 +229,7 @@ private fun CircularActionButton(
             .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 6.dp, vertical = 4.dp)
+            .testTag(tag)
     ) {
         Box(
             modifier = Modifier

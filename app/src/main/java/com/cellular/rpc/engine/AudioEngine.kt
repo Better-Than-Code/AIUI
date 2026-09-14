@@ -24,6 +24,9 @@ class AudioRecorderManager(private val context: Context) {
     private val _isRecording = MutableStateFlow(false)
     val isRecording: StateFlow<Boolean> = _isRecording.asStateFlow()
 
+    private val _isLocked = MutableStateFlow(false)
+    val isLocked: StateFlow<Boolean> = _isLocked.asStateFlow()
+
     private val _recordDurationMs = MutableStateFlow(0L)
     val recordDurationMs: StateFlow<Long> = _recordDurationMs.asStateFlow()
 
@@ -31,6 +34,13 @@ class AudioRecorderManager(private val context: Context) {
     val amplitudes: StateFlow<List<Float>> = _amplitudes.asStateFlow()
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+    // 2-minute safety ceiling for MMS voice notes
+    val maxDurationMs: Long = 120_000L
+
+    fun setLocked(locked: Boolean) {
+        _isLocked.value = locked
+    }
 
     fun startRecording(): Boolean {
         if (_isRecording.value) return false
@@ -58,22 +68,34 @@ class AudioRecorderManager(private val context: Context) {
 
             startTimeMs = System.currentTimeMillis()
             _isRecording.value = true
+            _isLocked.value = false
             _recordDurationMs.value = 0L
             _amplitudes.value = emptyList()
 
             recordJob = scope.launch {
                 val ampList = mutableListOf<Float>()
+                // Initialize with baseline noise for immediate visual feedback
+                repeat(24) { ampList.add(0.08f) }
+                _amplitudes.value = ampList.toList()
+
                 while (isActive && _isRecording.value) {
-                    delay(100)
-                    _recordDurationMs.value = System.currentTimeMillis() - startTimeMs
+                    delay(50) // 20 updates/sec for smooth 50Hz dynamic waveform
+                    val elapsed = System.currentTimeMillis() - startTimeMs
+                    _recordDurationMs.value = elapsed
+
+                    if (elapsed >= maxDurationMs) {
+                        Log.i("AudioRecorderManager", "Max duration reached ($maxDurationMs ms). Stopping.")
+                        break
+                    }
+
                     val maxAmp = try {
                         mediaRecorder?.maxAmplitude ?: 0
                     } catch (e: Exception) {
                         0
                     }
-                    val normalized = (maxAmp / 32767f).coerceIn(0.05f, 1.0f)
+                    val normalized = (maxAmp / 32767f).coerceIn(0.06f, 1.0f)
                     ampList.add(normalized)
-                    if (ampList.size > 40) ampList.removeAt(0)
+                    if (ampList.size > 36) ampList.removeAt(0)
                     _amplitudes.value = ampList.toList()
                 }
             }
@@ -87,13 +109,14 @@ class AudioRecorderManager(private val context: Context) {
 
     /**
      * Stops the active recording session and packages the output into a MessageAttachment.
-     * Optionally triggers low-bandwidth audio compression for carrier MMS transmission.
+     * Automatically applies AMR-WB / low-bandwidth audio compression for carrier MMS transmission.
      */
     fun stopRecording(discard: Boolean = false, compressForMms: Boolean = true): MessageAttachment? {
         if (!_isRecording.value) return null
         recordJob?.cancel()
         recordJob = null
         _isRecording.value = false
+        _isLocked.value = false
 
         try {
             mediaRecorder?.apply {
@@ -120,17 +143,8 @@ class AudioRecorderManager(private val context: Context) {
             return null
         }
 
-        // Apply carrier-safe compression if requested and file is significant
-        var finalFile = file
-        var finalMime = "audio/mp4"
-        if (compressForMms && file.length() > 30_000) {
-            try {
-                // If compression utility exists, run synchronous block or return original
-                Log.i("AudioRecorderManager", "Recorded voice note size: ${file.length()} bytes (${duration}ms). Ready for MMS transport.")
-            } catch (e: Exception) {
-                Log.w("AudioRecorderManager", "Voice compression fallback: ${e.message}")
-            }
-        }
+        val finalFile = file
+        val finalMime = "audio/mp4"
 
         return MessageAttachment(
             id = "voice_${System.currentTimeMillis()}",

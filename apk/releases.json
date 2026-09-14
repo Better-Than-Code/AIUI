@@ -1,5 +1,12 @@
 [
   {
+    "versionCode": 32,
+    "versionName": "5.4",
+    "fileName": "pallyai-v32.apk",
+    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v32.apk",
+    "releaseNotes": "Release v32 - Version 5.4: Consolidated release including Section 2.10 (Hardware Sensor 2D Physics Game Engine), Section 2.11 (Audio Voice Note Live Recorder & 50Hz Waveform Scrubber), Section 2.13 (Message Thread Forking & Edit Prompt), Section 2.14 (Pluggable Bubble Animation Presets), and Section 2.16 (Procedural 2D Maze Generator with 4 Difficulty Tiers & Seed Reproducibility)."
+  },
+  {
     "versionCode": 31,
     "versionName": "5.3",
     "fileName": "pallyai-v31.apk",

@@ -246,6 +246,23 @@
 * **New ADR:** ADR-038 — [INC-30 Radio State Failure Handling & Exponential Backoff Retry Queue: Hardened `DeliveryBroadcastReceiver` against physical radio status codes (`RESULT_ERROR_RADIO_OFF`, `RESULT_ERROR_NO_SERVICE`, `RESULT_ERROR_GENERIC_FAILURE`, `RESULT_ERROR_LIMIT_EXCEEDED`). Immediately releases in-flight permits from `SlidingWindowController` (`releaseFrame`), preventing queue stalls and eliminating reliance on 30-second watchdog timeouts. Outbox records transition to `STATUS_PENDING` with exponential backoff delays (2s, 4s, 8s) or `STATUS_FAILED` once max retries (3) are exhausted | 2026-09-14]
 * **Release Summary:** Promoted build to Version Code 35 (v5.7). Added unit and Robolectric tests in `ExampleRobolectricTest` covering AMR payload clamping, MMS network dispatching, and radio error backoff retry queues. Generated release APK `pallyai-v35.apk` in `apk/releases/`. Whitelisted `pallyai-v35.apk` in `.gitignore`.
 
+---
+
+### Almanac Patch: Sprint 7 — Home Screen AppWidgets & Zero-Data Pull Synchronization (Build v36 / v5.8)
+* **Status:** Completed
+* **New ADR:** ADR-039 — [INC-14 Android Home Screen AppWidgets (Weather, Market, News): Created glanceable Android OS Launcher AppWidgets (`CellularWeatherAppWidgetProvider`, `CellularMarketAppWidgetProvider`, `CellularNewsAppWidgetProvider`) with Material 3 dark slate surface theming, dynamic opacity controls (40%-100%), and one-tap cellular pull refresh triggers | 2026-09-15]
+* **New ADR:** ADR-040 — [INC-14 Zero-Data Pull Synchronization & ETag 304 Protocol (`CellularWidgetPullWorker`): Built `CellularWidgetPullWorker` with WorkManager periodic synchronization. Uses 8-hex SHA-256 ETag hashing to query remote Pally micro-gateways (`REQ:widget:<type>:etag=<hash>`). CellularMessageDispatcher handles incoming `304 NOT MODIFIED` responses to refresh timestamps without invalidating UI layouts or consuming data airtime | 2026-09-15]
+* **Release Summary:** Promoted build to Version Code 36 (v5.8). Added tests in `ExampleRobolectricTest` validating widget rendering, ETag computation, and 304 response routing. Generated release APK `pallyai-v36.apk` in `apk/releases/`. Whitelisted `pallyai-v36.apk` in `.gitignore`.
+
+---
+
+### Almanac Patch: Sprint 8 — Zero-Sign-In Local Productivity Engine (`INC-15`) (Build v37 / v5.9)
+* **Status:** Completed
+* **New ADR:** ADR-041 — [INC-15 Standalone Offline Productivity & Agenda Engine (`TaskEntity`, `TaskDao`): Integrated TickTick-depth offline task storage with Room SQLite. Supports Priority levels (P1-P4), categorization (Inbox, Work, Personal, Errands), subtasks, due timestamps, and full lifecycle tracking with zero cloud account or sign-in dependency | 2026-09-15]
+* **New ADR:** ADR-042 — [INC-15 Conversational NLP Task Ingestion (`TaskNlpParser`) & Calendar Bridge: Implemented deterministic on-device regex-based natural language parser extracting dates, relative times, priorities, and category tags without remote AI calls. Built optional `CalendarProviderBridge` for two-way sync with Android native system calendars when granted permissions | 2026-09-15]
+* **Release Summary:** Promoted build to Version Code 37 (v5.9). Built `ProductivityScreen` and `ProductivityViewModel` with M3 theming, tab filtering, and quick input bar. Tested DAO persistence and NLP parsing in `ExampleRobolectricTest`. Generated release APK `pallyai-v37.apk` in `apk/releases/`.
+
+
 
 
 

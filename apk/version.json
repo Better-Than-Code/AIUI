@@ -1,6 +1,6 @@
 {
-  "versionCode": 32,
-  "versionName": "5.4",
-  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v32.apk",
-  "releaseNotes": "Release v32 - Version 5.4: Consolidated release including Section 2.10 (Hardware Sensor 2D Physics Game Engine), Section 2.11 (Audio Voice Note Live Recorder & 50Hz Waveform Scrubber), Section 2.13 (Message Thread Forking & Edit Prompt), Section 2.14 (Pluggable Bubble Animation Presets), and Section 2.16 (Procedural 2D Maze Generator with 4 Difficulty Tiers & Seed Reproducibility)."
+  "versionCode": 37,
+  "versionName": "5.9",
+  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v37.apk",
+  "releaseNotes": "Release v37 - Version 5.9: Sprint 8 completed. Delivered zero-sign-in standalone productivity engine (TaskEntity, TaskDao) with TickTick-depth task categorization (Inbox, Work, Personal, Errands), priorities (P1-P4), on-device deterministic NLP conversational parser (TaskNlpParser), two-way CalendarProvider bridge, and full Jetpack Compose ProductivityScreen."
 }

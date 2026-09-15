@@ -334,6 +334,13 @@ class CarrierSafeQueueEngine(
         return enqueuePayload(frame.sessionId, frame.pktType, frame.payload)
     }
 
+    /**
+     * Helper to enqueue plain text cellular frame (e.g. queries, ACKs).
+     */
+    suspend fun enqueueCellularText(text: String, sessionId: Int = (System.currentTimeMillis() % 65535).toInt()): Int {
+        return enqueuePayload(sessionId, Frame.PKT_RPC_REQ, text.toByteArray(Charsets.UTF_8))
+    }
+
     suspend fun submitInboundPacket(frame: Frame) {
         receiveInbound(frame)
     }

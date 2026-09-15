@@ -1,6 +1,6 @@
 {
-  "versionCode": 31,
-  "versionName": "5.3",
-  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v31.apk",
-  "releaseNotes": "Release v31 - Version 5.3: Includes FEAT-06 Inline Card Iteration & Feed-Tail Re-anchoring, INC-05 Inbound Voice Note MMS Extraction with AMR-NB/WB waveform synthesis, INC-07 Direct Background MMS PDU Egress (eliminating Android App Chooser), and Epic 14 SDUI Primitive Expansion (native Sparkline & Mini-Bar Canvas charts)."
+  "versionCode": 37,
+  "versionName": "5.9",
+  "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v37.apk",
+  "releaseNotes": "Release v37 - Version 5.9: Sprint 8 completed. Delivered zero-sign-in standalone productivity engine (TaskEntity, TaskDao) with TickTick-depth task categorization (Inbox, Work, Personal, Errands), priorities (P1-P4), on-device deterministic NLP conversational parser (TaskNlpParser), two-way CalendarProvider bridge, and full Jetpack Compose ProductivityScreen."
 }

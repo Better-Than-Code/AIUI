@@ -1431,23 +1431,15 @@ class ExampleRobolectricTest {
       val outboxId = db.outboxDao().insert(outboxEntity)
 
       // 2. Simulate radio failure intent: RESULT_ERROR_RADIO_OFF
-      val receiver = com.cellular.rpc.transport.receiver.DeliveryBroadcastReceiver()
-      val failIntent = android.content.Intent(com.cellular.rpc.transport.receiver.DeliveryBroadcastReceiver.SMS_SENT_ACTION).apply {
-        putExtra("msg_id", "msg_999_$assignedSeq")
-        putExtra("session_id", 999)
-        putExtra("seq_no", assignedSeq)
-        putExtra("outbox_id", outboxId)
-        putExtra("result_code", android.telephony.SmsManager.RESULT_ERROR_RADIO_OFF)
-      }
-
-      receiver.onReceive(context, failIntent)
-
-      // Allow IO coroutine to process
-      var waitAttempts = 0
-      while (db.outboxDao().getById(outboxId)?.status != com.cellular.rpc.data.local.OutboxEntity.STATUS_PENDING && waitAttempts < 30) {
-        kotlinx.coroutines.delay(50)
-        waitAttempts++
-      }
+      com.cellular.rpc.transport.receiver.DeliveryBroadcastReceiver.processSentIntent(
+        appContext = context,
+        action = com.cellular.rpc.transport.receiver.DeliveryBroadcastReceiver.SMS_SENT_ACTION,
+        msgId = "msg_999_$assignedSeq",
+        sessionId = 999,
+        seqNo = assignedSeq,
+        outboxId = outboxId,
+        resultCode = android.telephony.SmsManager.RESULT_ERROR_RADIO_OFF
+      )
 
       // Verify window permit was freed
       assertEquals("In-flight permit must be freed upon radio error", 0, queueEngine.windowController.getInFlightCount())
@@ -1462,20 +1454,15 @@ class ExampleRobolectricTest {
       val maxRetriesEntity = updated!!.copy(retries = 3)
       db.outboxDao().update(maxRetriesEntity)
 
-      val noServiceIntent = android.content.Intent(com.cellular.rpc.transport.receiver.DeliveryBroadcastReceiver.SMS_SENT_ACTION).apply {
-        putExtra("msg_id", "msg_999_$assignedSeq")
-        putExtra("session_id", 999)
-        putExtra("seq_no", assignedSeq)
-        putExtra("outbox_id", outboxId)
-        putExtra("result_code", android.telephony.SmsManager.RESULT_ERROR_NO_SERVICE)
-      }
-      receiver.onReceive(context, noServiceIntent)
-
-      waitAttempts = 0
-      while (db.outboxDao().getById(outboxId)?.status != com.cellular.rpc.data.local.OutboxEntity.STATUS_FAILED && waitAttempts < 20) {
-        kotlinx.coroutines.delay(50)
-        waitAttempts++
-      }
+      com.cellular.rpc.transport.receiver.DeliveryBroadcastReceiver.processSentIntent(
+        appContext = context,
+        action = com.cellular.rpc.transport.receiver.DeliveryBroadcastReceiver.SMS_SENT_ACTION,
+        msgId = "msg_999_$assignedSeq",
+        sessionId = 999,
+        seqNo = assignedSeq,
+        outboxId = outboxId,
+        resultCode = android.telephony.SmsManager.RESULT_ERROR_NO_SERVICE
+      )
 
       val finalEntity = db.outboxDao().getById(outboxId)
       assertNotNull(finalEntity)

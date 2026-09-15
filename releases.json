@@ -1,5 +1,19 @@
 [
   {
+    "versionCode": 37,
+    "versionName": "5.9",
+    "fileName": "pallyai-v37.apk",
+    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v37.apk",
+    "releaseNotes": "Release v37 - Version 5.9: Sprint 8 completed. Delivered zero-sign-in standalone productivity engine (TaskEntity, TaskDao) with TickTick-depth task categorization (Inbox, Work, Personal, Errands), priorities (P1-P4), on-device deterministic NLP conversational parser (TaskNlpParser), two-way CalendarProvider bridge, and full Jetpack Compose ProductivityScreen."
+  },
+  {
+    "versionCode": 36,
+    "versionName": "5.8",
+    "fileName": "pallyai-v36.apk",
+    "apkUrl": "https://raw.githubusercontent.com/Better-Than-Code/AIUI/main/apk/releases/pallyai-v36.apk",
+    "releaseNotes": "Release v36 - Version 5.8: Sprint 7 completed. Delivered glanceable Android Launcher AppWidgets for Weather, Market, and News with one-tap cellular radio refresh triggers, dynamic opacity frosted-glass theming (40%-100%), and background WorkManager periodic synchronization utilizing 8-hex SHA-256 ETag hashing and 304 NOT MODIFIED zero-data micro-frames."
+  },
+  {
     "versionCode": 32,
     "versionName": "5.4",
     "fileName": "pallyai-v32.apk",

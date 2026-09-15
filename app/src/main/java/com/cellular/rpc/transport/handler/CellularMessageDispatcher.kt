@@ -195,6 +195,19 @@ object CellularMessageDispatcher {
     suspend fun dispatchInbound(context: Context, message: InboundCellularMessage): CellularResponse {
         Log.d(TAG, "Dispatching inbound message via ${message.transportType} from ${message.senderAddress}")
 
+        // INC-26: Thread isolation guard. Reject messages from non-active senders
+        if (message.senderAddress.isNotBlank() &&
+            message.senderAddress != "MMS_GATEWAY" &&
+            message.senderAddress != "PALLY_SYSTEM" &&
+            message.senderAddress != "LOCAL_TEST" &&
+            message.senderAddress != "PALLY_AI"
+        ) {
+            if (!com.cellular.rpc.domain.service.CellularServiceManager.isSenderRecognized(context, message.senderAddress)) {
+                Log.w(TAG, "CellularMessageDispatcher: Dropping inbound message from unrecognized/non-active sender '${message.senderAddress}' to maintain thread isolation.")
+                return CellularResponse(status = CellularStatusCode.FORBIDDEN_403, schemaId = "thread_isolation", payload = "")
+            }
+        }
+
         // 1. Submit low-level frame to queue engine for sliding window ACK / reassembly
         if (message.frame != null) {
             try {

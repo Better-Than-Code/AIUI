@@ -92,19 +92,10 @@ class TelephonyMmsObserver(
                             continue
                         }
 
-                        // Validate sender via CellularServiceManager or check protocol markdown or voice note
-                        val isVoiceNote = attachment?.type == com.cellular.rpc.engine.AttachmentType.VOICE_NOTE ||
-                                attachment?.mimeType?.startsWith("audio/") == true
+                        // Validate sender strictly via CellularServiceManager (INC-26: Active Number Inbound Filtering & Thread Isolation)
                         val isRecognized = CellularServiceManager.isSenderRecognized(context, sender)
-                        val isProtocolContent = textBody.contains("```") ||
-                                textBody.contains("REQ:GET") ||
-                                textBody.contains("RES:") ||
-                                textBody.contains("PALLY:") ||
-                                textBody.contains("[TID:") ||
-                                textBody.trimStart().startsWith("{")
-
-                        if (!isRecognized && !isProtocolContent && !isVoiceNote) {
-                            Log.d(TAG, "MMS ID $id from unrecognized sender '$sender' and not protocol or voice note. Ignoring.")
+                        if (!isRecognized) {
+                            Log.d(TAG, "MMS ID $id from non-active/unrecognized sender '$sender'. Discarding to maintain thread isolation.")
                             continue
                         }
 

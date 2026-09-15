@@ -211,33 +211,14 @@ object CellularServiceManager {
         val normalizedSender = normalizePhoneNumber(senderAddress)
         if (normalizedSender.isBlank()) return false
 
-        // 1. Check known default gateway line (+16462619684)
-        if (isNumberMatch(normalizedSender, "+16462619684") || isNumberMatch(normalizedSender, "6462619684") || isNumberMatch(normalizedSender, "+18005550199")) {
-            return true
-        }
-
-        // 2. Check last texted number
-        val lastOutbound = getLastOutboundDestination(context)
-        if (lastOutbound.isNotBlank() && isNumberMatch(normalizedSender, lastOutbound)) {
-            return true
-        }
-
-        // 3. Check active service
+        // 1. Check active selected service (INC-26: strict thread isolation)
         val active = getActiveService(context)
         val activeNormalized = normalizePhoneNumber(active.phoneNumber)
         if (isNumberMatch(normalizedSender, activeNormalized)) {
             return true
         }
 
-        // 4. Check all saved services
-        for (service in getAvailableServices(context)) {
-            val serviceNormalized = normalizePhoneNumber(service.phoneNumber)
-            if (isNumberMatch(normalizedSender, serviceNormalized)) {
-                return true
-            }
-        }
-
-        // 5. Check active CarrierSafeQueueEngine destination
+        // 2. Check active CarrierSafeQueueEngine destination
         try {
             val engine = CarrierSafeQueueEngine.getInstance(context)
             if (isNumberMatch(normalizedSender, engine.destinationAddress)) {
@@ -245,7 +226,32 @@ object CellularServiceManager {
             }
         } catch (ignored: Exception) {}
 
+        // 3. Check last texted number
+        val lastOutbound = getLastOutboundDestination(context)
+        if (lastOutbound.isNotBlank() && isNumberMatch(normalizedSender, lastOutbound)) {
+            return true
+        }
+
+        // 4. Check known default gateway line (+16462619684 / +18005550199) if active is default AI profile
+        if (active.id == CellularServiceProfile.DEFAULT_AI.id) {
+            if (isNumberMatch(normalizedSender, "+16462619684") ||
+                isNumberMatch(normalizedSender, "6462619684") ||
+                isNumberMatch(normalizedSender, "+18005550199")
+            ) {
+                return true
+            }
+        }
+
         return false
+    }
+
+    /**
+     * Strictly verifies whether the sender matches the active provider profile selected in Settings.
+     */
+    fun isActiveNumberMatch(context: Context, senderAddress: String?): Boolean {
+        if (senderAddress.isNullOrBlank()) return false
+        val active = getActiveService(context)
+        return isNumberMatch(senderAddress, active.phoneNumber)
     }
 
     fun isNumberMatch(num1: String?, num2: String?): Boolean {
@@ -260,22 +266,9 @@ object CellularServiceManager {
 
         if (digits1 == digits2) return true
 
-        // Match last 10 digits (Standard US / International without country prefix)
+        // Match last 10 digits (Standard US / International NANP without country prefix)
         if (digits1.length >= 10 && digits2.length >= 10) {
             if (digits1.takeLast(10) == digits2.takeLast(10)) return true
-        }
-
-        // Match last 7 digits (Local exchange + station)
-        if (digits1.length >= 7 && digits2.length >= 7) {
-            if (digits1.takeLast(7) == digits2.takeLast(7)) return true
-        }
-
-        // Substring / Shortcode / Toll-free matching (minimum 4 digits)
-        val minLen = minOf(digits1.length, digits2.length)
-        if (minLen >= 4) {
-            if (digits1.endsWith(digits2) || digits2.endsWith(digits1)) {
-                return true
-            }
         }
 
         return false

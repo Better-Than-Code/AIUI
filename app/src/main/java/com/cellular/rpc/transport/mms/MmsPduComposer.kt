@@ -47,6 +47,38 @@ object MmsPduComposer {
     )
 
     /**
+     * Builds a standard SMIL presentation layout document for MMS multi-part bundles.
+     */
+    fun buildSmilXml(textPartLocation: String?, mediaParts: List<Pair<String, String>>): String {
+        val sb = StringBuilder()
+        sb.append("<smil xmlns=\"http://www.w3.org/2000/SMIL20/CR/Language\">\n")
+        sb.append("  <head>\n")
+        sb.append("    <layout>\n")
+        sb.append("      <root-layout width=\"100%\" height=\"100%\"/>\n")
+        sb.append("      <region id=\"Image\" width=\"100%\" height=\"70%\" fit=\"meet\"/>\n")
+        sb.append("      <region id=\"Text\" top=\"70%\" width=\"100%\" height=\"30%\" fit=\"scroll\"/>\n")
+        sb.append("    </layout>\n")
+        sb.append("  </head>\n")
+        sb.append("  <body>\n")
+        sb.append("    <par dur=\"5000ms\">\n")
+        for ((type, loc) in mediaParts) {
+            when {
+                type.startsWith("image/") -> sb.append("      <img src=\"$loc\" region=\"Image\"/>\n")
+                type.startsWith("audio/") -> sb.append("      <audio src=\"$loc\"/>\n")
+                type.startsWith("video/") -> sb.append("      <video src=\"$loc\"/>\n")
+                else -> sb.append("      <ref src=\"$loc\"/>\n")
+            }
+        }
+        if (!textPartLocation.isNullOrBlank()) {
+            sb.append("      <text src=\"$textPartLocation\" region=\"Text\"/>\n")
+        }
+        sb.append("    </par>\n")
+        sb.append("  </body>\n")
+        sb.append("</smil>")
+        return sb.toString()
+    }
+
+    /**
      * Builds a binary M-Send.req PDU byte array.
      */
     fun composeSendReqPdu(
@@ -55,6 +87,23 @@ object MmsPduComposer {
         transactionId: String = "TXN_${System.currentTimeMillis()}"
     ): ByteArray {
         val out = ByteArrayOutputStream()
+
+        // INC-23: Ensure valid SMIL layout presentation is present as Part 0
+        val effectiveParts: List<MmsPart> = if (parts.none { it.contentType.contains("smil") }) {
+            val textPart = parts.firstOrNull { it.contentType.startsWith("text/") }
+            val mediaParts = parts.filter { !it.contentType.startsWith("text/") && !it.contentType.contains("smil") }
+                .map { Pair(it.contentType, it.contentLocation) }
+            val smil = buildSmilXml(textPart?.contentLocation ?: "text_0.txt", mediaParts)
+            val smilPart = MmsPart(
+                contentType = "application/smil; charset=utf-8",
+                contentLocation = "smil.xml",
+                contentId = "<smil>",
+                data = smil.toByteArray(StandardCharsets.UTF_8)
+            )
+            listOf(smilPart) + parts
+        } else {
+            parts
+        }
 
         // 1. Header: X-Mms-Message-Type: m-send-req (0x80)
         out.write(HDR_MESSAGE_TYPE)
@@ -97,10 +146,10 @@ object MmsPduComposer {
 
         // 8. Body: Multipart
         // nEntries (Uintvar)
-        out.write(writeUintvar(parts.size))
+        out.write(writeUintvar(effectiveParts.size))
 
         // Write each part
-        for (part in parts) {
+        for (part in effectiveParts) {
             val headerStream = ByteArrayOutputStream()
 
             // Part Content-Type

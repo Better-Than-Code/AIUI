@@ -1141,7 +1141,7 @@ class ExampleRobolectricTest {
 
       val inboundVoiceMsg = com.cellular.rpc.transport.handler.InboundCellularMessage(
         transportType = com.cellular.rpc.transport.handler.CellularTransportType.MMS_WAP_PUSH,
-        senderAddress = "+15551234567",
+        senderAddress = "+16462619684",
         rawText = "", // Blank text payload typical of voice notes
         attachment = voiceAttachment
       )
@@ -1288,6 +1288,41 @@ class ExampleRobolectricTest {
 
     val lintResult = com.cellular.rpc.domain.miniapp.BlueprintLinter.lint(blueprint)
     assertTrue("Multi-series comparative sparkline blueprint must pass AST linter", lintResult.isValid)
+  }
+
+  /**
+   * INC-26: Test that inbound messages from third-party senders are dropped
+   * to preserve strict thread isolation, while active gateway messages are accepted.
+   */
+  @Test
+  fun `inbound message dispatcher strictly enforces thread isolation against third-party senders`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+
+    // 1. Dispatch message from third-party contact
+    val thirdPartyMsg = com.cellular.rpc.transport.handler.InboundCellularMessage(
+      transportType = com.cellular.rpc.transport.handler.CellularTransportType.SMS_TEXT_WIRE,
+      senderAddress = "+15551239999",
+      rawText = "Hey are you coming to dinner tonight?"
+    )
+
+    val response = com.cellular.rpc.transport.handler.CellularMessageDispatcher.dispatchInbound(context, thirdPartyMsg)
+    assertEquals(com.cellular.rpc.domain.payload.CellularStatusCode.FORBIDDEN_403, response.status)
+    assertEquals("thread_isolation", response.schemaId)
+
+    // Verify it was NOT inserted into Room DB
+    val db = com.cellular.rpc.data.local.AppDatabase.getInstance(context)
+    val matches = db.chatMessageDao().countRecentMatchingMessages("dinner", System.currentTimeMillis() - 60_000L)
+    assertEquals(0, matches)
+
+    // 2. Dispatch message from active gateway
+    val gatewayMsg = com.cellular.rpc.transport.handler.InboundCellularMessage(
+      transportType = com.cellular.rpc.transport.handler.CellularTransportType.SMS_TEXT_WIRE,
+      senderAddress = "+16462619684",
+      rawText = "Pally AI assistant active and ready."
+    )
+
+    val gatewayResponse = com.cellular.rpc.transport.handler.CellularMessageDispatcher.dispatchInbound(context, gatewayMsg)
+    assertEquals(com.cellular.rpc.domain.payload.CellularStatusCode.OK_200, gatewayResponse.status)
   }
 }
 

@@ -76,7 +76,12 @@ class TelephonySmsObserver(
                     if (ageMs > 180000) continue
                     if (id <= lastProcessedSmsId) continue
 
-                    // Automatically process all recent inbox messages
+                    // Automatically process all recent inbox messages from recognized active sender (INC-26)
+                    if (!com.cellular.rpc.domain.service.CellularServiceManager.isSenderRecognized(context, address)) {
+                        Log.d(TAG, "TelephonySmsObserver: Ignoring SMS from non-active/unrecognized sender '$address' to preserve thread isolation.")
+                        continue
+                    }
+
                     lastProcessedSmsId = maxOf(lastProcessedSmsId, id)
                     Log.i(TAG, "TelephonySmsObserver captured inbound SMS from $address: ${body.take(40)}...")
 

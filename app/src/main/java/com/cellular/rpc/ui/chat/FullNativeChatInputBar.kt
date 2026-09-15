@@ -119,7 +119,10 @@ fun FullNativeChatInputBar(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            audioRecorder.startRecording()
+            val started = audioRecorder.startRecording()
+            if (started) {
+                audioRecorder.setLocked(true)
+            }
         }
     }
 
@@ -417,22 +420,58 @@ fun FullNativeChatInputBar(
                         }
                     } else {
                         // Voice Note Mic Button (Tap or Hold to record)
-                        FilledIconButton(
-                            onClick = {
-                                recordPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-                            },
+                        Box(
                             modifier = Modifier
                                 .size(42.dp)
                                 .padding(bottom = 2.dp)
-                                .testTag("chat_record_mic_button"),
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                contentColor = CyanPrimary
-                            )
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .testTag("chat_record_mic_button")
+                                .pointerInput(Unit) {
+                                    detectTapGestures(
+                                        onTap = {
+                                            val hasPerm = androidx.core.content.ContextCompat.checkSelfPermission(
+                                                context,
+                                                android.Manifest.permission.RECORD_AUDIO
+                                            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                            if (hasPerm) {
+                                                val started = audioRecorder.startRecording()
+                                                if (started) {
+                                                    audioRecorder.setLocked(true)
+                                                }
+                                            } else {
+                                                recordPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                                            }
+                                        },
+                                        onPress = {
+                                            val hasPerm = androidx.core.content.ContextCompat.checkSelfPermission(
+                                                context,
+                                                android.Manifest.permission.RECORD_AUDIO
+                                            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                            if (!hasPerm) {
+                                                recordPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                                            } else {
+                                                val started = audioRecorder.startRecording()
+                                                if (started) {
+                                                    audioRecorder.setLocked(false)
+                                                    val released = tryAwaitRelease()
+                                                    if (released && audioRecorder.isRecording.value && !audioRecorder.isLocked.value) {
+                                                        val voiceAtt = audioRecorder.stopRecording(discard = false)
+                                                        if (voiceAtt != null) {
+                                                            onAddAttachment(voiceAtt)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    )
+                                },
+                            contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Mic,
                                 contentDescription = "Record Voice Note",
+                                tint = CyanPrimary,
                                 modifier = Modifier.size(22.dp)
                             )
                         }

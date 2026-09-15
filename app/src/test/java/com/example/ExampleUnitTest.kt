@@ -812,5 +812,78 @@ class ExampleUnitTest {
     assertEquals(8, expertMaze.gridSize)
     assertTrue(expertMaze.targets.size >= 8)
   }
+
+  /**
+   * INC-26: Test strict number matching and sender thread isolation
+   */
+  @Test
+  fun testStrictNumberMatchingAndIsolation() {
+    // 1. E.164 NANP 10-digit matching (with or without country code / formatting)
+    assertTrue(com.cellular.rpc.domain.service.CellularServiceManager.isNumberMatch("+16462619684", "6462619684"))
+    assertTrue(com.cellular.rpc.domain.service.CellularServiceManager.isNumberMatch("16462619684", "+1 (646) 261-9684"))
+    assertTrue(com.cellular.rpc.domain.service.CellularServiceManager.isNumberMatch("+18005550199", "8005550199"))
+
+    // 2. Strict rejection of third-party contacts sharing last 4 or 7 digits
+    assertFalse("Must not match different area code with same suffix",
+      com.cellular.rpc.domain.service.CellularServiceManager.isNumberMatch("+12125550199", "+18005550199"))
+    assertFalse("Must not match random third-party number",
+      com.cellular.rpc.domain.service.CellularServiceManager.isNumberMatch("+15559876543", "+16462619684"))
+    assertFalse("Must not match 4-digit suffix collision",
+      com.cellular.rpc.domain.service.CellularServiceManager.isNumberMatch("+19998889684", "+16462619684"))
+  }
+
+  /**
+   * INC-27: Test PDU UDH concatenation and text sequence parsing
+   */
+  @Test
+  fun testPduReassemblyBufferSequenceParsing() {
+    // 1. Text header parsing: [1/3]
+    val parsedBracket = com.cellular.rpc.transport.receiver.PduReassemblyBuffer.parseTextSequenceHeader("[1/3] Part one text")
+    assertNotNull(parsedBracket)
+    assertEquals(1, parsedBracket!!.first.partSeq)
+    assertEquals(3, parsedBracket.first.totalParts)
+    assertEquals("Part one text", parsedBracket.second)
+
+    // 2. Text header parsing: (2/3)
+    val parsedParen = com.cellular.rpc.transport.receiver.PduReassemblyBuffer.parseTextSequenceHeader("(2/3) Part two text")
+    assertNotNull(parsedParen)
+    assertEquals(2, parsedParen!!.first.partSeq)
+    assertEquals(3, parsedParen.first.totalParts)
+    assertEquals("Part two text", parsedParen.second)
+
+    // 3. Single-part text with no prefix
+    val singlePart = com.cellular.rpc.transport.receiver.PduReassemblyBuffer.parseTextSequenceHeader("Hello world, no sequence")
+    assertNull(singlePart)
+
+    // 4. Synthetic 3GPP SMS-DELIVER PDU with UDH (IEI 0x00: ref 77, total 2, seq 1)
+    // Layout:
+    // SMSC Len: 0x00 (no SMSC)
+    // First Octet: 0x44 (SMS-DELIVER, TP-UDHI bit 6 = 1)
+    // OA: 0x0A (10 digits), Type: 0x81 (unknown), OA bytes: 5 bytes (0x12, 0x34, 0x56, 0x78, 0x90)
+    // TP-PID: 0x00
+    // TP-DCS: 0x00
+    // TP-SCTS: 7 bytes (0x26, 0x09, 0x14, 0x12, 0x00, 0x00, 0x00)
+    // TP-UDL: 0x0A (10 septets/bytes)
+    // UDHL: 0x05 (5 bytes header)
+    // IEI: 0x00 (concatenated 8-bit), IE-Len: 0x03, Ref: 0x4D (77), Total: 0x02, Seq: 0x01
+    val syntheticPdu = byteArrayOf(
+      0x00, // SMSC Len
+      0x44, // First octet (TP-UDHI=1)
+      0x0A, 0x81.toByte(), 0x12, 0x34, 0x56, 0x78, 0x90.toByte(), // OA
+      0x00, // PID
+      0x00, // DCS
+      0x26, 0x09, 0x14, 0x12, 0x00, 0x00, 0x00, // SCTS
+      0x0A, // UDL
+      0x05, // UDHL
+      0x00, 0x03, 0x4D, 0x02, 0x01, // IEI=0x00, Len=3, Ref=77, Total=2, Seq=1
+      0x41, 0x42, 0x43 // User text "ABC"
+    )
+
+    val udh = com.cellular.rpc.transport.receiver.PduReassemblyBuffer.parseUdhConcatHeader(syntheticPdu)
+    assertNotNull("UDH header must be parsed from synthetic PDU", udh)
+    assertEquals(77, udh!!.refNumber)
+    assertEquals(2, udh.totalParts)
+    assertEquals(1, udh.partSeq)
+  }
 }
 

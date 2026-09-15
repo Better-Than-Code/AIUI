@@ -104,8 +104,8 @@ object PallyMmsHelper {
             parts.add(
                 com.cellular.rpc.transport.mms.MmsPduComposer.MmsPart(
                     contentType = "text/plain; charset=utf-8",
-                    contentLocation = "body.txt",
-                    contentId = "body_text",
+                    contentLocation = "text_0.txt",
+                    contentId = "<text_0>",
                     data = text.toByteArray(Charsets.UTF_8)
                 )
             )
@@ -115,7 +115,7 @@ object PallyMmsHelper {
                 com.cellular.rpc.transport.mms.MmsPduComposer.MmsPart(
                     contentType = "image/png",
                     contentLocation = com.cellular.rpc.transport.failover.TransportFailoverEngine.VISUAL_ANCHOR_NAME,
-                    contentId = "visual_anchor",
+                    contentId = "<visual_anchor>",
                     data = anchorBytes
                 )
             )
@@ -153,8 +153,8 @@ object PallyMmsHelper {
             parts.add(
                 com.cellular.rpc.transport.mms.MmsPduComposer.MmsPart(
                     contentType = "text/plain; charset=utf-8",
-                    contentLocation = "body.txt",
-                    contentId = "body_text",
+                    contentLocation = "text_0.txt",
+                    contentId = "<text_0>",
                     data = text.toByteArray(Charsets.UTF_8)
                 )
             )

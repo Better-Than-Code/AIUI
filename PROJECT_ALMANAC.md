@@ -220,6 +220,25 @@
 * **Status:** Released
 * **Summary:** Promoted build to Version Code 32 (v5.4). Consolidated Section 2.10 (Hardware Sensor Game Engine), Section 2.11 (Audio Voice Note Live Recorder & Scrubber), Section 2.13 (Thread Forking & Edit Prompt), Section 2.14 (Pluggable Bubble Animation Presets), and Section 2.16 (Procedural 2D Maze Generator).
 
+---
+
+### Almanac Patch: Sprint 4 — Stability, Carrier Protocol Compliance & Media Viewers (Build v33 / v5.5)
+* **Status:** Completed
+* **New ADR:** ADR-031 — [Audio Recording Touch Isolation & Dual-Mode Mic Gesture: Resolved pointer event interception in `LiveVoiceRecordingBar` by shifting `detectHorizontalDragGestures` strictly to the waveform scrubber area and eliminating the full-screen overlay Box, restoring 100% responsiveness to Lock, Trash, and Send buttons. Upgraded the chat input mic button to support both instant tap-to-record (locking hands-free) and hold-to-record (committing on release) | 2026-09-14]
+* **New ADR:** ADR-032 — [Carrier-Compliant Outbound MMS SMIL Layout & Inline Text Body Binding: Enforced strict SMIL 2.0 XML presentation mapping in `MmsPduComposer` and `PallyMmsHelper`. Outbound text payloads are explicitly assigned `contentType = "text/plain; charset=utf-8"`, `contentLocation = "text_0.txt"`, and `contentId = "<text_0>"`, bound to `<text src="text_0.txt" region="Text"/>` inside SMIL Part 0. Guarantees recipient MMSC clients (Google Messages, Samsung Messages) parse text as native inline chat body rather than raw binary attachments | 2026-09-14]
+* **New ADR:** ADR-033 — [Bounded Dynamic Image Container Sizing & Pinch-to-Zoom Fullscreen Viewer Modal: Replaced rigid fixed image containers in `MessageAttachmentBubble` with bounded dynamic dimensions (`widthIn(120.dp, 280.dp)`, `heightIn(80.dp, 320.dp)`) preserving natural photo aspect ratios. Attached full-screen modal viewer (`FullScreenImageViewerModal`) supporting pinch-to-zoom (up to 4.5x), double-tap zoom toggles, 2D pan tracking, file metadata header, and dark scrim immersion | 2026-09-14]
+* **Release Summary:** Promoted build to Version Code 33 (v5.5). Tested with clean Robolectric test execution and compiled `pallyai-v33.apk` (30MB). Whitelisted `pallyai-v33.apk` in `.gitignore`.
+
+---
+
+### Almanac Patch: Sprint 5 — Active Number Inbound Isolation & Multi-Part SMS Reassembly (Build v34 / v5.6)
+* **Status:** Completed
+* **New ADR:** ADR-034 — [INC-26 Strict Inbound Active-Number Matching & Contact Thread Isolation: Refactored `CellularServiceManager.isSenderRecognized` to enforce strict E.164 10-digit NANP matching against the active service profile, active `CarrierSafeQueueEngine.destinationAddress`, and known gateway lines. Eliminated loose substring heuristics that permitted cross-contact leakage. Injected strict drop guards across `TelephonySmsObserver`, `TelephonyMmsObserver`, `PallySmsReceiver`, and `CellularMessageDispatcher.dispatchInbound`, silently rejecting third-party cellular traffic with HTTP 403 / `thread_isolation` and safeguarding Room DB and chat feeds from non-AI contact pollution | 2026-09-14]
+* **New ADR:** ADR-035 — [INC-27 Inbound Multi-Part SMS Reassembly Buffer (`PduReassemblyBuffer`): Created `PduReassemblyBuffer` providing robust reassembly of fragmented multi-part SMS messages. Supports 3GPP TS 23.040 User Data Header (UDH) 8-bit and 16-bit concatenation headers (IEI 0x00 and 0x08) as well as human-readable/carrier text header prefixes (`[x/y]` or `(x/y)`). Features thread-safe `ConcurrentHashMap` part buffers, 15-second adaptive timeout flushing with monotonic sequence assembly, and zero-loss dispatching into `CellularMessageDispatcher` | 2026-09-14]
+* **Release Summary:** Promoted build to Version Code 34 (v5.6). Verified with 65 unit and Robolectric tests passing, full compilation green, and compiled `pallyai-v34.apk` (30MB) published to `apk/releases/pallyai-v34.apk`. Whitelisted `pallyai-v34.apk` in `.gitignore`.
+
+
+
 
 
 

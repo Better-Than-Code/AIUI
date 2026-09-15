@@ -127,11 +127,35 @@ fun LiveVoiceRecordingBar(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // 3. Real-Time Dynamic Waveform Area
+                // 3. Real-Time Dynamic Waveform & Scrubber Area (Slide-to-cancel gesture attached to scrubber only)
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .height(30.dp),
+                        .height(34.dp)
+                        .offset { IntOffset(dragOffsetX.roundToInt(), 0) }
+                        .pointerInput(isLocked) {
+                            if (!isLocked) {
+                                detectHorizontalDragGestures(
+                                    onHorizontalDrag = { change, dragAmount ->
+                                        change.consume()
+                                        dragOffsetX = (dragOffsetX + dragAmount).coerceAtMost(0f)
+                                        if (dragOffsetX < cancelThreshold) {
+                                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                        }
+                                    },
+                                    onDragEnd = {
+                                        if (dragOffsetX < cancelThreshold) {
+                                            view.performHapticFeedback(HapticFeedbackConstants.REJECT)
+                                            onCancel()
+                                        }
+                                        dragOffsetX = 0f
+                                    },
+                                    onDragCancel = {
+                                        dragOffsetX = 0f
+                                    }
+                                )
+                            }
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     if (dragOffsetX < -30f) {
@@ -247,36 +271,6 @@ fun LiveVoiceRecordingBar(
                         modifier = Modifier.size(18.dp)
                     )
                 }
-            }
-
-            // Slide to Cancel Gesture Scrubber Layer (Active when not locked)
-            if (!isLocked) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .offset { IntOffset(dragOffsetX.roundToInt(), 0) }
-                        .pointerInput(Unit) {
-                            detectHorizontalDragGestures(
-                                onHorizontalDrag = { change, dragAmount ->
-                                    change.consume()
-                                    dragOffsetX = (dragOffsetX + dragAmount).coerceAtMost(0f)
-                                    if (dragOffsetX < cancelThreshold) {
-                                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                    }
-                                },
-                                onDragEnd = {
-                                    if (dragOffsetX < cancelThreshold) {
-                                        view.performHapticFeedback(HapticFeedbackConstants.REJECT)
-                                        onCancel()
-                                    }
-                                    dragOffsetX = 0f
-                                },
-                                onDragCancel = {
-                                    dragOffsetX = 0f
-                                }
-                            )
-                        }
-                )
             }
         }
     }

@@ -32,6 +32,7 @@ enum class CellularStatusCode(val code: Int, val reason: String) {
     OK_200(200, "OK"),
     NOT_MODIFIED_304(304, "Not Modified"),
     BAD_REQUEST_400(400, "Bad Request"),
+    FORBIDDEN_403(403, "Thread Isolation / Forbidden"),
     NOT_FOUND_404(404, "Not Found"),
     PAYLOAD_TOO_LARGE_413(413, "Payload Exceeds MTU"),
     SERVER_ERROR_500(500, "Internal Server Error"),

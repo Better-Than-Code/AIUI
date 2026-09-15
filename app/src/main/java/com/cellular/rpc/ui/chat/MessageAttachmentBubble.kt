@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,15 +17,20 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.cellular.rpc.engine.AttachmentType
 import com.cellular.rpc.engine.AudioPlayerManager
@@ -33,7 +39,7 @@ import com.example.ui.theme.*
 
 /**
  * Native Attachment View inside Chat Bubbles:
- * - High-resolution Image card with rounded corners
+ * - Dynamic-aspect Image card with rounded corners and tap-to-open full-screen viewer
  * - Voice Note Player with interactive Play/Pause, live waveform seek scrubber, speed toggle (1.0x / 1.5x / 2.0x), and dual timestamp
  * - File / Document card with size and file type badges
  */
@@ -44,24 +50,44 @@ fun MessageAttachmentBubble(
     audioPlayerManager: AudioPlayerManager? = null,
     modifier: Modifier = Modifier
 ) {
+    var showFullScreenViewer by remember { mutableStateOf(false) }
+
     when (attachment.type) {
         AttachmentType.VISUAL_ANCHOR -> {
             // Visual anchor is an internal carrier transport vehicle; do not display as a user media attachment
         }
         AttachmentType.IMAGE -> {
+            // INC-24: Bounded dynamic sizing preserving natural aspect ratio without rigid crop distortion
             Surface(
                 shape = RoundedCornerShape(14.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, if (isUser) CyanPrimary.copy(alpha = 0.4f) else DarkNavyBorder),
+                color = if (isUser) CyanPrimaryDark.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
                 modifier = modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 220.dp)
+                    .widthIn(min = 120.dp, max = 280.dp)
+                    .heightIn(min = 80.dp, max = 320.dp)
                     .clip(RoundedCornerShape(14.dp))
+                    .clickable { showFullScreenViewer = true }
+                    .testTag("message_attachment_image")
             ) {
-                AsyncImage(
-                    model = attachment.uri,
-                    contentDescription = "Message Photo",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.wrapContentSize()
+                ) {
+                    AsyncImage(
+                        model = attachment.uri,
+                        contentDescription = "Message Photo (Tap to view full screen)",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .wrapContentHeight()
+                    )
+                }
+            }
+
+            if (showFullScreenViewer) {
+                FullScreenImageViewerModal(
+                    attachment = attachment,
+                    onDismiss = { showFullScreenViewer = false }
                 )
             }
         }
@@ -312,6 +338,160 @@ fun MessageAttachmentBubble(
                         contentDescription = "Download File",
                         tint = CyanPrimary,
                         modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Full-Screen Modal Image Viewer:
+ * - Full-screen immersion with dark scrim background
+ * - Pinch-to-zoom (up to 4.0x) and 2D panning
+ * - Double-tap to zoom toggle (1.0x <-> 2.5x)
+ * - File metadata header and accessible close controls
+ */
+@Composable
+fun FullScreenImageViewerModal(
+    attachment: MessageAttachment,
+    onDismiss: () -> Unit
+) {
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xF5080C16))
+                .testTag("full_screen_image_viewer_modal")
+        ) {
+            // Main interactive image surface with pinch-to-zoom and pan
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onDoubleTap = {
+                                if (scale > 1.2f) {
+                                    scale = 1f
+                                    offset = Offset.Zero
+                                } else {
+                                    scale = 2.5f
+                                }
+                            }
+                        )
+                    }
+                    .pointerInput(Unit) {
+                        detectTransformGestures { _, pan, zoom, _ ->
+                            val newScale = (scale * zoom).coerceIn(1f, 4.5f)
+                            scale = newScale
+                            if (newScale > 1.0f) {
+                                val maxOffsetX = (newScale - 1f) * 600f
+                                val maxOffsetY = (newScale - 1f) * 800f
+                                offset = Offset(
+                                    x = (offset.x + pan.x).coerceIn(-maxOffsetX, maxOffsetX),
+                                    y = (offset.y + pan.y).coerceIn(-maxOffsetY, maxOffsetY)
+                                )
+                            } else {
+                                offset = Offset.Zero
+                            }
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                AsyncImage(
+                    model = attachment.uri,
+                    contentDescription = "Full Size Attachment Photo",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp, vertical = 64.dp)
+                        .graphicsLayer(
+                            scaleX = scale,
+                            scaleY = scale,
+                            translationX = offset.x,
+                            translationY = offset.y
+                        )
+                )
+            }
+
+            // Top Overlay Bar: File info & Close button
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter)
+                    .background(Color(0xCC0B101D))
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = attachment.fileName.ifBlank { "Attached Image" },
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 1
+                    )
+                    Text(
+                        text = if (attachment.fileSizeBytes > 0) "${attachment.fileSizeBytes / 1024} KB" else "Photo",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = CyanPrimary,
+                        fontSize = 11.sp
+                    )
+                }
+
+                if (scale > 1.1f) {
+                    TextButton(
+                        onClick = {
+                            scale = 1f
+                            offset = Offset.Zero
+                        }
+                    ) {
+                        Text("Reset Zoom", color = CyanPrimary, fontSize = 12.sp)
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(Color.White.copy(alpha = 0.1f), CircleShape)
+                        .testTag("close_image_viewer")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close Full Screen Viewer",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            // Bottom Hint Bar
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    color = Color.Black.copy(alpha = 0.6f),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Text(
+                        text = if (scale > 1.05f) "${(scale * 100).toInt()}% • Drag to pan" else "Double-tap or pinch to zoom",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.75f),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                     )
                 }
             }

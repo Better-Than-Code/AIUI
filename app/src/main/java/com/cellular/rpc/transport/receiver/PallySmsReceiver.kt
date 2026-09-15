@@ -58,35 +58,50 @@ class PallySmsReceiver : BroadcastReceiver() {
             val combinedText = messages.joinToString("") { it.messageBody ?: "" }
             val firstSms = messages.first()
 
+            // INC-26: Strictly reject non-active / unrecognized senders immediately to maintain thread isolation
+            if (!isRecognizedSender(sender)) {
+                Log.d(TAG, "PallySmsReceiver: Ignoring SMS from non-active contact '$sender' to maintain thread isolation.")
+                return
+            }
+
             if (PallySmsTracker.isCorruptedOrBinaryText(combinedText)) {
                 Log.w(TAG, "Rejecting corrupted/binary SMS payload from $sender: $combinedText")
                 return
             }
 
-            if (isRecognizedSender(sender)) {
-                Log.i(TAG, "Intercepted incoming AI SMS from $sender (${combinedText.length} chars): $combinedText")
-                PallySmsTracker.markHandled(sender, combinedText)
+            Log.i(TAG, "Intercepted incoming AI SMS from $sender (${combinedText.length} chars): $combinedText")
+            PallySmsTracker.markHandled(sender, combinedText)
 
-                // Prevent raw wire frames and protocol traffic from leaking into the system SMS inbox
-                if (isOrderedBroadcast) {
-                    try {
-                        abortBroadcast()
-                        Log.d(TAG, "Successfully aborted broadcast for handled protocol packet.")
-                    } catch (e: Exception) {
-                        Log.d(TAG, "abortBroadcast error: ${e.message}")
-                    }
+            // Prevent raw wire frames and protocol traffic from leaking into the system SMS inbox
+            if (isOrderedBroadcast) {
+                try {
+                    abortBroadcast()
+                    Log.d(TAG, "Successfully aborted broadcast for handled protocol packet.")
+                } catch (e: Exception) {
+                    Log.d(TAG, "abortBroadcast error: ${e.message}")
                 }
+            }
 
-                val pendingResult = goAsync()
+            val pendingResult = goAsync()
+
+            // INC-27: Route through PduReassemblyBuffer to reassemble fragmented multi-part PDUs
+            PduReassemblyBuffer.ingest(
+                context = context.applicationContext,
+                sender = sender,
+                sms = firstSms,
+                bodyText = combinedText
+            ) { reassembledText, representativeSms ->
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
-                        processIncomingPallyMessage(context.applicationContext, firstSms, combinedText, sender)
+                        processIncomingPallyMessage(context.applicationContext, representativeSms, reassembledText, sender)
                     } finally {
-                        pendingResult.finish()
+                        try {
+                            pendingResult.finish()
+                        } catch (ignored: Exception) {}
                     }
                 }
-                return
             }
+            return
         }
 
         // Fallback PDU parser for data SMS or custom broadcasts
@@ -109,30 +124,42 @@ class PallySmsReceiver : BroadcastReceiver() {
         }
 
         val fullText = sb.toString()
+        if (fallbackSms == null || !isRecognizedSender(fallbackSender)) {
+            Log.d(TAG, "PallySmsReceiver: Ignoring fallback PDU from non-active contact '$fallbackSender'.")
+            return
+        }
+
         if (PallySmsTracker.isCorruptedOrBinaryText(fullText)) {
             Log.w(TAG, "Rejecting corrupted fallback PDU text: $fullText")
             return
         }
 
-        if (fallbackSms != null && isRecognizedSender(fallbackSender)) {
-            Log.i(TAG, "Intercepted fallback PDU message from $fallbackSender: $fullText")
-            PallySmsTracker.markHandled(fallbackSender, fullText)
+        Log.i(TAG, "Intercepted fallback PDU message from $fallbackSender: $fullText")
+        PallySmsTracker.markHandled(fallbackSender, fullText)
 
-            if (isOrderedBroadcast) {
-                try {
-                    abortBroadcast()
-                    Log.d(TAG, "Successfully aborted broadcast for handled fallback PDU packet.")
-                } catch (e: Exception) {
-                    Log.d(TAG, "abortBroadcast error: ${e.message}")
-                }
+        if (isOrderedBroadcast) {
+            try {
+                abortBroadcast()
+                Log.d(TAG, "Successfully aborted broadcast for handled fallback PDU packet.")
+            } catch (e: Exception) {
+                Log.d(TAG, "abortBroadcast error: ${e.message}")
             }
+        }
 
-            val pendingResult = goAsync()
+        val pendingResult = goAsync()
+        PduReassemblyBuffer.ingest(
+            context = context.applicationContext,
+            sender = fallbackSender,
+            sms = fallbackSms,
+            bodyText = fullText
+        ) { reassembledText, representativeSms ->
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    processIncomingPallyMessage(context.applicationContext, fallbackSms, fullText, fallbackSender)
+                    processIncomingPallyMessage(context.applicationContext, representativeSms, reassembledText, fallbackSender)
                 } finally {
-                    pendingResult.finish()
+                    try {
+                        pendingResult.finish()
+                    } catch (ignored: Exception) {}
                 }
             }
         }

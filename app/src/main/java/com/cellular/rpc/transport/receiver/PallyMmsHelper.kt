@@ -201,8 +201,8 @@ object PallyMmsHelper {
     }
 
     /**
-     * Executes direct background MMS dispatch via SmsManager.sendMultimediaMessage()
-     * with automatic carrier-safe chunked SMS fallback.
+     * Executes direct background MMS dispatch via OutboundMmsDispatcher with dedicated
+     * cellular APN binding and strict 300KB payload clamping.
      */
     private fun dispatchCarrierMmsDirect(
         context: Context,
@@ -213,82 +213,12 @@ object PallyMmsHelper {
         seqNo: Int = 0,
         outboxId: Long = 0L
     ) {
-        val cleanNumber = destinationNumber.replace(Regex("[^0-9+]"), "")
-        if (cleanNumber.isBlank()) {
-            Log.e(TAG, "Cannot dispatch carrier MMS: blank destination number.")
-            return
-        }
-
-        try {
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
-                Log.e(TAG, "Cannot dispatch carrier MMS: SEND_SMS permission is not granted.")
-                return
-            }
-
-            val pduFile = com.cellular.rpc.transport.mms.MmsPduComposer.createPduFile(
+        helperScope.launch {
+            com.cellular.rpc.transport.mms.OutboundMmsDispatcher.dispatchMms(
                 context = context,
-                recipientNumber = cleanNumber,
-                parts = parts,
-                sessionId = sessionId
-            )
-
-            val pduUri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                pduFile
-            )
-
-            val carrierProfile = com.cellular.rpc.transport.apn.CarrierApnResolver.resolveProfile(context)
-            Log.i(TAG, "Carrier profile for direct MMS: ${carrierProfile.carrierName} (${carrierProfile.simOperator}), MMSC: ${carrierProfile.activeMmscUrl}, subId: ${carrierProfile.subId}")
-
-            val smsManager: android.telephony.SmsManager = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                if (carrierProfile.subId >= 0) {
-                    context.getSystemService(android.telephony.SmsManager::class.java)?.createForSubscriptionId(carrierProfile.subId)
-                        ?: context.getSystemService(android.telephony.SmsManager::class.java)
-                        ?: @Suppress("DEPRECATION") android.telephony.SmsManager.getSmsManagerForSubscriptionId(carrierProfile.subId)
-                } else {
-                    context.getSystemService(android.telephony.SmsManager::class.java) ?: @Suppress("DEPRECATION") android.telephony.SmsManager.getDefault()
-                }
-            } else {
-                if (carrierProfile.subId >= 0) {
-                    @Suppress("DEPRECATION") android.telephony.SmsManager.getSmsManagerForSubscriptionId(carrierProfile.subId)
-                } else {
-                    @Suppress("DEPRECATION") android.telephony.SmsManager.getDefault()
-                }
-            }
-
-            val flags = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
-            } else {
-                android.app.PendingIntent.FLAG_UPDATE_CURRENT
-            }
-
-            val sentIntent = Intent(DeliveryBroadcastReceiver.MMS_SENT_ACTION).apply {
-                putExtra("msg_id", "mms_${sessionId}_${seqNo}")
-                putExtra("session_id", sessionId)
-                putExtra("seq_no", seqNo)
-                putExtra("outbox_id", outboxId)
-                setPackage(context.packageName)
-            }
-            val sentPI = android.app.PendingIntent.getBroadcast(
-                context,
-                (sessionId * 41 + seqNo).toInt(),
-                sentIntent,
-                flags
-            )
-
-            context.grantUriPermission("com.android.mms.service", pduUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            context.grantUriPermission("com.android.phone", pduUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-
-            Log.i(TAG, "Transmitting direct carrier MMS to $cleanNumber via SmsManager (PDU: ${pduFile.length()} bytes, URI: $pduUri, MMSC: ${carrierProfile.activeMmscUrl})")
-            smsManager.sendMultimediaMessage(context, pduUri, carrierProfile.activeMmscUrl, null, sentPI)
-            Log.i(TAG, "Direct background MMS dispatched successfully without launching external app chooser.")
-        } catch (e: Exception) {
-            Log.w(TAG, "Direct SmsManager.sendMultimediaMessage failed (${e.message}). Triggering Option B Carrier-Safe Chunked SMS Fallback.")
-            fallbackChunkedSms(
-                context = context,
-                destinationNumber = cleanNumber,
+                destinationNumber = destinationNumber,
                 text = text,
+                parts = parts,
                 sessionId = sessionId,
                 seqNo = seqNo,
                 outboxId = outboxId

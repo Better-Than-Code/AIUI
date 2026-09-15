@@ -28,7 +28,15 @@ class DeliveryBroadcastReceiver : BroadcastReceiver() {
         val msgId = intent.getStringExtra("msg_id") ?: "msg_${System.currentTimeMillis()}"
         val sessionId = intent.getIntExtra("session_id", 0)
         val seqNo = intent.getIntExtra("seq_no", 0)
-        val resultCode = resultCode
+        val resultCode = if (intent.hasExtra("result_code")) {
+            intent.getIntExtra("result_code", Activity.RESULT_OK)
+        } else {
+            try {
+                resultCode
+            } catch (e: Exception) {
+                Activity.RESULT_OK
+            }
+        }
         val appContext = context.applicationContext
 
         Log.i(TAG, "Telephony intent received ($action) for message ID $msgId (session: $sessionId, seq: $seqNo) with result code: $resultCode")
@@ -50,16 +58,52 @@ class DeliveryBroadcastReceiver : BroadcastReceiver() {
                         db.outboxDao().markAcknowledged(sessionId, seqNo)
                         db.outboxDao().clearAcknowledged()
                     } else {
-                        Log.w(TAG, "Physical radio SENT failure ($action, code: $resultCode) for msg: $msgId. Marking stalled for retry.")
-                        // Epic 4: Record physical failure in circuit breaker (trips to 15-minute cooldown on 3 failures or limit exceeded)
-                        circuitBreaker.recordFailure(resultCode, "Radio failure (code $resultCode)")
+                        // INC-30: Radio State Failure Handling & Retry Queue
+                        val failureReason = when (resultCode) {
+                            android.telephony.SmsManager.RESULT_ERROR_RADIO_OFF -> "RADIO_OFF (Airplane mode or cellular radio powered down)"
+                            android.telephony.SmsManager.RESULT_ERROR_NO_SERVICE -> "NO_SERVICE (Device out of cellular coverage / no cell tower)"
+                            android.telephony.SmsManager.RESULT_ERROR_GENERIC_FAILURE -> "GENERIC_FAILURE (Modem / carrier transmission failure)"
+                            android.telephony.SmsManager.RESULT_ERROR_LIMIT_EXCEEDED -> "LIMIT_EXCEEDED (SMS transmission rate limit exceeded)"
+                            android.telephony.SmsManager.RESULT_ERROR_NULL_PDU -> "NULL_PDU (Invalid PDU generated for carrier transmission)"
+                            else -> "Radio transmission failure (code $resultCode)"
+                        }
 
-                        // Keep in outbox or reset to pending so retry watchdog will resend
-                        db.outboxDao().markAttempted(
-                            id = intent.getLongExtra("outbox_id", 0L),
-                            newStatus = com.cellular.rpc.data.local.OutboxEntity.STATUS_PENDING,
-                            timestamp = System.currentTimeMillis()
-                        )
+                        // Immediately release in-flight slot in SlidingWindowController so permits aren't stuck in limbo
+                        queueEngine.windowController.releaseFrame(seqNo)
+
+                        val outboxId = intent.getLongExtra("outbox_id", 0L)
+                        val outboxDao = db.outboxDao()
+                        val entity = if (outboxId > 0L) {
+                            outboxDao.getById(outboxId)
+                        } else {
+                            outboxDao.getBySessionAndSeq(sessionId, seqNo)
+                        }
+
+                        val currentRetries = entity?.retries ?: 0
+                        val targetId = entity?.id ?: outboxId
+
+                        circuitBreaker.recordFailure(resultCode, failureReason)
+
+                        if (currentRetries >= 3) {
+                            Log.w(TAG, "INC-30: $failureReason for msg $msgId. Max retries ($currentRetries) reached. Transitioning to FAILED.")
+                            if (targetId > 0L) {
+                                outboxDao.markFailed(targetId, System.currentTimeMillis())
+                            } else {
+                                outboxDao.markFailedBySeq(sessionId, seqNo, System.currentTimeMillis())
+                            }
+                        } else {
+                            // Exponential backoff: 2s -> 4s -> 8s
+                            val backoffMs = 2000L * (1 shl currentRetries)
+                            val nextAttemptTimestamp = System.currentTimeMillis() + backoffMs
+                            Log.w(TAG, "INC-30: $failureReason for msg $msgId. Transitioning to PENDING with ${backoffMs}ms backoff (retry ${currentRetries + 1}/3).")
+                            if (targetId > 0L) {
+                                outboxDao.markAttempted(
+                                    id = targetId,
+                                    newStatus = com.cellular.rpc.data.local.OutboxEntity.STATUS_PENDING,
+                                    timestamp = nextAttemptTimestamp
+                                )
+                            }
+                        }
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error handling $action: ${e.message}")

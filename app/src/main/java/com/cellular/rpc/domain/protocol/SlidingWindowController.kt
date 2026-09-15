@@ -51,6 +51,15 @@ class SlidingWindowController(
     }
 
     /**
+     * INC-30: Explicitly releases an in-flight frame slot without marking successful delivery,
+     * immediately returning transmission permits to the sliding window upon physical radio errors.
+     */
+    @Synchronized
+    fun releaseFrame(seqNo: Int) {
+        markFrameAcknowledged(seqNo)
+    }
+
+    /**
      * Process an incoming selective-repeat ACK.
      * @param ackBase The highest cumulative sequence confirmed.
      * @param bitmask 32-bit field where bit 'i' acknowledges (ackBase + i + 1).

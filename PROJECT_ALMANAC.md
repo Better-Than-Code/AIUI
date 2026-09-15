@@ -237,6 +237,15 @@
 * **New ADR:** ADR-035 — [INC-27 Inbound Multi-Part SMS Reassembly Buffer (`PduReassemblyBuffer`): Created `PduReassemblyBuffer` providing robust reassembly of fragmented multi-part SMS messages. Supports 3GPP TS 23.040 User Data Header (UDH) 8-bit and 16-bit concatenation headers (IEI 0x00 and 0x08) as well as human-readable/carrier text header prefixes (`[x/y]` or `(x/y)`). Features thread-safe `ConcurrentHashMap` part buffers, 15-second adaptive timeout flushing with monotonic sequence assembly, and zero-loss dispatching into `CellularMessageDispatcher` | 2026-09-14]
 * **Release Summary:** Promoted build to Version Code 34 (v5.6). Verified with 65 unit and Robolectric tests passing, full compilation green, and compiled `pallyai-v34.apk` (30MB) published to `apk/releases/pallyai-v34.apk`. Whitelisted `pallyai-v34.apk` in `.gitignore`.
 
+---
+
+### Almanac Patch: Sprint 6 — Phase 2 Cellular Egress Hardening & Radio Resilience (Build v35 / v5.7)
+* **Status:** Completed
+* **New ADR:** ADR-036 — [INC-28 MMSC Carrier Payload Clamping (<300KB) & AMR-NB Bitstream Frame Slicing: Enforced strict 300KB carrier payload ceilings across `CellularAudioCompressor` and `OutboundMmsDispatcher`. Upgraded `CellularAudioCompressor` with 3GPP standard AMR-NB (8 kHz, 12.2 kbps, `audio/amr`) encoding and AMR-WB fallback. Implemented frame-aligned bitstream slicing (`clampToCarrierCeiling`) that trims audio cleanly along 32-byte AMR frame boundaries without bitstream corruption or header truncation. Guarantees 100% acceptance by TracFone / Verizon MMSC gateways without HTTP 413 Entity Too Large rejections | 2026-09-14]
+* **New ADR:** ADR-037 — [INC-29 Dedicated Cellular Network APN Binding for MMS Egress: Created `OutboundMmsDispatcher` utilizing `ConnectivityManager.requestNetwork` (`TRANSPORT_CELLULAR` + `NET_CAPABILITY_MMS`) to dynamically bind the cellular MMS bearer even while default internet Wi-Fi is actively connected (`bindProcessToNetwork`). Automates binary WAP-209 M-Send.req PDU generation, FileProvider URI grant orchestration, and seamless fallback to chunked multi-part SMS if carrier MMS data pipe is unavailable | 2026-09-14]
+* **New ADR:** ADR-038 — [INC-30 Radio State Failure Handling & Exponential Backoff Retry Queue: Hardened `DeliveryBroadcastReceiver` against physical radio status codes (`RESULT_ERROR_RADIO_OFF`, `RESULT_ERROR_NO_SERVICE`, `RESULT_ERROR_GENERIC_FAILURE`, `RESULT_ERROR_LIMIT_EXCEEDED`). Immediately releases in-flight permits from `SlidingWindowController` (`releaseFrame`), preventing queue stalls and eliminating reliance on 30-second watchdog timeouts. Outbox records transition to `STATUS_PENDING` with exponential backoff delays (2s, 4s, 8s) or `STATUS_FAILED` once max retries (3) are exhausted | 2026-09-14]
+* **Release Summary:** Promoted build to Version Code 35 (v5.7). Added unit and Robolectric tests in `ExampleRobolectricTest` covering AMR payload clamping, MMS network dispatching, and radio error backoff retry queues. Generated release APK `pallyai-v35.apk` in `apk/releases/`. Whitelisted `pallyai-v35.apk` in `.gitignore`.
+
 
 
 

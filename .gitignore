@@ -24,5 +24,6 @@ debug.keystore
 !/apk/releases/pallyai-v32.apk
 !/apk/releases/pallyai-v33.apk
 !/apk/releases/pallyai-v34.apk
+!/apk/releases/pallyai-v35.apk
 /releases/
 /.build-outputs/

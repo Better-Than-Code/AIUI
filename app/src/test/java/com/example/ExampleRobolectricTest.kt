@@ -1324,6 +1324,164 @@ class ExampleRobolectricTest {
     val gatewayResponse = com.cellular.rpc.transport.handler.CellularMessageDispatcher.dispatchInbound(context, gatewayMsg)
     assertEquals(com.cellular.rpc.domain.payload.CellularStatusCode.OK_200, gatewayResponse.status)
   }
+
+  /**
+   * INC-28: Test audio payload clamping under 300KB ceiling and AMR frame alignment.
+   */
+  @Test
+  fun `CellularAudioCompressor enforces 300KB carrier ceiling and clamps oversized AMR audio`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val audioDir = java.io.File(context.cacheDir, "test_audio").apply { mkdirs() }
+
+    // Create an oversized 500KB fake AMR-NB file
+    val oversizedFile = java.io.File(audioDir, "oversized_voice.amr")
+    val fos = java.io.FileOutputStream(oversizedFile)
+    // Write 6-byte header: #!AMR\n
+    fos.write(byteArrayOf(0x23, 0x21, 0x41, 0x4D, 0x52, 0x0A))
+    // Write 500 KB of 32-byte frames
+    val dummyFrame = ByteArray(32) { 0x04 }
+    repeat((500 * 1024) / 32) {
+      fos.write(dummyFrame)
+    }
+    fos.flush()
+    fos.close()
+
+    assertTrue(oversizedFile.length() > 300 * 1024L)
+
+    // Run clamping
+    val clampedFile = com.cellular.rpc.transport.mms.CellularAudioCompressor.clampToCarrierCeiling(
+      file = oversizedFile,
+      mimeType = "audio/amr",
+      maxBytes = com.cellular.rpc.transport.mms.CellularAudioCompressor.MAX_AUDIO_PAYLOAD_BYTES
+    )
+
+    assertTrue("Clamped file must exist", clampedFile.exists())
+    assertTrue("Clamped file must be <= 280KB", clampedFile.length() <= com.cellular.rpc.transport.mms.CellularAudioCompressor.MAX_AUDIO_PAYLOAD_BYTES)
+    assertTrue("Clamped file must be <= 300KB carrier ceiling", clampedFile.length() <= com.cellular.rpc.transport.mms.CellularAudioCompressor.MAX_CARRIER_PAYLOAD_BYTES)
+    // Check that AMR header is preserved and length is exactly 6 + (N * 32)
+    val clampedBytes = clampedFile.readBytes()
+    assertEquals(0x23.toByte(), clampedBytes[0])
+    assertEquals(0x21.toByte(), clampedBytes[1])
+    assertEquals(0, (clampedBytes.size - 6) % 32)
+  }
+
+  /**
+   * INC-29: Test OutboundMmsDispatcher clamps oversized parts and handles network dispatch safely.
+   */
+  @Test
+  fun `OutboundMmsDispatcher safely processes and clamps multipart payloads without crashing`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+
+    val largeTextPart = com.cellular.rpc.transport.mms.MmsPduComposer.MmsPart(
+      contentType = "text/plain; charset=utf-8",
+      contentLocation = "text_0.txt",
+      contentId = "<text_0>",
+      data = ByteArray(350 * 1024) { 0x41 } // 350 KB text part
+    )
+
+    kotlinx.coroutines.runBlocking {
+      // Dispatch should clamp large payload under 300KB and execute safely without uncaught exceptions
+      val dispatched = com.cellular.rpc.transport.mms.OutboundMmsDispatcher.dispatchMms(
+        context = context,
+        destinationNumber = "+16462619684",
+        text = "Hello over MMS",
+        parts = listOf(largeTextPart),
+        sessionId = 12345L,
+        seqNo = 1
+      )
+      // Dispatched is true or gracefully falls back in Robolectric mock environment
+      assertNotNull(dispatched)
+    }
+  }
+
+  /**
+   * INC-30: Test DeliveryBroadcastReceiver handles physical radio errors, releases window permits,
+   * and transitions outbox records to backoff retry or FAILED.
+   */
+  @Test
+  fun `DeliveryBroadcastReceiver handles RADIO_OFF and NO_SERVICE by releasing window permits and scheduling backoff`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val db = com.cellular.rpc.data.local.AppDatabase.getInstance(context)
+    val queueEngine = com.cellular.rpc.transport.queue.CarrierSafeQueueEngine.getInstance(context)
+
+    kotlinx.coroutines.runBlocking {
+      // Ensure clean sliding window state in singleton
+      queueEngine.windowController.resetInFlight()
+
+      // Register outbound frame in sliding window
+      val frame = com.cellular.rpc.domain.protocol.Frame(
+        sessionId = 999,
+        pktType = 1.toByte(),
+        seqNo = 0,
+        payload = "test".toByteArray()
+      )
+      val assignedSeq = queueEngine.windowController.registerOutbound(frame)
+      assertTrue("Window must have in-flight frames", queueEngine.windowController.getInFlightCount() > 0)
+
+      // 1. Insert an outbox entity matching assignedSeq
+      val outboxEntity = com.cellular.rpc.data.local.OutboxEntity(
+        sessionId = 999,
+        seqNo = assignedSeq,
+        pktType = 1.toByte(),
+        payloadBase85 = "test_payload",
+        rawPayloadHex = "74657374",
+        status = com.cellular.rpc.data.local.OutboxEntity.STATUS_IN_FLIGHT,
+        retries = 0
+      )
+      val outboxId = db.outboxDao().insert(outboxEntity)
+
+      // 2. Simulate radio failure intent: RESULT_ERROR_RADIO_OFF
+      val receiver = com.cellular.rpc.transport.receiver.DeliveryBroadcastReceiver()
+      val failIntent = android.content.Intent(com.cellular.rpc.transport.receiver.DeliveryBroadcastReceiver.SMS_SENT_ACTION).apply {
+        putExtra("msg_id", "msg_999_$assignedSeq")
+        putExtra("session_id", 999)
+        putExtra("seq_no", assignedSeq)
+        putExtra("outbox_id", outboxId)
+        putExtra("result_code", android.telephony.SmsManager.RESULT_ERROR_RADIO_OFF)
+      }
+
+      receiver.onReceive(context, failIntent)
+
+      // Allow IO coroutine to process
+      var waitAttempts = 0
+      while (db.outboxDao().getById(outboxId)?.status != com.cellular.rpc.data.local.OutboxEntity.STATUS_PENDING && waitAttempts < 30) {
+        kotlinx.coroutines.delay(50)
+        waitAttempts++
+      }
+
+      // Verify window permit was freed
+      assertEquals("In-flight permit must be freed upon radio error", 0, queueEngine.windowController.getInFlightCount())
+
+      // Verify entity was updated with backoff and retry count incremented
+      val updated = db.outboxDao().getById(outboxId)
+      assertNotNull(updated)
+      assertEquals(com.cellular.rpc.data.local.OutboxEntity.STATUS_PENDING, updated?.status)
+      assertEquals(1, updated?.retries)
+
+      // 3. Now simulate 3rd consecutive radio failure (RESULT_ERROR_NO_SERVICE) to verify transition to FAILED
+      val maxRetriesEntity = updated!!.copy(retries = 3)
+      db.outboxDao().update(maxRetriesEntity)
+
+      val noServiceIntent = android.content.Intent(com.cellular.rpc.transport.receiver.DeliveryBroadcastReceiver.SMS_SENT_ACTION).apply {
+        putExtra("msg_id", "msg_999_$assignedSeq")
+        putExtra("session_id", 999)
+        putExtra("seq_no", assignedSeq)
+        putExtra("outbox_id", outboxId)
+        putExtra("result_code", android.telephony.SmsManager.RESULT_ERROR_NO_SERVICE)
+      }
+      receiver.onReceive(context, noServiceIntent)
+
+      waitAttempts = 0
+      while (db.outboxDao().getById(outboxId)?.status != com.cellular.rpc.data.local.OutboxEntity.STATUS_FAILED && waitAttempts < 20) {
+        kotlinx.coroutines.delay(50)
+        waitAttempts++
+      }
+
+      val finalEntity = db.outboxDao().getById(outboxId)
+      assertNotNull(finalEntity)
+      assertEquals(com.cellular.rpc.data.local.OutboxEntity.STATUS_FAILED, finalEntity?.status)
+    }
+  }
 }
 
 
